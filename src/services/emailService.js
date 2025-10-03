@@ -7,7 +7,7 @@ const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 const MAIL_FROM = process.env.MAIL_FROM || 'no-reply@vibgyor.app';
 const APP_NAME = process.env.APP_NAME || 'Vibgyor';
-const APP_URL = process.env.APP_URL || 'http://192.168.1.54:3000';
+const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
 
 let transporter;
 

@@ -1,7 +1,11 @@
-require('dotenv').config();
+const path = require('path');
+const envPath = path.resolve(__dirname, '..', '.env');
+console.log('Looking for .env at:', envPath);
+require('dotenv').config({ path: envPath });
 const { server } = require('./app'); // Import server from app.js
-const { connectToDatabase } = require('./dbConfig/db');require('dotenv').config();
-const PORT = process.env.PORT || 3000;
+const { connectToDatabase } = require('./dbConfig/db');
+const PORT = process.env.PORT ;
+console.log("process.env",process.env);
 console.log("portt",PORT);
 
 // Graceful shutdown handler

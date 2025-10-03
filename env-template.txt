@@ -1,3 +1,11 @@
+# Backend Environment Variables Template
+# Copy this content to vibgyor-backend/.env and update with your values
+
+# Server Configuration
+PORT=3000
+SHUTDOWN_TIMEOUT=10000
+APP_URL=http://localhost:3000
+
 # Frontend Environment Variables Template
 # Copy this content to vibgyor-frontend/.env and update with your local IP address
 

@@ -712,7 +712,7 @@ The Postman collection includes all 117 implemented routes with:
 - **Query parameters** for pagination and filtering
 
 ### Environment Variables Used:
-- `BASE_URL` - API base URL (default: http://192.168.1.54:3000)
+- `BASE_URL` - API base URL (default: http://localhost:3000)
 - `ADMIN_ACCESS_TOKEN` - Admin authentication token
 - `SUBADMIN_ACCESS_TOKEN` - SubAdmin authentication token
 - `USER_ACCESS_TOKEN` - User authentication token

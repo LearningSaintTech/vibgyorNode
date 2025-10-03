@@ -2442,7 +2442,7 @@
   "variable": [
     {
       "key": "BASE_URL",
-      "value": "http://192.168.1.54:3000"
+      "value": "http://localhost:3000"
     },
     {
       "key": "ACCESS_TOKEN",
