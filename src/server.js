@@ -3,6 +3,7 @@ const { server } = require('./app'); // Import server from app.js
 const { connectToDatabase } = require('./dbConfig/db');
 
 const PORT = process.env.PORT || 3000;
+console.log("portt",PORT);
 
 // Graceful shutdown handler
 const gracefulShutdown = (signal) => {
@@ -48,7 +49,7 @@ process.on('unhandledRejection', (reason, promise) => {
 		console.log('✅ Database connected successfully');
 		
 		// Start server with error handling
-		server.listen(PORT, () => {
+		server.listen(PORT, "0.0.0.0",() => {
 			console.log('🚀 VibgyorNode v2.0 Server Started!');
 			console.log(`📡 Server running on: http://localhost:${PORT}`);
 			console.log(`🔌 WebSocket available at: ws://localhost:${PORT}`);
