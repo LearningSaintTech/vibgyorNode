@@ -1,0 +1,16 @@
+# Frontend Environment Variables Template
+# Copy this content to vibgyor-frontend/.env and update with your local IP address
+
+# API Configuration
+VITE_API_URL=https://YOUR_LOCAL_IP:3000
+VITE_SOCKET_URL=https://YOUR_LOCAL_IP:3000
+
+# Environment
+VITE_ENVIRONMENT=development
+
+# Instructions:
+# 1. Replace YOUR_LOCAL_IP with your actual local IP address
+# 2. Find your IP using: ipconfig (Windows) or ifconfig (Mac/Linux)
+# 3. Make sure both devices are on the same WiFi network
+# 4. Ensure HTTPS certificates are set up (see setup-https.md)
+
