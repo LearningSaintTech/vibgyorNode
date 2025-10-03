@@ -15,7 +15,7 @@ const { server } = require('./app'); // Import server from app.js
 const { connectToDatabase } = require('./dbConfig/db');
 
 // Get port from environment variable (Render provides PORT automatically)
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT ;
 const SHUTDOWN_TIMEOUT = parseInt(process.env.SHUTDOWN_TIMEOUT) || 10000;
 
 console.log('📋 Environment Configuration:');
@@ -72,6 +72,7 @@ process.on('unhandledRejection', (reason, promise) => {
 		// Start server with error handling
 		// Always use 0.0.0.0 to allow external connections (required for Render)
 		const host = '0.0.0.0';
+		
 		server.listen(PORT, host, () => {
 			console.log('🚀 VibgyorNode v2.0 Server Started!');
 			console.log(`📡 Server running on: http://${host}:${PORT}`);

@@ -137,17 +137,25 @@ app.use((req, res) => {
 	});
 });
 
-// Create HTTPS server for Socket.IO (with fallback to HTTP)
+// Create server (HTTPS for local dev, HTTP for production/Render)
 let server;
-const httpsServer = createHttpsServer(app);
 
-if (httpsServer) {
-  server = httpsServer;
-  console.log('🔒 Using HTTPS server for WebRTC and WebSocket');
-} else {
+// On Render, always use HTTP (Render handles HTTPS termination)
+if (process.env.NODE_ENV === 'production') {
   server = createServer(app);
-  console.log('⚠️  Using HTTP server (HTTPS certificates not found)');
-  console.log('📋 WebRTC may not work properly without HTTPS');
+  console.log('🚀 Production mode - Using HTTP server (Render handles HTTPS)');
+} else {
+  // Local development - try HTTPS first, fallback to HTTP
+  const httpsServer = createHttpsServer(app);
+  
+  if (httpsServer) {
+    server = httpsServer;
+    console.log('🔒 Using HTTPS server for WebRTC and WebSocket');
+  } else {
+    server = createServer(app);
+    console.log('⚠️  Using HTTP server (HTTPS certificates not found)');
+    console.log('📋 WebRTC may not work properly without HTTPS');
+  }
 }
 
 // Initialize Socket.IO
