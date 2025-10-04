@@ -5,8 +5,8 @@ const path = require('path');
 // HTTPS Configuration for Local Development
 const createHttpsServer = (app) => {
   // Certificate paths (will be created by mkcert)
-  const certPath = path.join(__dirname, 'localhost+3.pem');
-  const keyPath = path.join(__dirname, 'localhost+3-key.pem');
+  const certPath = path.join(__dirname, 'localhost+2.pem');
+  const keyPath = path.join(__dirname, 'localhost+2-key.pem');
   
   // Check if certificates exist
   if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {

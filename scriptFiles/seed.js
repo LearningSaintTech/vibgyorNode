@@ -8,18 +8,18 @@
 */
 
 require('dotenv').config();
-const { connectToDatabase, disconnectFromDatabase } = require('../vibgyor-backend/src/dbConfig/db');
+const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
 
 // Import models
-const Admin = require('../vibgyor-backend/src/admin/adminModel/adminModel');
-const SubAdmin = require('../vibgyor-backend/src/subAdmin/subAdminModel/subAdminAuthModel');
-const User = require('../vibgyor-backend/src/user/userModel/userAuthModel');
-const Chat = require('../vibgyor-backend/src/user/userModel/chatModel');
-const Message = require('../vibgyor-backend/src/user/userModel/messageModel');
-const Call = require('../vibgyor-backend/src/user/userModel/callModel');
-const FollowRequest = require('../vibgyor-backend/src/user/userModel/followRequestModel');
-const MessageRequest = require('../vibgyor-backend/src/user/userModel/messageRequestModel');
-const UserReport = require('../vibgyor-backend/src/user/userModel/userReportModel');
+const Admin = require('../src/admin/adminModel/adminModel');
+const SubAdmin = require('../src/subAdmin/subAdminModel/subAdminAuthModel');
+const User = require('../src/user/userModel/userAuthModel');
+const Chat = require('../src/user/userModel/chatModel');
+const Message = require('../src/user/userModel/messageModel');
+const Call = require('../src/user/userModel/callModel');
+const FollowRequest = require('../src/user/userModel/followRequestModel');
+const MessageRequest = require('../src/user/userModel/messageRequestModel');
+const UserReport = require('../src/user/userModel/userReportModel');
 
 // Demo data generators
 const { faker } = require('@faker-js/faker');
