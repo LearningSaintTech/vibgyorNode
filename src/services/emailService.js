@@ -3,9 +3,9 @@ const nodemailer = require('nodemailer');
 const SMTP_HOST = process.env.SMTP_HOST;
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_SECURE = String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true';
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
-const MAIL_FROM = process.env.MAIL_FROM || 'no-reply@vibgyor.app';
+const SMTP_USER = process.env.EMAIL_USER || process.env.SMTP_USER;
+const SMTP_PASS = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+const MAIL_FROM = process.env.MAIL_FROM || process.env.EMAIL_USER || 'no-reply@vibgyor.app';
 const APP_NAME = process.env.APP_NAME || 'Vibgyor';
 const APP_URL = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
 
@@ -16,13 +16,47 @@ function getTransporter() {
 	if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
 		// eslint-disable-next-line no-console
 		console.warn('[MAIL] SMTP env vars are missing. Email service will not work as expected.');
+		return null;
 	}
-	transporter = nodemailer.createTransport({
+	
+	// Enhanced Gmail configuration
+	const config = {
 		host: SMTP_HOST,
 		port: SMTP_PORT,
 		secure: SMTP_SECURE,
-		auth: { user: SMTP_USER, pass: SMTP_PASS },
+		auth: { 
+			user: SMTP_USER, 
+			pass: SMTP_PASS 
+		},
+	};
+	
+	// Add Gmail-specific settings
+	if (SMTP_HOST === 'smtp.gmail.com') {
+		config.tls = {
+			rejectUnauthorized: false
+		};
+		// eslint-disable-next-line no-console
+		console.log('[MAIL] Using Gmail SMTP configuration');
+	}
+	
+	transporter = nodemailer.createTransport(config);
+	
+	// Verify connection configuration
+	transporter.verify((error, success) => {
+		if (error) {
+			console.error('[MAIL] SMTP connection failed:', error.message);
+			if (error.message.includes('535')) {
+				console.error('[MAIL] Gmail authentication failed. Please check:');
+				console.error('[MAIL] 1. Enable 2-Factor Authentication on Gmail');
+				console.error('[MAIL] 2. Generate an App Password (not your regular password)');
+				console.error('[MAIL] 3. Use the App Password in EMAIL_PASS environment variable');
+				console.error('[MAIL] 4. Set EMAIL_USER to your Gmail address');
+			}
+		} else {
+			console.log('[MAIL] SMTP server is ready to take our messages');
+		}
 	});
+	
 	return transporter;
 }
 
@@ -68,12 +102,38 @@ function verificationTemplate({ username, token, verifyPath = '/auth/verify-emai
 	return baseTemplate({ title: 'Verify your email', bodyHtml });
 }
 
+function otpVerificationTemplate({ username, otp, appName = APP_NAME }) {
+	const bodyHtml = `
+		<p>Hi ${username || 'there'},</p>
+		<p>Your email verification code is:</p>
+		<div style="background:#1f2937;padding:20px;border-radius:8px;text-align:center;margin:20px 0;">
+			<span style="font-size:32px;font-weight:bold;color:#60a5fa;letter-spacing:4px;">${otp}</span>
+		</div>
+		<p>This code will expire in 5 minutes. If you didn't request this verification, please ignore this email.</p>
+		<p style="color:#94a3b8;font-size:14px;margin-top:30px;">
+			For security reasons, never share this code with anyone. ${appName} will never ask for your verification code.
+		</p>
+	`;
+	return baseTemplate({ title: 'Your verification code', bodyHtml });
+}
+
 async function sendEmail({ to, subject, html, text }) {
 	const tx = getTransporter();
+	if (!tx) {
+		throw new Error('SMTP transporter not configured. Please check environment variables.');
+	}
+	
 	// eslint-disable-next-line no-console
 	console.log('[MAIL] sendEmail', { to, subject });
-	const info = await tx.sendMail({ from: MAIL_FROM, to, subject, html, text });
-	return info;
+	
+	try {
+		const info = await tx.sendMail({ from: MAIL_FROM, to, subject, html, text });
+		console.log('[MAIL] Email sent successfully:', info.messageId);
+		return info;
+	} catch (error) {
+		console.error('[MAIL] Failed to send email:', error.message);
+		throw error;
+	}
 }
 
 async function sendVerificationEmail({ to, username, token }) {
@@ -84,10 +144,20 @@ async function sendVerificationEmail({ to, username, token }) {
 	return await sendEmail({ to, subject, html });
 }
 
+async function sendOtpVerificationEmail({ to, username, otp }) {
+	const subject = 'Your verification code';
+	const html = otpVerificationTemplate({ username, otp });
+	// eslint-disable-next-line no-console
+	console.log('[MAIL] sendOtpVerificationEmail', { to });
+	return await sendEmail({ to, subject, html });
+}
+
 module.exports = {
 	sendEmail,
 	sendVerificationEmail,
+	sendOtpVerificationEmail,
 	verificationTemplate,
+	otpVerificationTemplate,
 	baseTemplate,
 };
 

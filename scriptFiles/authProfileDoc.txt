@@ -1,0 +1,1223 @@
+# VibgyorNode Authentication & Profile Management Documentation
+
+## Table of Contents
+1. [Authentication Flow Overview](#authentication-flow-overview)
+2. [API Endpoints Reference](#api-endpoints-reference)
+3. [User Journey Scenarios](#user-journey-scenarios)
+4. [Response Body Formats](#response-body-formats)
+5. [Error Handling](#error-handling)
+6. [Profile Completion Flow](#profile-completion-flow)
+7. [Username Management](#username-management)
+8. [Catalog Management](#catalog-management)
+
+---
+
+## Authentication Flow Overview
+
+### Multi-Step Authentication Process
+VibgyorNode implements a **two-step authentication system**:
+
+1. **Phone OTP Authentication** (Primary)
+2. **Email OTP Verification** (Secondary - Optional)
+
+### User Registration Flow
+```
+1. Send Phone OTP → 2. Verify Phone OTP → 3. Profile Setup → 4. Email Verification (Optional)
+```
+
+### Authentication States
+- **Unregistered**: No account exists
+- **Phone Verified**: Phone number verified, profile incomplete
+- **Profile Complete**: All profile steps completed
+- **Email Verified**: Email address verified (optional)
+
+---
+
+## API Endpoints Reference
+
+### Base URLs
+- **Development**: `http://localhost:3000`
+- **User Auth**: `/user/auth/*`
+- **Username**: `/user/username/*`
+- **Catalog**: `/user/catalog/*`
+
+### Authentication Endpoints
+
+#### 1. Phone OTP Authentication
+
+##### Send Phone OTP
+```http
+POST /user/auth/send-otp
+Content-Type: application/json
+
+{
+  "phoneNumber": "7776665555",
+  "countryCode": "+91"
+}
+```
+
+**Response (New User):**
+```json
+{
+  "success": true,
+  "message": "OTP sent",
+  "data": {
+    "maskedPhone": "******5555",
+    "ttlSeconds": 300
+  }
+}
+```
+
+**Response (Existing User):**
+```json
+{
+  "success": true,
+  "message": "OTP sent",
+  "data": {
+    "maskedPhone": "******5555",
+    "ttlSeconds": 300
+  }
+}
+```
+
+##### Verify Phone OTP
+```http
+POST /user/auth/verify-otp
+Content-Type: application/json
+
+{
+  "phoneNumber": "7776665555",
+  "otp": "123456"
+}
+```
+
+**Response (First Time Login):**
+```json
+{
+  "success": true,
+  "message": "OTP verified",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "phoneNumber": "******5555",
+      "countryCode": "+91",
+      "email": "",
+      "emailVerified": false,
+      "username": "",
+      "fullName": "",
+      "role": "user",
+      "isProfileCompleted": false,
+      "isActive": true
+    },
+    "isProfileCompleted": false
+  }
+}
+```
+
+**Response (Existing User):**
+```json
+{
+  "success": true,
+  "message": "OTP verified",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "phoneNumber": "******5555",
+      "countryCode": "+91",
+      "email": "john@example.com",
+      "emailVerified": true,
+      "username": "johndoe123",
+      "fullName": "John Doe",
+      "role": "user",
+      "isProfileCompleted": true,
+      "isActive": true
+    },
+    "isProfileCompleted": true
+  }
+}
+```
+
+##### Resend Phone OTP
+```http
+POST /user/auth/resend-otp
+Content-Type: application/json
+
+{
+  "phoneNumber": "7776665555"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "OTP resent",
+  "data": {
+    "maskedPhone": "******5555",
+    "ttlSeconds": 300
+  }
+}
+```
+
+#### 2. Email OTP Verification (Optional)
+
+##### Send Email OTP
+```http
+POST /user/auth/email/send-otp
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "email": "john@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email OTP sent",
+  "data": {
+    "ttlSeconds": 300
+  }
+}
+```
+
+##### Verify Email OTP
+```http
+POST /user/auth/email/verify-otp
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "otp": "123456"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email verified",
+  "data": null
+}
+```
+
+##### Resend Email OTP
+```http
+POST /user/auth/email/resend-otp
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "email": "john@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email OTP resent",
+  "data": {
+    "email": "john@example.com",
+    "ttlSeconds": 300
+  }
+}
+```
+
+#### 3. Profile Management
+
+##### Get Current User
+```http
+GET /user/auth/me
+Authorization: Bearer <access_token>
+```
+
+**Response (Complete Profile):**
+```json
+{
+  "success": true,
+  "message": "User data retrieved successfully",
+  "data": {
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "phoneNumber": "******5555",
+      "countryCode": "+91",
+      "email": "john@example.com",
+      "emailVerified": true,
+      "username": "johndoe123",
+      "fullName": "John Doe",
+      "dob": "1995-06-15T00:00:00.000Z",
+      "bio": "Love traveling and photography",
+      "gender": "male",
+      "pronouns": "he/him",
+      "likes": ["travel", "photography", "music"],
+      "interests": ["hiking", "coding", "art"],
+      "profilePictureUrl": "https://s3.amazonaws.com/bucket/profile.jpg",
+      "idProofUrl": "https://s3.amazonaws.com/bucket/id.jpg",
+      "location": {
+        "lat": 28.6139,
+        "lng": 77.2090,
+        "city": "New Delhi",
+        "country": "India"
+      },
+      "role": "user",
+      "isProfileCompleted": true,
+      "isActive": true,
+      "verificationStatus": "approved",
+      "verificationDocument": {
+        "documentType": "id_proof",
+        "documentUrl": "https://s3.amazonaws.com/bucket/id.jpg",
+        "documentNumber": "DOC123456789",
+        "uploadedAt": "2025-01-20T10:00:00.000Z",
+        "reviewedBy": "507f1f77bcf86cd799439012",
+        "reviewedAt": "2025-01-20T11:00:00.000Z",
+        "reviewerRole": "admin"
+      },
+      "following": ["507f1f77bcf86cd799439013"],
+      "followers": ["507f1f77bcf86cd799439014"],
+      "blockedUsers": [],
+      "privacySettings": {
+        "isPrivate": false,
+        "allowFollowRequests": true,
+        "showOnlineStatus": true,
+        "allowMessages": "followers"
+      },
+      "lastLoginAt": "2025-01-20T12:00:00.000Z",
+      "createdAt": "2025-01-15T10:00:00.000Z",
+      "updatedAt": "2025-01-20T12:00:00.000Z"
+    }
+  }
+}
+```
+
+##### Get Detailed Profile
+```http
+GET /user/auth/profile
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Profile retrieved successfully",
+  "data": {
+    "id": "507f1f77bcf86cd799439011",
+    "phoneNumber": "******5555",
+    "countryCode": "+91",
+    "email": "john@example.com",
+    "emailVerified": true,
+    "username": "johndoe123",
+    "fullName": "John Doe",
+    "dob": "1995-06-15T00:00:00.000Z",
+    "bio": "Love traveling and photography",
+    "gender": "male",
+    "pronouns": "he/him",
+    "likes": ["travel", "photography", "music"],
+    "interests": ["hiking", "coding", "art"],
+    "profilePictureUrl": "https://s3.amazonaws.com/bucket/profile.jpg",
+    "idProofUrl": "https://s3.amazonaws.com/bucket/id.jpg",
+    "location": {
+      "lat": 28.6139,
+      "lng": 77.2090,
+      "city": "New Delhi",
+      "country": "India"
+    },
+    "role": "user",
+    "isProfileCompleted": true,
+    "isActive": true,
+    "verificationStatus": "approved",
+    "verificationDocument": {
+      "documentType": "id_proof",
+      "documentUrl": "https://s3.amazonaws.com/bucket/id.jpg",
+      "documentNumber": "DOC123456789",
+      "uploadedAt": "2025-01-20T10:00:00.000Z",
+      "reviewedBy": "507f1f77bcf86cd799439012",
+      "reviewedAt": "2025-01-20T11:00:00.000Z",
+      "reviewerRole": "admin"
+    },
+    "following": ["507f1f77bcf86cd799439013"],
+    "followers": ["507f1f77bcf86cd799439014"],
+    "blockedUsers": [],
+    "privacySettings": {
+      "isPrivate": false,
+      "allowFollowRequests": true,
+      "showOnlineStatus": true,
+      "allowMessages": "followers"
+    },
+    "lastLoginAt": "2025-01-20T12:00:00.000Z",
+    "createdAt": "2025-01-15T10:00:00.000Z",
+    "updatedAt": "2025-01-20T12:00:00.000Z"
+  }
+}
+```
+
+##### Update Profile
+```http
+PUT /user/auth/profile
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "fullName": "John Doe",
+  "username": "johndoe123",
+  "email": "john@example.com",
+  "dob": "1995-06-15",
+  "bio": "Love traveling and photography",
+  "gender": "male",
+  "pronouns": "he/him",
+  "likes": ["travel", "photography", "music"],
+  "interests": ["hiking", "coding", "art"],
+  "location": {
+    "lat": 28.6139,
+    "lng": 77.2090,
+    "city": "New Delhi",
+    "country": "India"
+  },
+  "step": "basic_info"
+}
+```
+
+**Response (Profile Updated):**
+```json
+{
+  "success": true,
+  "message": "Profile updated",
+  "data": {
+    "isProfileCompleted": false,
+    "profileCompletionStep": "gender",
+    "nextStep": "gender"
+  }
+}
+```
+
+**Response (Profile Complete):**
+```json
+{
+  "success": true,
+  "message": "Profile updated",
+  "data": {
+    "isProfileCompleted": true,
+    "profileCompletionStep": "completed",
+    "nextStep": "completed"
+  }
+}
+```
+
+##### Get Profile Step
+```http
+GET /user/auth/profile/step
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Profile step retrieved",
+  "data": {
+    "currentStep": "basic_info",
+    "nextStep": "gender",
+    "isCurrentStepCompleted": false,
+    "isProfileCompleted": false,
+    "stepProgress": 16
+  }
+}
+```
+
+##### Get Email Verification Status
+```http
+GET /user/auth/email/status
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Email verification status retrieved",
+  "data": {
+    "email": "john@example.com",
+    "emailVerified": false,
+    "hasPendingOtp": true,
+    "otpExpiresAt": "2025-01-20T12:05:00.000Z"
+  }
+}
+```
+
+---
+
+## Username Management
+
+### Check Username Availability
+```http
+GET /user/username/available?u=testuser123
+```
+
+**Response (Available):**
+```json
+{
+  "success": true,
+  "message": "Username availability checked",
+  "data": {
+    "username": "testuser123",
+    "normalized": "testuser123",
+    "available": true
+  }
+}
+```
+
+**Response (Taken):**
+```json
+{
+  "success": true,
+  "message": "Username availability checked",
+  "data": {
+    "username": "testuser123",
+    "normalized": "testuser123",
+    "available": false
+  }
+}
+```
+
+### Get Username Suggestions
+```http
+GET /user/username/suggest?base=testuser
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Username suggestions retrieved",
+  "data": {
+    "suggestions": [
+      "testuser",
+      "testuser1",
+      "testuser2",
+      "testuser3",
+      "testuser10",
+      "testuser11",
+      "testuser22",
+      "testuser99",
+      "testuser123",
+      "testuserx"
+    ]
+  }
+}
+```
+
+---
+
+## Catalog Management
+
+### Get All Catalogs
+```http
+GET /user/catalog
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Catalog retrieved successfully",
+  "data": {
+    "gender": [
+      "male",
+      "female",
+      "non-binary",
+      "transgender",
+      "agender",
+      "prefer-not-to-say"
+    ],
+    "pronouns": [
+      "he/him",
+      "she/her",
+      "they/them",
+      "he/they",
+      "she/they"
+    ],
+    "likes": [
+      "music",
+      "travel",
+      "movies",
+      "fitness",
+      "foodie",
+      "gaming",
+      "reading"
+    ],
+    "interests": [
+      "hiking",
+      "photography",
+      "coding",
+      "dancing",
+      "yoga",
+      "art",
+      "pets"
+    ],
+    "hereFor": [
+      "friendship",
+      "dating",
+      "networking",
+      "fun",
+      "serious-relationship",
+      "new-friends",
+      "chat"
+    ],
+    "languages": [
+      "English",
+      "Hindi",
+      "Spanish",
+      "French",
+      "German",
+      "Chinese",
+      "Japanese",
+      "Korean",
+      "Arabic",
+      "Portuguese",
+      "Russian",
+      "Italian"
+    ],
+    "version": 1
+  }
+}
+```
+
+### Get Specific Catalog
+```http
+GET /user/catalog/gender
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "List retrieved successfully",
+  "data": {
+    "listType": "gender",
+    "items": [
+      "male",
+      "female",
+      "non-binary",
+      "transgender",
+      "agender",
+      "prefer-not-to-say"
+    ],
+    "count": 6,
+    "version": 1
+  }
+}
+```
+
+### Create Catalog (Admin/SubAdmin Only)
+```http
+POST /user/catalog
+Authorization: Bearer <admin_or_subadmin_token>
+Content-Type: application/json
+
+{
+  "genderList": ["male", "female", "non-binary"],
+  "pronounList": ["he/him", "she/her", "they/them"],
+  "likeList": ["music", "travel", "movies"],
+  "interestList": ["hiking", "photography", "coding"]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Catalog created successfully",
+  "data": {
+    "id": "507f1f77bcf86cd799439015",
+    "gender": ["male", "female", "non-binary"],
+    "pronouns": ["he/him", "she/her", "they/them"],
+    "likes": ["music", "travel", "movies"],
+    "interests": ["hiking", "photography", "coding"],
+    "version": 1
+  }
+}
+```
+
+### Update Catalog (Admin/SubAdmin Only)
+```http
+PUT /user/catalog
+Authorization: Bearer <admin_or_subadmin_token>
+Content-Type: application/json
+
+{
+  "genderList": ["male", "female", "non-binary", "transgender"],
+  "pronounList": ["he/him", "she/her", "they/them", "he/they"],
+  "likeList": ["music", "travel", "movies", "fitness"],
+  "interestList": ["hiking", "photography", "coding", "dancing"]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Catalog updated successfully",
+  "data": {
+    "id": "507f1f77bcf86cd799439015",
+    "gender": ["male", "female", "non-binary", "transgender"],
+    "pronouns": ["he/him", "she/her", "they/them", "he/they"],
+    "likes": ["music", "travel", "movies", "fitness"],
+    "interests": ["hiking", "photography", "coding", "dancing"],
+    "version": 2
+  }
+}
+```
+
+### Add Items to Catalog (Admin/SubAdmin Only)
+```http
+PATCH /user/catalog/add
+Authorization: Bearer <admin_or_subadmin_token>
+Content-Type: application/json
+
+{
+  "listType": "interests",
+  "items": ["yoga", "art", "pets"]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Items added successfully",
+  "data": {
+    "listType": "interests",
+    "addedItems": ["yoga", "art", "pets"],
+    "totalItems": 10,
+    "version": 3
+  }
+}
+```
+
+### Remove Items from Catalog (Admin/SubAdmin Only)
+```http
+PATCH /user/catalog/remove
+Authorization: Bearer <admin_or_subadmin_token>
+Content-Type: application/json
+
+{
+  "listType": "interests",
+  "items": ["pets"]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Items removed successfully",
+  "data": {
+    "listType": "interests",
+    "removedItems": ["pets"],
+    "totalItems": 9,
+    "version": 4
+  }
+}
+```
+
+### Delete Catalog (Admin/SubAdmin Only)
+```http
+DELETE /user/catalog
+Authorization: Bearer <admin_or_subadmin_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Catalog deleted successfully",
+  "data": null
+}
+```
+
+---
+
+## User Journey Scenarios
+
+### Scenario 1: New User Registration
+
+#### Step 1: Phone OTP Request
+```http
+POST /user/auth/send-otp
+{
+  "phoneNumber": "7776665555",
+  "countryCode": "+91"
+}
+```
+- User enters phone number
+- System creates new user record
+- OTP sent to phone
+
+#### Step 2: Phone OTP Verification
+```http
+POST /user/auth/verify-otp
+{
+  "phoneNumber": "7776665555",
+  "otp": "123456"
+}
+```
+- User enters OTP
+- System generates JWT tokens
+- User gets access to app with incomplete profile
+
+#### Step 3: Profile Completion Flow
+```http
+PUT /user/auth/profile
+{
+  "fullName": "John Doe",
+  "username": "johndoe123",
+  "email": "john@example.com",
+  "dob": "1995-06-15",
+  "bio": "Love traveling and photography",
+  "step": "basic_info"
+}
+```
+- User completes basic info
+- System updates profile step to "gender"
+
+#### Step 4: Complete Profile Steps
+Continue updating profile with:
+- Gender selection
+- Pronouns selection
+- Likes and interests
+- ID proof upload
+- Location setting
+
+#### Step 5: Email Verification (Optional)
+```http
+POST /user/auth/email/send-otp
+{
+  "email": "john@example.com"
+}
+```
+- User adds email
+- System sends email OTP
+- User verifies email
+
+### Scenario 2: Existing User Login
+
+#### Step 1: Phone OTP Request
+```http
+POST /user/auth/send-otp
+{
+  "phoneNumber": "7776665555",
+  "countryCode": "+91"
+}
+```
+- Existing user enters phone number
+- System finds existing user
+- OTP sent to phone
+
+#### Step 2: Phone OTP Verification
+```http
+POST /user/auth/verify-otp
+{
+  "phoneNumber": "7776665555",
+  "otp": "123456"
+}
+```
+- User enters OTP
+- System generates new JWT tokens
+- User gets full access with complete profile
+
+### Scenario 3: Profile Update Flow
+
+#### Step 1: Check Current Profile
+```http
+GET /user/auth/profile/step
+```
+- Check current completion status
+- Get next required step
+
+#### Step 2: Update Profile
+```http
+PUT /user/auth/profile
+{
+  "gender": "male",
+  "step": "gender"
+}
+```
+- Update specific step
+- System advances to next step
+
+#### Step 3: Verify Completion
+```http
+GET /user/auth/profile
+```
+- Check if profile is complete
+- Access all user data
+
+### Scenario 4: Username Management
+
+#### Step 1: Check Availability
+```http
+GET /user/username/available?u=desiredusername
+```
+- Check if username is available
+- Get availability status
+
+#### Step 2: Get Suggestions (if taken)
+```http
+GET /user/username/suggest?base=desiredusername
+```
+- Get alternative suggestions
+- Choose from available options
+
+#### Step 3: Update Profile with Username
+```http
+PUT /user/auth/profile
+{
+  "username": "chosenusername"
+}
+```
+- Set chosen username
+- System validates uniqueness
+
+---
+
+## Response Body Formats
+
+### Success Response Format
+```json
+{
+  "success": true,
+  "message": "Operation completed successfully",
+  "data": {
+    // Response data here
+  }
+}
+```
+
+### Error Response Format
+```json
+{
+  "success": false,
+  "message": "Error description",
+  "error": {
+    "code": "ERROR_CODE",
+    "details": "Additional error information",
+    "timestamp": "2025-01-20T12:00:00.000Z"
+  }
+}
+```
+
+### Pagination Response Format
+```json
+{
+  "success": true,
+  "message": "Data retrieved successfully",
+  "data": {
+    "items": [],
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 5,
+      "totalItems": 50,
+      "hasNext": true,
+      "hasPrev": false,
+      "limit": 10
+    }
+  }
+}
+```
+
+---
+
+## Error Handling
+
+### Common Error Codes
+
+#### Authentication Errors
+- `INVALID_OTP`: OTP is incorrect
+- `OTP_EXPIRED`: OTP has expired
+- `OTP_NOT_REQUESTED`: OTP not sent before verification
+- `OTP_RATE_LIMIT`: Too many OTP requests
+- `EMAIL_OTP_RATE_LIMIT`: Too many email OTP requests
+
+#### Profile Errors
+- `USERNAME_TAKEN`: Username already exists
+- `INVALID_PROFILE_STEP`: Invalid profile completion step
+- `PROFILE_VALIDATION_FAILED`: Profile data validation failed
+
+#### System Errors
+- `USER_NOT_FOUND`: User does not exist
+- `UNAUTHORIZED`: Invalid or missing authentication token
+- `VALIDATION_ERROR`: Request validation failed
+- `SERVER_ERROR`: Internal server error
+
+### Error Response Examples
+
+#### Invalid OTP
+```json
+{
+  "success": false,
+  "message": "Invalid OTP",
+  "error": {
+    "code": "INVALID_OTP",
+    "details": "The provided OTP is incorrect",
+    "timestamp": "2025-01-20T12:00:00.000Z"
+  }
+}
+```
+
+#### Username Taken
+```json
+{
+  "success": false,
+  "message": "Username is taken",
+  "error": {
+    "code": "USERNAME_TAKEN",
+    "details": "The username 'johndoe123' is already in use",
+    "timestamp": "2025-01-20T12:00:00.000Z"
+  }
+}
+```
+
+#### Rate Limit Exceeded
+```json
+{
+  "success": false,
+  "message": "Please wait 45s",
+  "error": {
+    "code": "OTP_RATE_LIMIT",
+    "details": "Too many OTP requests. Please wait before requesting a new OTP",
+    "timestamp": "2025-01-20T12:00:00.000Z"
+  }
+}
+```
+
+---
+
+## Profile Completion Flow
+
+### Profile Steps Sequence
+1. **basic_info**: Full name, username, email, date of birth, bio
+2. **gender**: Gender selection from catalog
+3. **pronouns**: Pronouns selection from catalog
+4. **likes_interests**: Likes and interests from catalog
+5. **preferences**: Here for, primary language, secondary language (optional)
+6. **location**: Location information
+7. **completed**: All steps completed
+
+**Note:** id_upload is optional and not part of the required flow
+
+### Step Validation Rules
+
+#### basic_info Step
+- `fullName`: Required, non-empty string
+- `username`: Required, unique, normalized
+- `email`: Required, valid email format
+- `dob`: Required, valid date
+- `bio`: Required, non-empty string
+
+#### gender Step
+- `gender`: Required, must be from gender catalog
+
+#### pronouns Step
+- `pronouns`: Required, must be from pronouns catalog
+
+#### likes_interests Step
+- `likes`: Required, non-empty array from likes catalog
+- `interests`: Required, non-empty array from interests catalog
+
+#### preferences Step
+- `preferences.hereFor`: Required, non-empty string from hereFor catalog
+- `preferences.primaryLanguage`: Required, non-empty string from languages catalog
+- `preferences.secondaryLanguage`: Optional, string from languages catalog
+
+#### id_upload Step
+- `idProofUrl`: Optional, valid URL to uploaded document (not required for profile completion)
+
+#### location Step
+- `location.city`: Required, non-empty string
+- `location.country`: Required, non-empty string
+- `location.lat`: Optional, valid latitude
+- `location.lng`: Optional, valid longitude
+
+### Profile Completion Logic
+```javascript
+// Profile completion check
+function isStepCompleted(step, userData) {
+  switch (step) {
+    case 'basic_info':
+      return !!(userData.fullName && userData.username && 
+                userData.email && userData.dob && userData.bio);
+    case 'gender':
+      return !!userData.gender;
+    case 'pronouns':
+      return !!userData.pronouns;
+    case 'likes_interests':
+      return !!(userData.likes?.length > 0 && userData.interests?.length > 0);
+    case 'id_upload':
+      return !!userData.idProofUrl;
+    case 'location':
+      return !!(userData.location?.city && userData.location?.country);
+    case 'completed':
+      return userData.isProfileCompleted;
+    default:
+      return false;
+  }
+}
+```
+
+### Profile Progress Calculation
+```javascript
+// Progress percentage calculation
+const steps = ['basic_info', 'gender', 'pronouns', 'likes_interests', 'id_upload', 'location', 'completed'];
+const currentStepIndex = steps.indexOf(currentStep);
+const progressPercentage = Math.round((currentStepIndex / 6) * 100);
+```
+
+---
+
+## Username Management
+
+### Username Normalization
+```javascript
+function normalizeUsername(username) {
+  return String(username || '').trim().toLowerCase();
+}
+```
+
+### Username Validation Rules
+- Minimum length: 3 characters
+- Maximum length: 30 characters
+- Allowed characters: letters, numbers, underscores, dots
+- Must be unique across all users
+- Case insensitive matching
+
+### Username Suggestion Algorithm
+```javascript
+function generateCandidates(base) {
+  const normalized = base.replace(/[^a-z0-9_\.]/g, '').slice(0, 15);
+  const suffixes = ['', '1', '2', '3', '10', '11', '22', '99', '123', 'x', 'hq', '_', '.', '_1', '_2'];
+  const variants = new Set();
+  
+  // Add base variations
+  for (const suffix of suffixes) {
+    variants.add(`${normalized}${suffix}`);
+  }
+  
+  // Add random number if base is long enough
+  if (normalized.length >= 3) {
+    variants.add(`${normalized}${Math.floor(Math.random() * 90 + 10)}`);
+  }
+  
+  return Array.from(variants).filter(Boolean).slice(0, 20);
+}
+```
+
+---
+
+## Catalog Management
+
+### Catalog Structure
+```javascript
+const catalogSchema = {
+  genderList: [String],     // Gender options
+  pronounList: [String],    // Pronouns options
+  likeList: [String],       // Likes options
+  interestList: [String],   // Interests options
+  hereForList: [String],    // Purpose/intent options (NEW)
+  languageList: [String],   // Language options (NEW)
+  version: Number           // Version for cache busting
+};
+```
+
+### Default Catalog Values
+```javascript
+const DEFAULT_CATALOG = {
+  genderList: [
+    'male', 'female', 'non-binary', 'transgender', 
+    'agender', 'prefer-not-to-say'
+  ],
+  pronounList: [
+    'he/him', 'she/her', 'they/them', 'he/they', 'she/they'
+  ],
+  likeList: [
+    'music', 'travel', 'movies', 'fitness', 
+    'foodie', 'gaming', 'reading'
+  ],
+  interestList: [
+    'hiking', 'photography', 'coding', 'dancing', 
+    'yoga', 'art', 'pets'
+  ],
+  hereForList: [
+    'friendship', 'dating', 'networking', 'fun',
+    'serious-relationship', 'new-friends', 'chat'
+  ],
+  languageList: [
+    'English', 'Hindi', 'Spanish', 'French', 'German',
+    'Chinese', 'Japanese', 'Korean', 'Arabic', 
+    'Portuguese', 'Russian', 'Italian'
+  ]
+};
+```
+
+### Catalog Access Control
+- **Public Access**: All users can read catalogs
+- **Admin/SubAdmin Only**: Create, update, delete catalogs
+- **Version Control**: Automatic version increment on updates
+- **Auto-Seeding**: Default catalog created if none exists
+
+### Catalog Operations Flow
+1. **Read**: Check if catalog exists, return default if not
+2. **Create**: Validate no existing catalog, create new one
+3. **Update**: Find existing catalog, update fields, increment version
+4. **Add Items**: Validate list type, add new items, increment version
+5. **Remove Items**: Validate list type, remove items, increment version
+6. **Delete**: Remove entire catalog
+
+---
+
+## Best Practices
+
+### Authentication Security
+- Use JWT tokens with expiration
+- Implement rate limiting for OTP requests
+- Mask phone numbers in responses
+- Validate OTP expiration times
+- Use secure token storage
+
+### Profile Management
+- Validate all profile data
+- Implement step-by-step completion
+- Handle duplicate usernames gracefully
+- Provide clear error messages
+- Support partial profile updates
+
+### Username Management
+- Normalize usernames for uniqueness
+- Provide helpful suggestions
+- Validate username format
+- Handle edge cases (empty, too long, etc.)
+
+### Catalog Management
+- Version control for cache busting
+- Validate list types
+- Handle duplicate items
+- Provide default values
+- Support bulk operations
+
+### Error Handling
+- Use consistent error response format
+- Provide helpful error messages
+- Log errors for debugging
+- Handle edge cases gracefully
+- Return appropriate HTTP status codes
+
+---
+
+*Last Updated: January 2025*  
+*Version: 2.0.0*

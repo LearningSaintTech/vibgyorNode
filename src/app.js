@@ -15,6 +15,8 @@ const enhancedRealtimeService = require('./services/enhancedRealtimeService');
 const adminRoutes = require('./admin/adminRoutes/adminAuthRoutes');
 const adminUserManagementRoutes = require('./admin/adminRoutes/adminUserManagementRoutes');
 const adminSubAdminManagementRoutes = require('./admin/adminRoutes/adminSubAdminManagementRoutes');
+const adminContentModerationRoutes = require('./admin/adminRoutes/contentModerationRoutes');
+const adminAnalyticsRoutes = require('./admin/adminRoutes/analyticsRoutes');
 const subAdminRoutes = require('./subAdmin/subAdminRoutes/subAdminAuthRoutes');
 const subAdminUserManagementRoutes = require('./subAdmin/subAdminRoutes/userManagementRoutes');
 const userAuthRoutes = require('./user/userRoutes/userAuthRoutes');
@@ -24,15 +26,33 @@ const userSocialRoutes = require('./user/userRoutes/userSocialRoutes');
 const userMessageRequestRoutes = require('./user/userRoutes/userMessageRequestRoutes');
 const userStatusRoutes = require('./user/userRoutes/userStatusRoutes');
 const userFileUploadRoutes = require('./user/userRoutes/userFileUploadRoutes');
+const postRoutes = require('./user/userRoutes/postRoutes');
+const postTemplateRoutes = require('./user/userRoutes/postTemplateRoutes');
+const postCollectionRoutes = require('./user/userRoutes/postCollectionRoutes');
+const storyRoutes = require('./user/userRoutes/storyRoutes');
+const notificationRoutes = require('./user/userRoutes/notificationRoutes');
+const notificationPreferencesRoutes = require('./user/userRoutes/notificationPreferencesRoutes');
+const cookieParser = require('cookie-parser');
 
 // Enhanced routes
 const enhancedUserRoutes = require('./user/userRoutes/index');
 
 const app = express();
 
+app.use((cookieParser()));
+
 // Enhanced Middleware
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
+app.use(cors({ 
+  origin: [
+    'http://localhost:5173',
+    'https://localhost:5173',
+    'http://127.0.0.1:5173',
+    'https://127.0.0.1:5173',
+    process.env.CORS_ORIGIN
+  ].filter(Boolean), 
+  credentials: true 
+}));
 app.use(compressionMiddleware); // Add compression
 app.use(express.json({ limit: '10mb' })); // Increase JSON limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -52,6 +72,8 @@ app.use('/api/v1', (req, res, next) => {
 app.use('/admin', adminRoutes);
 app.use('/admin', adminUserManagementRoutes);
 app.use('/admin', adminSubAdminManagementRoutes);
+app.use('/admin/content-moderation', adminContentModerationRoutes);
+app.use('/admin/analytics', adminAnalyticsRoutes);
 app.use('/subadmin', subAdminRoutes);
 app.use('/subadmin', subAdminUserManagementRoutes);
 
@@ -63,6 +85,12 @@ app.use('/user/social', userSocialRoutes);
 app.use('/user/message-requests', userMessageRequestRoutes);
 app.use('/user/status', userStatusRoutes);
 app.use('/user/upload', userFileUploadRoutes);
+app.use('/user/posts', postRoutes);
+app.use('/user/post-templates', postTemplateRoutes);
+app.use('/user/post-collections', postCollectionRoutes);
+app.use('/user/stories', storyRoutes);
+app.use('/user/notifications', notificationRoutes);
+app.use('/user/notification-preferences', notificationPreferencesRoutes);
 
 // Enhanced API Routes (new optimized routes)
 app.use('/api/v1/user', enhancedUserRoutes);
@@ -140,22 +168,15 @@ app.use((req, res) => {
 // Create server (HTTPS for local dev, HTTP for production/Render)
 let server;
 
-// On Render, always use HTTP (Render handles HTTPS termination)
+// Force HTTP for local development to avoid HTTPS issues
 if (process.env.NODE_ENV === 'production') {
   server = createServer(app);
   console.log('🚀 Production mode - Using HTTP server (Render handles HTTPS)');
 } else {
-  // Local development - try HTTPS first, fallback to HTTP
-  const httpsServer = createHttpsServer(app);
-  
-  if (httpsServer) {
-    server = httpsServer;
-    console.log('🔒 Using HTTPS server for WebRTC and WebSocket');
-  } else {
-    server = createServer(app);
-    console.log('⚠️  Using HTTP server (HTTPS certificates not found)');
-    console.log('📋 WebRTC may not work properly without HTTPS');
-  }
+  // Local development - use HTTP for now (can enable HTTPS later)
+  server = createServer(app);
+  console.log('🌐 Local development - Using HTTP server');
+  console.log('💡 To enable HTTPS: run mkcert localhost 127.0.0.1 and restart server');
 }
 
 // Initialize Socket.IO

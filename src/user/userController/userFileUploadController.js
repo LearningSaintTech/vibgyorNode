@@ -23,8 +23,30 @@ async function uploadProfilePicture(req, res) {
 				const user = await User.findById(req.user?.userId);
 				if (!user) return ApiResponse.notFound(res, 'User not found');
 
-				// Upload to S3
 				const { buffer, originalname, mimetype } = req.file;
+				
+				// Check if S3 is configured
+				const BUCKET = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_NAME;
+				if (!BUCKET) {
+					console.log('[USER][UPLOAD] S3 not configured, using fallback URL');
+					// Fallback: Generate a placeholder URL or use a default avatar service
+					const fallbackUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user._id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+					
+					// Update user profile with fallback URL
+					user.profilePictureUrl = fallbackUrl;
+					await user.save();
+
+					console.log('[USER][UPLOAD] Profile picture set to fallback URL:', fallbackUrl);
+
+					return ApiResponse.success(res, {
+						url: fallbackUrl,
+						key: 'fallback',
+						filename: originalname,
+						message: 'S3 not configured, using fallback avatar'
+					}, 'Profile picture updated successfully (fallback mode)');
+				}
+
+				// Upload to S3 if configured
 				const uploadResult = await uploadBuffer({
 					buffer,
 					contentType: mimetype,
@@ -53,6 +75,26 @@ async function uploadProfilePicture(req, res) {
 
 			} catch (uploadError) {
 				console.error('[USER][UPLOAD] Upload error:', uploadError.message);
+				
+				// Fallback on S3 error
+				try {
+					const user = await User.findById(req.user?.userId);
+					if (user) {
+						const fallbackUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user._id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+						user.profilePictureUrl = fallbackUrl;
+						await user.save();
+						
+						return ApiResponse.success(res, {
+							url: fallbackUrl,
+							key: 'fallback',
+							filename: req.file?.originalname || 'unknown',
+							message: 'S3 upload failed, using fallback avatar'
+						}, 'Profile picture updated (fallback mode)');
+					}
+				} catch (fallbackError) {
+					console.error('[USER][UPLOAD] Fallback error:', fallbackError.message);
+				}
+				
 				return ApiResponse.serverError(res, 'Failed to upload profile picture');
 			}
 		});

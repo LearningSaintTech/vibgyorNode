@@ -5,7 +5,9 @@ const DEFAULT_CATALOG = {
 	genderList: ['male', 'female', 'non-binary', 'transgender', 'agender', 'prefer-not-to-say'],
 	pronounList: ['he/him', 'she/her', 'they/them', 'he/they', 'she/they'],
 	likeList: ['music', 'travel', 'movies', 'fitness', 'foodie', 'gaming', 'reading'],
-	interestList: ['hiking', 'photography', 'coding', 'dancing', 'yoga', 'art', 'pets']
+	interestList: ['hiking', 'photography', 'coding', 'dancing', 'yoga', 'art', 'pets'],
+	hereForList: ['friendship', 'dating', 'networking', 'fun', 'serious-relationship', 'new-friends', 'chat'],
+	languageList: ['English', 'Hindi', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Korean', 'Arabic', 'Portuguese', 'Russian', 'Italian']
 };
 
 // Helper function to map listType to database field name
@@ -14,7 +16,9 @@ function getFieldName(listType) {
 		'gender': 'genderList',
 		'pronouns': 'pronounList',
 		'likes': 'likeList',
-		'interests': 'interestList'
+		'interests': 'interestList',
+		'hereFor': 'hereForList',
+		'languages': 'languageList'
 	};
 	return fieldMapping[listType];
 }
@@ -52,6 +56,8 @@ async function getCatalog(req, res) {
 			pronouns: catalog.pronounList || [],
 			likes: catalog.likeList || [],
 			interests: catalog.interestList || [],
+			hereFor: catalog.hereForList || [],
+			languages: catalog.languageList || [],
 			version: catalog.version || 1,
 		};
 		
@@ -75,8 +81,8 @@ async function createCatalog(req, res) {
 		console.log('[USER][CATALOG] Request body:', req.body);
 		console.log('[USER][CATALOG] User info:', req.user);
 		
-		const { genderList, pronounList, likeList, interestList } = req.body || {};
-		console.log('[USER][CATALOG] Extracted data:', { genderList, pronounList, likeList, interestList });
+		const { genderList, pronounList, likeList, interestList, hereForList, languageList } = req.body || {};
+		console.log('[USER][CATALOG] Extracted data:', { genderList, pronounList, likeList, interestList, hereForList, languageList });
 		
 		// Check if catalog already exists
 		console.log('[USER][CATALOG] Checking for existing catalog...');
@@ -92,6 +98,8 @@ async function createCatalog(req, res) {
 			pronounList: pronounList || DEFAULT_CATALOG.pronounList,
 			likeList: likeList || DEFAULT_CATALOG.likeList,
 			interestList: interestList || DEFAULT_CATALOG.interestList,
+			hereForList: hereForList || DEFAULT_CATALOG.hereForList,
+			languageList: languageList || DEFAULT_CATALOG.languageList,
 		};
 		console.log('[USER][CATALOG] Creating catalog with data:', catalogData);
 		
@@ -104,6 +112,8 @@ async function createCatalog(req, res) {
 			pronouns: catalog.pronounList,
 			likes: catalog.likeList,
 			interests: catalog.interestList,
+			hereFor: catalog.hereForList,
+			languages: catalog.languageList,
 			version: catalog.version,
 		};
 		console.log('[USER][CATALOG] Returning response data:', responseData);
@@ -126,8 +136,8 @@ async function updateCatalog(req, res) {
 		console.log('[USER][CATALOG] Request body:', req.body);
 		console.log('[USER][CATALOG] User info:', req.user);
 		
-		const { genderList, pronounList, likeList, interestList } = req.body || {};
-		console.log('[USER][CATALOG] Extracted data:', { genderList, pronounList, likeList, interestList });
+		const { genderList, pronounList, likeList, interestList, hereForList, languageList } = req.body || {};
+		console.log('[USER][CATALOG] Extracted data:', { genderList, pronounList, likeList, interestList, hereForList, languageList });
 		
 		console.log('[USER][CATALOG] Finding existing catalog...');
 		let catalog = await UserCatalog.findOne({});
@@ -139,6 +149,8 @@ async function updateCatalog(req, res) {
 				pronounList: pronounList || DEFAULT_CATALOG.pronounList,
 				likeList: likeList || DEFAULT_CATALOG.likeList,
 				interestList: interestList || DEFAULT_CATALOG.interestList,
+				hereForList: hereForList || DEFAULT_CATALOG.hereForList,
+				languageList: languageList || DEFAULT_CATALOG.languageList,
 			};
 			console.log('[USER][CATALOG] Creating catalog with data:', catalogData);
 			catalog = await UserCatalog.create(catalogData);
@@ -151,6 +163,8 @@ async function updateCatalog(req, res) {
 				pronounList: catalog.pronounList,
 				likeList: catalog.likeList,
 				interestList: catalog.interestList,
+				hereForList: catalog.hereForList,
+				languageList: catalog.languageList,
 				version: catalog.version
 			});
 			
@@ -170,6 +184,14 @@ async function updateCatalog(req, res) {
 				console.log('[USER][CATALOG] Updating interestList from', catalog.interestList, 'to', interestList);
 				catalog.interestList = interestList;
 			}
+			if (hereForList) {
+				console.log('[USER][CATALOG] Updating hereForList from', catalog.hereForList, 'to', hereForList);
+				catalog.hereForList = hereForList;
+			}
+			if (languageList) {
+				console.log('[USER][CATALOG] Updating languageList from', catalog.languageList, 'to', languageList);
+				catalog.languageList = languageList;
+			}
 			catalog.version = (catalog.version || 1) + 1;
 			console.log('[USER][CATALOG] Incremented version to:', catalog.version);
 			
@@ -183,6 +205,8 @@ async function updateCatalog(req, res) {
 			pronouns: catalog.pronounList,
 			likes: catalog.likeList,
 			interests: catalog.interestList,
+			hereFor: catalog.hereForList,
+			languages: catalog.languageList,
 			version: catalog.version,
 		};
 		console.log('[USER][CATALOG] Returning response data:', responseData);

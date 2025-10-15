@@ -6,6 +6,8 @@ const CatalogSchema = new mongoose.Schema(
 		pronounList: [{ type: String }],
 		likeList: [{ type: String }],
 		interestList: [{ type: String }],
+		hereForList: [{ type: String }],
+		languageList: [{ type: String }],
 		version: { type: Number, default: 1 },
 	},
 	{ timestamps: true }

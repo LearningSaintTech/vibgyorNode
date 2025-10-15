@@ -1,0 +1,2931 @@
+# VibgyorNode API Documentation
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Authentication](#authentication)
+3. [System Endpoints](#system-endpoints)
+4. [Admin APIs](#admin-apis)
+5. [SubAdmin APIs](#subadmin-apis)
+6. [User APIs](#user-apis)
+7. [Search APIs](#search-apis)
+8. [Enhanced APIs (v2)](#enhanced-apis-v2)
+9. [Error Handling](#error-handling)
+10. [Rate Limiting](#rate-limiting)
+11. [WebSocket Events](#websocket-events)
+
+---
+
+## Overview
+
+VibgyorNode is a comprehensive social messaging platform with real-time communication, WebRTC calling, and content management features. The API supports three user roles: Admin, SubAdmin, and User.
+
+**Base URL:** `http://localhost:3000` (Development)  
+**API Version:** v1 (Legacy) and v2 (Enhanced)  
+**Authentication:** JWT Bearer Token  
+**Content-Type:** `application/json`  
+
+### Features
+- 🔐 Multi-role authentication (Admin, SubAdmin, User)
+- 💬 Real-time messaging with Socket.IO
+- 📞 WebRTC audio/video calling
+- 📱 Social features (follow, block, report)
+- 📄 Content management (posts, stories, collections)
+- 🔔 Notification system
+- 📊 Analytics and reporting
+- 🗂️ File upload and management
+
+---
+
+## Authentication
+
+All protected endpoints require a valid JWT token in the Authorization header:
+
+```http
+Authorization: Bearer <your_jwt_token>
+```
+
+### Token Types
+- **Admin Token**: Full system access
+- **SubAdmin Token**: Limited administrative access
+- **User Token**: Standard user access
+
+### Token Lifecycle
+
+#### Access Tokens
+- **Expiry**: 7 days (default)
+- **Purpose**: Authenticate API requests
+- **Usage**: Include in Authorization header as `Bearer <token>`
+
+#### Refresh Tokens
+- **Expiry**: 7 days (default)
+- **Purpose**: Obtain new access tokens without re-authentication
+- **Usage**: Send in request body or cookies to refresh endpoint
+
+#### Token Refresh Flow
+
+1. **Initial Login**: User authenticates (OTP verification)
+   - Receives both `accessToken` and `refreshToken`
+   - Store both tokens securely
+
+2. **Making API Requests**: Use access token
+   - Include in Authorization header
+   - If expired, proceed to step 3
+
+3. **Token Expired**: Refresh the access token
+   - Call refresh endpoint with `refreshToken`
+   - Receive new `accessToken` and `refreshToken`
+   - Update stored tokens
+
+4. **Refresh Token Expired**: Re-authenticate
+   - User must login again with OTP
+   - Receive new token pair
+
+**Refresh Endpoints:**
+- User: `POST /user/auth/update-access-token`
+- Admin: `POST /admin/auth/refresh-token`
+- SubAdmin: `POST /subadmin/auth/refresh-token`
+
+---
+
+## System Endpoints
+
+### Health Check
+```http
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "service": "vibgyorNode",
+  "version": "2.0.0",
+  "timestamp": "2025-01-XX",
+  "features": ["chat", "calls", "realtime", "webrtc"]
+}
+```
+
+### Root Endpoint
+```http
+GET /
+```
+
+**Response:**
+```json
+{
+  "message": "VibgyorNode API v2.0 is running",
+  "version": "2.0.0",
+  "docs": "/api/v1/info",
+  "health": "/health"
+}
+```
+
+### API Information
+```http
+GET /api/v1/info
+```
+
+**Response:**
+```json
+{
+  "service": "VibgyorNode API",
+  "version": "2.0.0",
+  "description": "Enhanced chat and calling platform with WebRTC support",
+  "endpoints": {
+    "chats": "/api/v1/user/chats",
+    "messages": "/api/v1/user/messages",
+    "calls": "/api/v1/user/calls",
+    "realtime": "WebSocket connection available"
+  },
+  "features": [
+    "Real-time messaging",
+    "Audio/Video calls with WebRTC",
+    "File sharing",
+    "Message reactions",
+    "Typing indicators",
+    "Online status",
+    "Call history",
+    "Message search"
+  ]
+}
+```
+
+---
+
+## Admin APIs
+
+### Authentication
+
+#### Send OTP
+```http
+POST /admin/send-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "9998887777",
+  "countryCode": "+91"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully",
+  "data": {
+    "phoneNumber": "9998887777"
+  }
+}
+```
+
+#### Verify OTP
+```http
+POST /admin/verify-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "9998887777",
+  "otp": "123456"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Admin authenticated successfully",
+  "data": {
+    "accessToken": "jwt_access_token",
+    "refreshToken": "jwt_refresh_token",
+    "admin": {
+      "_id": "admin_id",
+      "phoneNumber": "9998887777",
+      "role": "admin"
+    }
+  }
+}
+```
+
+#### Resend OTP
+```http
+POST /admin/resend-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "9998887777"
+}
+```
+
+#### Refresh Access Token
+```http
+POST /admin/auth/refresh-token
+```
+
+**Request Body:**
+```json
+{
+  "refreshToken": "jwt_refresh_token"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Token refreshed successfully",
+  "data": {
+    "accessToken": "new_jwt_access_token",
+    "refreshToken": "new_jwt_refresh_token"
+  }
+}
+```
+
+#### Get Admin Profile
+```http
+GET /admin/me
+Authorization: Bearer <admin_token>
+```
+
+### User Management
+
+#### Get All Users
+```http
+GET /admin/users?page=1&limit=10&status=active
+Authorization: Bearer <admin_token>
+```
+
+**Query Parameters:**
+- `page` (number): Page number (default: 1)
+- `limit` (number): Items per page (default: 10)
+- `status` (string): Filter by status (active/inactive)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "_id": "user_id",
+        "username": "john_doe",
+        "fullName": "John Doe",
+        "email": "john@example.com",
+        "phoneNumber": "7776665555",
+        "isActive": true,
+        "isVerified": true,
+        "createdAt": "2025-01-XX"
+      }
+    ],
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 5,
+      "totalUsers": 50,
+      "hasNext": true,
+      "hasPrev": false
+    }
+  }
+}
+```
+
+#### Get User Details
+```http
+GET /admin/users/{userId}
+Authorization: Bearer <admin_token>
+```
+
+#### Toggle User Status
+```http
+PATCH /admin/users/{userId}/status
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "isActive": false
+}
+```
+
+### User Verification
+
+#### Get Pending Verifications
+```http
+GET /admin/users/verifications/pending?page=1&limit=10
+Authorization: Bearer <admin_token>
+```
+
+#### Approve User Verification
+```http
+PATCH /admin/users/{userId}/verification/approve
+Authorization: Bearer <admin_token>
+```
+
+#### Reject User Verification
+```http
+PATCH /admin/users/{userId}/verification/reject
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "rejectionReason": "Document quality is not clear or does not match the profile information"
+}
+```
+
+### Report Management
+
+#### Get Pending Reports
+```http
+GET /admin/reports/pending?page=1&limit=10
+Authorization: Bearer <admin_token>
+```
+
+#### Get Report Details
+```http
+GET /admin/reports/{reportId}
+Authorization: Bearer <admin_token>
+```
+
+#### Update Report Status
+```http
+PATCH /admin/reports/{reportId}/status
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "status": "resolved",
+  "actionTaken": "warning",
+  "reviewNotes": "User has been warned about their behavior",
+  "priority": "medium"
+}
+```
+
+#### Get Report Statistics
+```http
+GET /admin/reports/stats
+Authorization: Bearer <admin_token>
+```
+
+### SubAdmin Management
+
+#### Get All SubAdmins
+```http
+GET /admin/subadmins?page=1&limit=10&status=active
+Authorization: Bearer <admin_token>
+```
+
+#### Get SubAdmin Details
+```http
+GET /admin/subadmins/{subAdminId}
+Authorization: Bearer <admin_token>
+```
+
+#### Toggle SubAdmin Status
+```http
+PATCH /admin/subadmins/{subAdminId}/status
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "isActive": true
+}
+```
+
+#### Get Pending SubAdmins
+```http
+GET /admin/subadmins/pending?page=1&limit=10
+Authorization: Bearer <admin_token>
+```
+
+#### Approve SubAdmin
+```http
+PATCH /admin/subadmins/{subAdminId}/approval
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "action": "approve"
+}
+```
+
+#### Reject SubAdmin
+```http
+PATCH /admin/subadmins/{subAdminId}/approval
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "action": "reject",
+  "rejectionReason": "Application does not meet requirements"
+}
+```
+
+### Content Moderation
+
+#### Get Flagged Content
+```http
+GET /admin/content-moderation/flagged
+Authorization: Bearer <admin_token>
+```
+
+#### Get Pending Reviews
+```http
+GET /admin/content-moderation/pending
+Authorization: Bearer <admin_token>
+```
+
+#### Get Moderation Queue Statistics
+```http
+GET /admin/content-moderation/queue-stats
+Authorization: Bearer <admin_token>
+```
+
+#### Get Moderation Analytics
+```http
+GET /admin/content-moderation/analytics
+Authorization: Bearer <admin_token>
+```
+
+#### Review Content
+```http
+PUT /admin/content-moderation/{moderationId}/review
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "action": "approve",
+  "notes": "Content meets guidelines"
+}
+```
+
+#### Bulk Review Content
+```http
+PUT /admin/content-moderation/bulk-review
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "moderationIds": ["mod_id_1", "mod_id_2"],
+  "action": "approve",
+  "notes": "Bulk approval"
+}
+```
+
+#### Update Content Policies
+```http
+PUT /admin/content-moderation/policies
+Authorization: Bearer <admin_token>
+```
+
+**Request Body:**
+```json
+{
+  "policies": {
+    "autoModeration": true,
+    "sensitiveContentDetection": true,
+    "spamDetection": true
+  }
+}
+```
+
+### Analytics
+
+#### Platform Overview
+```http
+GET /admin/analytics/platform-overview?period=7d
+Authorization: Bearer <admin_token>
+```
+
+**Query Parameters:**
+- `period` (string): Time period (1d, 7d, 30d, 90d)
+
+#### Content Analytics
+```http
+GET /admin/analytics/content?period=7d
+Authorization: Bearer <admin_token>
+```
+
+#### Moderation Analytics
+```http
+GET /admin/analytics/moderation?period=7d
+Authorization: Bearer <admin_token>
+```
+
+#### Engagement Analytics
+```http
+GET /admin/analytics/engagement?period=7d
+Authorization: Bearer <admin_token>
+```
+
+#### Performance Analytics
+```http
+GET /admin/analytics/performance?period=7d
+Authorization: Bearer <admin_token>
+```
+
+#### User Analytics
+```http
+GET /admin/analytics/users/{userId}?period=30d
+Authorization: Bearer <admin_token>
+```
+
+---
+
+## SubAdmin APIs
+
+### Authentication
+
+#### Send OTP
+```http
+POST /subadmin/auth/send-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "8887776666",
+  "countryCode": "+91"
+}
+```
+
+#### Verify OTP
+```http
+POST /subadmin/auth/verify-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "8887776666",
+  "otp": "123456"
+}
+```
+
+#### Resend OTP
+```http
+POST /subadmin/auth/resend-otp
+```
+
+#### Refresh Access Token
+```http
+POST /subadmin/auth/refresh-token
+```
+
+**Request Body:**
+```json
+{
+  "refreshToken": "jwt_refresh_token"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Token refreshed successfully",
+  "data": {
+    "accessToken": "new_jwt_access_token",
+    "refreshToken": "new_jwt_refresh_token"
+  }
+}
+```
+
+#### Get SubAdmin Profile
+```http
+GET /subadmin/me
+Authorization: Bearer <subadmin_token>
+```
+
+#### Update SubAdmin Profile
+```http
+PUT /subadmin/profile
+Authorization: Bearer <subadmin_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `name` (string): SubAdmin name
+- `email` (string): Email address
+- `file` (file): Profile picture (optional)
+
+### User Management (Limited)
+
+#### Get All Users
+```http
+GET /subadmin/users?page=1&limit=10&status=active
+Authorization: Bearer <subadmin_token>
+```
+
+#### Get User Statistics
+```http
+GET /subadmin/users/stats
+Authorization: Bearer <subadmin_token>
+```
+
+#### Get User Details
+```http
+GET /subadmin/users/{userId}
+Authorization: Bearer <subadmin_token>
+```
+
+#### Toggle User Status
+```http
+PATCH /subadmin/users/{userId}/status
+Authorization: Bearer <subadmin_token>
+```
+
+### User Verification (Limited)
+
+#### Get Pending Verifications
+```http
+GET /subadmin/users/verifications/pending?page=1&limit=10
+Authorization: Bearer <subadmin_token>
+```
+
+#### Approve User Verification
+```http
+PATCH /subadmin/users/{userId}/verification/approve
+Authorization: Bearer <subadmin_token>
+```
+
+#### Reject User Verification
+```http
+PATCH /subadmin/users/{userId}/verification/reject
+Authorization: Bearer <subadmin_token>
+```
+
+### Report Management (Limited)
+
+#### Get Pending Reports
+```http
+GET /subadmin/reports/pending?page=1&limit=10
+Authorization: Bearer <subadmin_token>
+```
+
+#### Get Report Details
+```http
+GET /subadmin/reports/{reportId}
+Authorization: Bearer <subadmin_token>
+```
+
+#### Update Report Status
+```http
+PATCH /subadmin/reports/{reportId}/status
+Authorization: Bearer <subadmin_token>
+```
+
+#### Get Report Statistics
+```http
+GET /subadmin/reports/stats
+Authorization: Bearer <subadmin_token>
+```
+
+---
+
+## User APIs
+
+### Authentication
+
+#### Send Phone OTP
+```http
+POST /user/auth/send-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "7776665555",
+  "countryCode": "+91"
+}
+```
+
+#### Verify Phone OTP
+```http
+POST /user/auth/verify-otp
+```
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "7776665555",
+  "otp": "123456"
+}
+```
+
+#### Resend Phone OTP
+```http
+POST /user/auth/resend-otp
+```
+
+#### Refresh Access Token
+```http
+POST /user/auth/update-access-token
+```
+
+**Request Body:**
+```json
+{
+  "refreshToken": "jwt_refresh_token"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Token refreshed successfully",
+  "data": {
+    "accessToken": "new_jwt_access_token",
+    "refreshToken": "new_jwt_refresh_token"
+  }
+}
+```
+
+**Note:** The refresh token can also be sent via cookies with the key `jwt`.
+
+#### Send Email OTP
+```http
+POST /user/auth/email/send-otp
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+#### Verify Email OTP
+```http
+POST /user/auth/email/verify-otp
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "otp": "123456"
+}
+```
+
+#### Resend Email OTP
+```http
+POST /user/auth/email/resend-otp
+Authorization: Bearer <user_token>
+```
+
+#### Get Current User
+```http
+GET /user/auth/me
+Authorization: Bearer <user_token>
+```
+
+#### Get User Profile
+```http
+GET /user/auth/profile
+Authorization: Bearer <user_token>
+```
+
+#### Update User Profile
+```http
+PUT /user/auth/profile
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "fullName": "John Doe",
+  "username": "johndoe123",
+  "email": "john@example.com",
+  "dob": "1995-06-15",
+  "bio": "Love traveling and photography",
+  "gender": "male",
+  "pronouns": "he/him",
+  "likes": ["travel", "photography", "music"],
+  "interests": ["hiking", "coding", "art"],
+  "location": {
+    "lat": 28.6139,
+    "lng": 77.2090,
+    "city": "New Delhi",
+    "country": "India"
+  }
+}
+```
+
+#### Get Profile Completion Step
+```http
+GET /user/auth/profile/step
+Authorization: Bearer <user_token>
+```
+
+#### Get Email Verification Status
+```http
+GET /user/auth/email/status
+Authorization: Bearer <user_token>
+```
+
+### Catalog Management
+
+#### Get All Catalogs
+```http
+GET /user/catalog
+```
+
+#### Get Specific Catalog
+```http
+GET /user/catalog/{listType}
+```
+
+**Path Parameters:**
+- `listType`: gender, pronouns, likes, interests
+
+#### Create Catalog (Admin/SubAdmin Only)
+```http
+POST /user/catalog
+Authorization: Bearer <admin_or_subadmin_token>
+```
+
+**Request Body:**
+```json
+{
+  "genderList": ["male", "female", "non-binary"],
+  "pronounList": ["he/him", "she/her", "they/them"],
+  "likeList": ["music", "travel", "movies"],
+  "interestList": ["hiking", "photography", "coding"]
+}
+```
+
+#### Update Catalog (Admin/SubAdmin Only)
+```http
+PUT /user/catalog
+Authorization: Bearer <admin_or_subadmin_token>
+```
+
+#### Add Items to Catalog (Admin/SubAdmin Only)
+```http
+PATCH /user/catalog/add
+Authorization: Bearer <admin_or_subadmin_token>
+```
+
+**Request Body:**
+```json
+{
+  "listType": "interests",
+  "items": ["yoga", "art", "pets"]
+}
+```
+
+#### Remove Items from Catalog (Admin/SubAdmin Only)
+```http
+PATCH /user/catalog/remove
+Authorization: Bearer <admin_or_subadmin_token>
+```
+
+#### Delete Catalog (Admin/SubAdmin Only)
+```http
+DELETE /user/catalog
+Authorization: Bearer <admin_or_subadmin_token>
+```
+
+### Username Management
+
+#### Check Username Availability
+```http
+GET /user/username/available?u=testuser123
+```
+
+**Query Parameters:**
+- `u` (string): Username to check
+
+#### Get Username Suggestions
+```http
+GET /user/username/suggest?base=testuser
+```
+
+**Query Parameters:**
+- `base` (string): Base username for suggestions
+
+### File Upload
+
+#### Upload Profile Picture
+```http
+POST /user/upload/profile-picture
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `file` (file): Image file (JPEG, PNG, WebP, GIF)
+
+#### Upload ID Proof
+```http
+POST /user/upload/id-proof
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `file` (file): Document file (PDF, JPEG, PNG)
+- `documentType` (string): id_proof, passport, driving_license
+- `documentNumber` (string): Document number (optional)
+
+### Social Features
+
+#### Send Follow Request
+```http
+POST /user/social/follow-request/{userId}
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "message": "Hi! I'd like to follow you."
+}
+```
+
+#### Accept Follow Request
+```http
+POST /user/social/follow-request/{requestId}/accept
+Authorization: Bearer <user_token>
+```
+
+#### Reject Follow Request
+```http
+POST /user/social/follow-request/{requestId}/reject
+Authorization: Bearer <user_token>
+```
+
+#### Cancel Follow Request
+```http
+DELETE /user/social/follow-request/{requestId}/cancel
+Authorization: Bearer <user_token>
+```
+
+#### Get Pending Follow Requests
+```http
+GET /user/social/follow-requests/pending?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Sent Follow Requests
+```http
+GET /user/social/follow-requests/sent?page=1&limit=20&status=all
+Authorization: Bearer <user_token>
+```
+
+#### Unfollow User
+```http
+DELETE /user/social/follow/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Followers
+```http
+GET /user/social/followers?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Following
+```http
+GET /user/social/following?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Block User
+```http
+POST /user/social/block/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Unblock User
+```http
+DELETE /user/social/block/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Blocked Users
+```http
+GET /user/social/blocked?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Report User
+```http
+POST /user/social/report/{userId}
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "reportType": "spam",
+  "description": "This user is sending spam messages and inappropriate content",
+  "contentType": "profile",
+  "contentId": "",
+  "contentUrl": ""
+}
+```
+
+#### Get User Reports
+```http
+GET /user/social/reports?page=1&limit=10
+Authorization: Bearer <user_token>
+```
+
+#### Get Social Statistics
+```http
+GET /user/social/social-stats
+Authorization: Bearer <user_token>
+```
+
+### User Status
+
+#### Update User Status
+```http
+PUT /user/status
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "isOnline": true,
+  "status": "Available",
+  "privacySettings": {
+    "showOnlineStatus": true,
+    "showLastSeen": true
+  }
+}
+```
+
+#### Get User Status
+```http
+GET /user/status/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Online Users
+```http
+GET /user/status/online
+Authorization: Bearer <user_token>
+```
+
+#### Get Recently Active Users
+```http
+GET /user/status/recent
+Authorization: Bearer <user_token>
+```
+
+#### Get Batch User Statuses
+```http
+POST /user/status/batch
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "userIds": ["user_id_1", "user_id_2"]
+}
+```
+
+#### Update Privacy Settings
+```http
+PUT /user/status/privacy
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "showOnlineStatus": true,
+  "showLastSeen": true
+}
+```
+
+#### Get Status Statistics
+```http
+GET /user/status/stats
+Authorization: Bearer <user_token>
+```
+
+#### Set User Offline
+```http
+POST /user/status/offline
+```
+
+**Request Body:**
+```json
+{
+  "token": "user_jwt_token"
+}
+```
+
+### Message Requests
+
+#### Send Message Request
+```http
+POST /user/message-requests/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Pending Requests
+```http
+GET /user/message-requests/pending
+Authorization: Bearer <user_token>
+```
+
+#### Get Sent Requests
+```http
+GET /user/message-requests/sent
+Authorization: Bearer <user_token>
+```
+
+#### Accept Message Request
+```http
+POST /user/message-requests/{requestId}/accept
+Authorization: Bearer <user_token>
+```
+
+#### Reject Message Request
+```http
+POST /user/message-requests/{requestId}/reject
+Authorization: Bearer <user_token>
+```
+
+#### Delete Message Request
+```http
+DELETE /user/message-requests/{requestId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Message Request Details
+```http
+GET /user/message-requests/{requestId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Message Request Statistics
+```http
+GET /user/message-requests/stats
+Authorization: Bearer <user_token>
+```
+
+#### Get Request Between Users
+```http
+GET /user/message-requests/between/{userId}
+Authorization: Bearer <user_token>
+```
+
+### Posts Management
+
+#### Create Post
+```http
+POST /user/posts
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `content` (string): Post content
+- `caption` (string): Post caption
+- `privacy` (string): public, followers, close_friends, private
+- `files` (file[]): Media files (optional)
+
+#### Get Feed Posts
+```http
+GET /user/posts/feed?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get User Posts
+```http
+GET /user/posts/user/{userId}?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Single Post
+```http
+GET /user/posts/{postId}
+Authorization: Bearer <user_token>
+```
+
+#### Update Post
+```http
+PUT /user/posts/{postId}
+Authorization: Bearer <user_token>
+```
+
+#### Delete Post
+```http
+DELETE /user/posts/{postId}
+Authorization: Bearer <user_token>
+```
+
+#### Search Posts
+```http
+GET /user/posts/search?q=vibgyor&page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Trending Posts
+```http
+GET /user/posts/trending?hours=24&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Posts by Hashtag
+```http
+GET /user/posts/hashtag/{hashtag}?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Like/Unlike Post
+```http
+POST /user/posts/{postId}/like
+Authorization: Bearer <user_token>
+```
+
+#### Add Comment
+```http
+POST /user/posts/{postId}/comment
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "content": "This is a great post! 👍"
+}
+```
+
+#### Get Post Comments
+```http
+GET /user/posts/{postId}/comments?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Share Post
+```http
+POST /user/posts/{postId}/share
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "shareType": "repost",
+  "shareMessage": "Check this out!"
+}
+```
+
+#### Get Post Analytics
+```http
+GET /user/posts/{postId}/analytics
+Authorization: Bearer <user_token>
+```
+
+#### Report Post
+```http
+POST /user/posts/{postId}/report
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "reason": "spam",
+  "description": "This post contains spam content"
+}
+```
+
+### Advanced Post Features
+
+#### Schedule Post
+```http
+POST /user/posts/{postId}/schedule
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "scheduledAt": "2025-01-20T10:00:00Z"
+}
+```
+
+#### Unschedule Post
+```http
+DELETE /user/posts/{postId}/schedule
+Authorization: Bearer <user_token>
+```
+
+#### Get Scheduled Posts
+```http
+GET /user/posts/scheduled
+Authorization: Bearer <user_token>
+```
+
+#### Add to Collection
+```http
+POST /user/posts/{postId}/collections
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "collectionName": "My Favorites"
+}
+```
+
+#### Remove from Collection
+```http
+DELETE /user/posts/{postId}/collections
+Authorization: Bearer <user_token>
+```
+
+#### Get Posts by Collection
+```http
+GET /user/posts/collections/{collectionName}
+Authorization: Bearer <user_token>
+```
+
+#### Add Collaborator
+```http
+POST /user/posts/{postId}/collaborators
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "userId": "collaborator_user_id"
+}
+```
+
+#### Accept Collaboration
+```http
+POST /user/posts/{postId}/collaborators/accept
+Authorization: Bearer <user_token>
+```
+
+#### Remove Collaborator
+```http
+DELETE /user/posts/{postId}/collaborators
+Authorization: Bearer <user_token>
+```
+
+#### Create Poll
+```http
+POST /user/posts/{postId}/poll
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "question": "What's your favorite color?",
+  "options": ["Red", "Blue", "Green", "Yellow"],
+  "duration": 24
+}
+```
+
+#### Vote in Poll
+```http
+POST /user/posts/{postId}/poll/vote
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "optionIndex": 0
+}
+```
+
+#### Remove Vote from Poll
+```http
+DELETE /user/posts/{postId}/poll/vote
+Authorization: Bearer <user_token>
+```
+
+#### Create Post from Template
+```http
+POST /user/posts/from-template
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "templateId": "template_id",
+  "customizations": {
+    "text": "Custom text here"
+  }
+}
+```
+
+#### Update Location
+```http
+PUT /user/posts/{postId}/location
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "lat": 28.6139,
+  "lng": 77.2090,
+  "name": "New Delhi, India"
+}
+```
+
+#### Add Mention
+```http
+POST /user/posts/{postId}/mentions
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "userId": "mentioned_user_id"
+}
+```
+
+### Stories Management
+
+#### Create Story
+```http
+POST /user/stories
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `media` (file): Story media file
+- `caption` (string): Story caption (optional)
+- `privacy` (string): Story privacy setting
+
+#### Get Stories Feed
+```http
+GET /user/stories/feed
+Authorization: Bearer <user_token>
+```
+
+#### Get User Stories
+```http
+GET /user/stories/user/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Single Story
+```http
+GET /user/stories/{storyId}
+Authorization: Bearer <user_token>
+```
+
+#### Delete Story
+```http
+DELETE /user/stories/{storyId}
+Authorization: Bearer <user_token>
+```
+
+#### Add Reaction to Story
+```http
+POST /user/stories/{storyId}/reactions
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "reaction": "👍"
+}
+```
+
+#### Remove Reaction from Story
+```http
+DELETE /user/stories/{storyId}/reactions
+Authorization: Bearer <user_token>
+```
+
+#### Reply to Story
+```http
+POST /user/stories/{storyId}/replies
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "content": "Great story!"
+}
+```
+
+#### Vote in Story Poll
+```http
+POST /user/stories/{storyId}/polls/vote
+Authorization: Bearer <user_token>
+```
+
+#### Answer Story Question
+```http
+POST /user/stories/{storyId}/questions/answer
+Authorization: Bearer <user_token>
+```
+
+#### Get Stories by Hashtag
+```http
+GET /user/stories/hashtag/{hashtag}
+Authorization: Bearer <user_token>
+```
+
+#### Get Story Analytics
+```http
+GET /user/stories/{storyId}/analytics
+Authorization: Bearer <user_token>
+```
+
+#### Report Story
+```http
+POST /user/stories/{storyId}/report
+Authorization: Bearer <user_token>
+```
+
+### Story Highlights
+
+#### Create Highlight
+```http
+POST /user/story-highlights
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `title` (string): Highlight title
+- `coverImage` (file): Cover image (optional)
+
+#### Get User Highlights
+```http
+GET /user/story-highlights/user/{userId}
+Authorization: Bearer <user_token>
+```
+
+#### Get Public Highlights
+```http
+GET /user/story-highlights/public
+Authorization: Bearer <user_token>
+```
+
+#### Search Highlights
+```http
+GET /user/story-highlights/search?q=travel
+Authorization: Bearer <user_token>
+```
+
+#### Get Single Highlight
+```http
+GET /user/story-highlights/{highlightId}
+Authorization: Bearer <user_token>
+```
+
+#### Update Highlight
+```http
+PUT /user/story-highlights/{highlightId}
+Authorization: Bearer <user_token>
+```
+
+#### Delete Highlight
+```http
+DELETE /user/story-highlights/{highlightId}
+Authorization: Bearer <user_token>
+```
+
+#### Add Story to Highlight
+```http
+POST /user/story-highlights/{highlightId}/stories
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "storyId": "story_id"
+}
+```
+
+#### Remove Story from Highlight
+```http
+DELETE /user/story-highlights/{highlightId}/stories
+Authorization: Bearer <user_token>
+```
+
+#### Reorder Stories in Highlight
+```http
+PUT /user/story-highlights/{highlightId}/stories/reorder
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "storyIds": ["story_1", "story_2", "story_3"]
+}
+```
+
+#### Update Highlight Cover Image
+```http
+PUT /user/story-highlights/{highlightId}/cover-image
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+### Post Templates
+
+#### Create Template
+```http
+POST /user/post-templates
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "name": "Travel Template",
+  "template": {
+    "content": "Just visited {{location}}! {{experience}} #travel",
+    "fields": ["location", "experience"]
+  }
+}
+```
+
+#### Get User Templates
+```http
+GET /user/post-templates/user
+Authorization: Bearer <user_token>
+```
+
+#### Get Public Templates
+```http
+GET /user/post-templates/public
+Authorization: Bearer <user_token>
+```
+
+#### Search Templates
+```http
+GET /user/post-templates/search?q=travel
+Authorization: Bearer <user_token>
+```
+
+#### Get Template
+```http
+GET /user/post-templates/{templateId}
+Authorization: Bearer <user_token>
+```
+
+#### Update Template
+```http
+PUT /user/post-templates/{templateId}
+Authorization: Bearer <user_token>
+```
+
+#### Delete Template
+```http
+DELETE /user/post-templates/{templateId}
+Authorization: Bearer <user_token>
+```
+
+#### Add Tag to Template
+```http
+POST /user/post-templates/{templateId}/tags
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "tag": "travel"
+}
+```
+
+#### Remove Tag from Template
+```http
+DELETE /user/post-templates/{templateId}/tags
+Authorization: Bearer <user_token>
+```
+
+### Post Collections
+
+#### Create Collection
+```http
+POST /user/post-collections
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "name": "My Travel Photos",
+  "description": "Collection of travel photos",
+  "privacy": "public"
+}
+```
+
+#### Get User Collections
+```http
+GET /user/post-collections/user
+Authorization: Bearer <user_token>
+```
+
+#### Get Public Collections
+```http
+GET /user/post-collections/public
+Authorization: Bearer <user_token>
+```
+
+#### Search Collections
+```http
+GET /user/post-collections/search?q=travel
+Authorization: Bearer <user_token>
+```
+
+#### Get Collection
+```http
+GET /user/post-collections/{collectionId}
+Authorization: Bearer <user_token>
+```
+
+#### Update Collection
+```http
+PUT /user/post-collections/{collectionId}
+Authorization: Bearer <user_token>
+```
+
+#### Delete Collection
+```http
+DELETE /user/post-collections/{collectionId}
+Authorization: Bearer <user_token>
+```
+
+#### Add Post to Collection
+```http
+POST /user/post-collections/{collectionId}/posts
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "postId": "post_id"
+}
+```
+
+#### Remove Post from Collection
+```http
+DELETE /user/post-collections/{collectionId}/posts
+Authorization: Bearer <user_token>
+```
+
+#### Add Collaborator to Collection
+```http
+POST /user/post-collections/{collectionId}/collaborators
+Authorization: Bearer <user_token>
+```
+
+#### Accept Collection Collaboration
+```http
+POST /user/post-collections/{collectionId}/collaborators/accept
+Authorization: Bearer <user_token>
+```
+
+#### Remove Collection Collaborator
+```http
+DELETE /user/post-collections/{collectionId}/collaborators
+Authorization: Bearer <user_token>
+```
+
+#### Add Tag to Collection
+```http
+POST /user/post-collections/{collectionId}/tags
+Authorization: Bearer <user_token>
+```
+
+#### Remove Tag from Collection
+```http
+DELETE /user/post-collections/{collectionId}/tags
+Authorization: Bearer <user_token>
+```
+
+### Notifications
+
+#### Get Notifications
+```http
+GET /user/notifications?page=1&limit=20&status=all&type=all&priority=all
+Authorization: Bearer <user_token>
+```
+
+**Query Parameters:**
+- `page` (number): Page number
+- `limit` (number): Items per page
+- `status` (string): all, read, unread
+- `type` (string): all, message, follow, like, comment
+- `priority` (string): all, high, medium, low
+
+#### Get Unread Count
+```http
+GET /user/notifications/unread-count
+Authorization: Bearer <user_token>
+```
+
+#### Get Single Notification
+```http
+GET /user/notifications/{notificationId}
+Authorization: Bearer <user_token>
+```
+
+#### Mark Notification as Read
+```http
+PUT /user/notifications/{notificationId}/read
+Authorization: Bearer <user_token>
+```
+
+#### Mark Notification as Unread
+```http
+PUT /user/notifications/{notificationId}/unread
+Authorization: Bearer <user_token>
+```
+
+#### Archive Notification
+```http
+PUT /user/notifications/{notificationId}/archive
+Authorization: Bearer <user_token>
+```
+
+#### Delete Notification
+```http
+DELETE /user/notifications/{notificationId}
+Authorization: Bearer <user_token>
+```
+
+#### Mark All as Read
+```http
+PUT /user/notifications/read-all
+Authorization: Bearer <user_token>
+```
+
+#### Record Notification Click
+```http
+POST /user/notifications/{notificationId}/click
+Authorization: Bearer <user_token>
+```
+
+### Notification Preferences
+
+#### Get Notification Preferences
+```http
+GET /user/notification-preferences
+Authorization: Bearer <user_token>
+```
+
+#### Update Notification Preferences
+```http
+PUT /user/notification-preferences
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "globalSettings": {
+    "enableNotifications": true,
+    "quietHours": {
+      "enabled": true,
+      "start": "22:00",
+      "end": "08:00"
+    }
+  },
+  "channels": {
+    "inApp": { "enabled": true },
+    "push": { "enabled": true },
+    "email": { "enabled": false },
+    "sms": { "enabled": false }
+  },
+  "notificationTypes": {
+    "message": { "enabled": true, "channels": ["inApp", "push"] },
+    "follow": { "enabled": true, "channels": ["inApp"] },
+    "like": { "enabled": false }
+  },
+  "advanced": {
+    "groupSimilarNotifications": true,
+    "showPreview": true
+  }
+}
+```
+
+#### Update Global Settings
+```http
+PUT /user/notification-preferences/global
+Authorization: Bearer <user_token>
+```
+
+#### Update Channel Preferences
+```http
+PUT /user/notification-preferences/channels/{channel}
+Authorization: Bearer <user_token>
+```
+
+**Path Parameters:**
+- `channel`: inApp, push, email, sms
+
+#### Update Notification Type Preferences
+```http
+PUT /user/notification-preferences/types/{type}
+Authorization: Bearer <user_token>
+```
+
+#### Update Advanced Settings
+```http
+PUT /user/notification-preferences/advanced
+Authorization: Bearer <user_token>
+```
+
+#### Reset to Defaults
+```http
+POST /user/notification-preferences/reset
+Authorization: Bearer <user_token>
+```
+
+#### Test Notification
+```http
+GET /user/notification-preferences/test/{type}?channel=inApp
+Authorization: Bearer <user_token>
+```
+
+#### Get Preferences Summary
+```http
+GET /user/notification-preferences/summary
+Authorization: Bearer <user_token>
+```
+
+## Search APIs
+
+### Search
+
+#### Search All Categories
+```http
+GET /api/v1/user/search?q={keyword}&filter={filter}&page={page}&limit={limit}
+Authorization: Bearer <user_token>
+```
+
+**Query Parameters:**
+- `q` (string): Search keyword
+- `filter` (string): Filter type - `all`, `people`, `posts`, `hashtags`, `location`
+- `page` (number): Page number (default: 1)
+- `limit` (number): Results per page (default: 20, max: 100)
+
+**Example:**
+```http
+GET /api/v1/user/search?q=john travel&filter=all&page=1&limit=20
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "people": {
+      "results": [
+        {
+          "_id": "user_id",
+          "username": "john_doe",
+          "fullName": "John Doe",
+          "profilePictureUrl": "https://...",
+          "verificationStatus": "approved"
+        }
+      ],
+      "count": 1
+    },
+    "posts": {
+      "results": [
+        {
+          "_id": "post_id",
+          "content": "Amazing travel experience...",
+          "author": {
+            "_id": "user_id",
+            "username": "traveler",
+            "fullName": "Travel Enthusiast"
+          },
+          "publishedAt": "2024-01-15T10:30:00Z"
+        }
+      ],
+      "count": 1
+    },
+    "hashtags": {
+      "results": [],
+      "count": 0
+    },
+    "location": {
+      "results": [],
+      "count": 0
+    },
+    "totalResults": 2
+  }
+}
+```
+
+#### Search People
+```http
+GET /api/v1/user/search/people?q={keyword}&page={page}&limit={limit}
+Authorization: Bearer <user_token>
+```
+
+**Search Fields:** `fullName`, `username`
+
+**Example:**
+```http
+GET /api/v1/user/search/people?q=john&page=1&limit=20
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "type": "people",
+    "results": [
+      {
+        "_id": "user_id",
+        "username": "john_doe",
+        "fullName": "John Doe",
+        "profilePictureUrl": "https://...",
+        "verificationStatus": "approved"
+      }
+    ],
+    "count": 1,
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 1,
+      "pages": 1
+    }
+  }
+}
+```
+
+#### Search Posts
+```http
+GET /api/v1/user/search/posts?q={keyword}&page={page}&limit={limit}
+Authorization: Bearer <user_token>
+```
+
+**Search Fields:** `content`, `caption`, `hashtags`, `location.name`, `mentions`
+
+**Example:**
+```http
+GET /api/v1/user/search/posts?q=travel adventure&page=1&limit=20
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "type": "posts",
+    "results": [
+      {
+        "_id": "post_id",
+        "content": "Amazing travel experience...",
+        "caption": "Travel memories",
+        "hashtags": ["travel", "adventure"],
+        "location": {
+          "name": "Mumbai",
+          "city": "Mumbai",
+          "country": "India"
+        },
+        "author": {
+          "_id": "user_id",
+          "username": "traveler",
+          "fullName": "Travel Enthusiast",
+          "profilePictureUrl": "https://...",
+          "verificationStatus": "approved"
+        },
+        "likesCount": 25,
+        "commentsCount": 5,
+        "publishedAt": "2024-01-15T10:30:00Z"
+      }
+    ],
+    "count": 1,
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 1,
+      "pages": 1
+    }
+  }
+}
+```
+
+#### Search Hashtags
+```http
+GET /api/v1/user/search/hashtags?q={hashtag}&page={page}&limit={limit}
+Authorization: Bearer <user_token>
+```
+
+**Search Fields:** `hashtags`
+
+**Example:**
+```http
+GET /api/v1/user/search/hashtags?q=#adventure&page=1&limit=20
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "type": "hashtags",
+    "results": [
+      {
+        "_id": "post_id",
+        "content": "Amazing adventure...",
+        "hashtags": ["adventure", "travel"],
+        "author": {
+          "_id": "user_id",
+          "username": "adventurer",
+          "fullName": "Adventure Seeker"
+        },
+        "publishedAt": "2024-01-15T10:30:00Z"
+      }
+    ],
+    "count": 1,
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 1,
+      "pages": 1
+    }
+  }
+}
+```
+
+#### Search Location
+```http
+GET /api/v1/user/search/location?q={location}&page={page}&limit={limit}
+Authorization: Bearer <user_token>
+```
+
+**Search Fields:** `location.name`, `location.address`, `location.city`, `location.country`
+
+**Example:**
+```http
+GET /api/v1/user/search/location?q=mumbai&page=1&limit=20
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "type": "location",
+    "results": [
+      {
+        "_id": "post_id",
+        "content": "Beautiful sunset in Mumbai...",
+        "location": {
+          "name": "Marine Drive",
+          "address": "Marine Drive, Mumbai",
+          "city": "Mumbai",
+          "country": "India",
+          "coordinates": {
+            "lat": 19.0225,
+            "lng": 72.8424
+          }
+        },
+        "author": {
+          "_id": "user_id",
+          "username": "mumbai_lover",
+          "fullName": "Mumbai Explorer"
+        },
+        "publishedAt": "2024-01-15T10:30:00Z"
+      }
+    ],
+    "count": 1,
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 1,
+      "pages": 1
+    }
+  }
+}
+```
+
+**Search Features:**
+- **Privacy Aware**: Only shows public content and active users
+- **Blocking Integration**: Excludes blocked users and their content
+- **Case Insensitive**: All searches are case-insensitive
+- **Partial Matching**: Supports partial keyword matching
+- **Pagination**: Full pagination support for all endpoints
+- **Performance Optimized**: Uses database indexes and lean queries
+
+**Privacy Rules:**
+- **People**: Only active users, excludes blocked relationships
+- **Posts/Hashtags/Location**: Only public, published posts from non-blocked users
+- **No Complex Privacy**: No followers-only or close friends access
+
+---
+
+## Enhanced APIs (v2)
+
+The enhanced APIs provide improved performance, better validation, and additional features.
+
+### Enhanced Chat Management
+
+#### Create or Get Chat
+```http
+POST /api/v1/user/chats
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "otherUserId": "user_id"
+}
+```
+
+#### Get User Chats
+```http
+GET /api/v1/user/chats?page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Search Chats
+```http
+GET /api/v1/user/chats/search?q=john&page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Chat Statistics
+```http
+GET /api/v1/user/chats/stats
+Authorization: Bearer <user_token>
+```
+
+#### Get Chat Details
+```http
+GET /api/v1/user/chats/{chatId}
+Authorization: Bearer <user_token>
+```
+
+#### Update Chat Settings
+```http
+PUT /api/v1/user/chats/{chatId}/settings
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "isArchived": false,
+  "isPinned": true,
+  "isMuted": false
+}
+```
+
+#### Delete Chat
+```http
+DELETE /api/v1/user/chats/{chatId}
+Authorization: Bearer <user_token>
+```
+
+#### Join Chat Room
+```http
+POST /api/v1/user/chats/{chatId}/join
+Authorization: Bearer <user_token>
+```
+
+#### Leave Chat Room
+```http
+POST /api/v1/user/chats/{chatId}/leave
+Authorization: Bearer <user_token>
+```
+
+### Enhanced Message Management
+
+#### Send Message
+```http
+POST /api/v1/user/messages
+Authorization: Bearer <user_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `chatId` (string): Chat ID
+- `type` (string): text, audio, video, image, document, system, forwarded
+- `content` (string): Message content
+- `replyTo` (string): Message ID to reply to (optional)
+- `forwardedFrom` (string): Original message ID (optional)
+- `file` (file): Media file (optional)
+
+#### Get Chat Messages
+```http
+GET /api/v1/user/messages/chat/{chatId}?page=1&limit=50
+Authorization: Bearer <user_token>
+```
+
+#### Mark Messages as Read
+```http
+PUT /api/v1/user/messages/chat/{chatId}/read
+Authorization: Bearer <user_token>
+```
+
+#### Get Chat Media
+```http
+GET /api/v1/user/messages/chat/{chatId}/media?type=image&page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Search Messages
+```http
+GET /api/v1/user/messages/chat/{chatId}/search?q=hello&page=1&limit=20
+Authorization: Bearer <user_token>
+```
+
+#### Get Message Details
+```http
+GET /api/v1/user/messages/{messageId}
+Authorization: Bearer <user_token>
+```
+
+#### Edit Message
+```http
+PUT /api/v1/user/messages/{messageId}
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "content": "Updated message content"
+}
+```
+
+#### Delete Message
+```http
+DELETE /api/v1/user/messages/{messageId}
+Authorization: Bearer <user_token>
+```
+
+#### React to Message
+```http
+POST /api/v1/user/messages/{messageId}/reactions
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "emoji": "👍"
+}
+```
+
+#### Remove Reaction
+```http
+DELETE /api/v1/user/messages/{messageId}/reactions
+Authorization: Bearer <user_token>
+```
+
+#### Forward Message
+```http
+POST /api/v1/user/messages/{messageId}/forward
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "targetChatId": "target_chat_id"
+}
+```
+
+### Enhanced Call Management
+
+#### Initiate Call
+```http
+POST /api/v1/user/calls
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "chatId": "chat_id",
+  "type": "video"
+}
+```
+
+#### Get Call Statistics
+```http
+GET /api/v1/user/calls/stats?startDate=2025-01-01&endDate=2025-01-31
+Authorization: Bearer <user_token>
+```
+
+#### Get Call Status
+```http
+GET /api/v1/user/calls/{callId}/status
+Authorization: Bearer <user_token>
+```
+
+#### Accept Call
+```http
+POST /api/v1/user/calls/{callId}/accept
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "signalingData": {
+    "answer": "webrtc_answer_sdp"
+  }
+}
+```
+
+#### Reject Call
+```http
+POST /api/v1/user/calls/{callId}/reject
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "reason": "Busy right now"
+}
+```
+
+#### End Call
+```http
+POST /api/v1/user/calls/{callId}/end
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "reason": "user_ended"
+}
+```
+
+#### Update Call Settings
+```http
+PUT /api/v1/user/calls/{callId}/settings
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "isMuted": true,
+  "isVideoEnabled": false,
+  "isScreenSharing": false,
+  "isSpeakerEnabled": true,
+  "audioInput": "default",
+  "audioOutput": "default",
+  "videoInput": "default"
+}
+```
+
+#### Handle WebRTC Signaling
+```http
+POST /api/v1/user/calls/{callId}/signaling
+Authorization: Bearer <user_token>
+```
+
+**Request Body:**
+```json
+{
+  "type": "offer",
+  "data": {
+    "type": "offer",
+    "sdp": "webrtc_offer_sdp"
+  }
+}
+```
+
+#### Get Call History
+```http
+GET /api/v1/user/calls/chat/{chatId}/history?page=1&limit=20&type=video&startDate=2025-01-01&endDate=2025-01-31
+Authorization: Bearer <user_token>
+```
+
+#### Get Active Call
+```http
+GET /api/v1/user/calls/chat/{chatId}/active
+Authorization: Bearer <user_token>
+```
+
+#### Force Cleanup Calls
+```http
+POST /api/v1/user/calls/chat/{chatId}/cleanup
+Authorization: Bearer <user_token>
+```
+
+---
+
+## Error Handling
+
+### Standard Error Response Format
+
+```json
+{
+  "success": false,
+  "message": "Error description",
+  "error": {
+    "code": "ERROR_CODE",
+    "details": "Additional error information",
+    "timestamp": "2025-01-XX"
+  }
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `INVALID_TOKEN` | 401 | Invalid or expired JWT token |
+| `TOKEN_EXPIRED` | 401 | Access token has expired (use refresh token) |
+| `REFRESH_TOKEN_EXPIRED` | 401 | Refresh token expired (re-authentication required) |
+| `UNAUTHORIZED` | 401 | Authentication required |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `VALIDATION_ERROR` | 400 | Request validation failed |
+| `DUPLICATE_ENTRY` | 409 | Resource already exists |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
+| `OTP_EXPIRED` | 400 | OTP has expired |
+| `OTP_INVALID` | 400 | Invalid OTP provided |
+| `USERNAME_TAKEN` | 409 | Username already taken |
+| `FILE_TOO_LARGE` | 413 | File size exceeds limit |
+| `UNSUPPORTED_FILE_TYPE` | 400 | File type not supported |
+| `SERVER_ERROR` | 500 | Internal server error |
+
+### Error Examples
+
+#### Authentication Error
+```json
+{
+  "success": false,
+  "message": "Authentication failed",
+  "error": {
+    "code": "INVALID_TOKEN",
+    "details": "Token has expired",
+    "timestamp": "2025-01-XX"
+  }
+}
+```
+
+#### Token Expired Error
+```json
+{
+  "success": false,
+  "message": "Access token expired",
+  "error": {
+    "code": "TOKEN_EXPIRED",
+    "details": "Please refresh your access token",
+    "timestamp": "2025-01-XX"
+  }
+}
+```
+
+**Recommended Action**: Call the refresh token endpoint with your refresh token to get a new access token.
+
+#### Refresh Token Expired Error
+```json
+{
+  "success": false,
+  "message": "Refresh token expired",
+  "error": {
+    "code": "REFRESH_TOKEN_EXPIRED",
+    "details": "Please login again",
+    "timestamp": "2025-01-XX"
+  }
+}
+```
+
+**Recommended Action**: Redirect user to login page for re-authentication.
+
+#### Validation Error
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": {
+      "username": "Username must be at least 3 characters",
+      "email": "Invalid email format"
+    },
+    "timestamp": "2025-01-XX"
+  }
+}
+```
+
+#### Rate Limit Error
+```json
+{
+  "success": false,
+  "message": "Rate limit exceeded",
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "details": "Too many OTP requests. Please try again in 60 seconds",
+    "timestamp": "2025-01-XX"
+  }
+}
+```
+
+---
+
+## Rate Limiting
+
+### Rate Limits
+
+| Endpoint Type | Limit | Window |
+|---------------|-------|--------|
+| OTP Requests | 5 requests | 1 minute |
+| API Calls | 1000 requests | 1 hour |
+| File Uploads | 10 uploads | 1 hour |
+| Message Sending | 100 messages | 1 minute |
+| Call Initiation | 10 calls | 1 hour |
+
+### Rate Limit Headers
+
+```http
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 999
+X-RateLimit-Reset: 1640995200
+```
+
+---
+
+## WebSocket Events
+
+### Connection
+
+Connect to WebSocket with authentication:
+
+```javascript
+const socket = io('ws://localhost:3000', {
+  auth: {
+    token: 'your_jwt_token'
+  }
+});
+```
+
+### Events
+
+#### Client to Server Events
+
+| Event | Description | Data |
+|-------|-------------|------|
+| `join_chat` | Join a chat room | `{ chatId }` |
+| `leave_chat` | Leave a chat room | `{ chatId }` |
+| `typing_start` | Start typing indicator | `{ chatId }` |
+| `typing_stop` | Stop typing indicator | `{ chatId }` |
+| `call_initiate` | Initiate a call | `{ chatId, type, callId }` |
+| `call_accept` | Accept a call | `{ callId }` |
+| `call_reject` | Reject a call | `{ callId, reason }` |
+| `call_end` | End a call | `{ callId, reason }` |
+| `webrtc_signal` | WebRTC signaling | `{ callId, type, data }` |
+
+#### Server to Client Events
+
+| Event | Description | Data |
+|-------|-------------|------|
+| `message_received` | New message received | `{ message, chatId }` |
+| `message_updated` | Message was updated | `{ messageId, content }` |
+| `message_deleted` | Message was deleted | `{ messageId }` |
+| `typing_start` | User started typing | `{ userId, chatId }` |
+| `typing_stop` | User stopped typing | `{ userId, chatId }` |
+| `user_online` | User came online | `{ userId, user }` |
+| `user_offline` | User went offline | `{ userId }` |
+| `call_incoming` | Incoming call | `{ callId, caller, type }` |
+| `call_accepted` | Call was accepted | `{ callId, participant }` |
+| `call_rejected` | Call was rejected | `{ callId, reason }` |
+| `call_ended` | Call ended | `{ callId, duration, reason }` |
+| `webrtc_signal` | WebRTC signaling data | `{ callId, type, data }` |
+| `notification` | New notification | `{ notification }` |
+
+### WebSocket Event Examples
+
+#### Join Chat Room
+```javascript
+socket.emit('join_chat', { chatId: 'chat_123' });
+```
+
+#### Send Typing Indicator
+```javascript
+socket.emit('typing_start', { chatId: 'chat_123' });
+// Stop typing after 3 seconds
+setTimeout(() => {
+  socket.emit('typing_stop', { chatId: 'chat_123' });
+}, 3000);
+```
+
+#### Handle New Message
+```javascript
+socket.on('message_received', (data) => {
+  console.log('New message:', data.message);
+  // Update UI with new message
+});
+```
+
+#### Initiate Call
+```javascript
+socket.emit('call_initiate', {
+  chatId: 'chat_123',
+  type: 'video',
+  callId: 'call_456'
+});
+```
+
+#### Handle Incoming Call
+```javascript
+socket.on('call_incoming', (data) => {
+  console.log('Incoming call from:', data.caller);
+  // Show call UI
+});
+```
+
+#### WebRTC Signaling
+```javascript
+// Send offer
+socket.emit('webrtc_signal', {
+  callId: 'call_456',
+  type: 'offer',
+  data: offer
+});
+
+// Receive answer
+socket.on('webrtc_signal', (data) => {
+  if (data.type === 'answer') {
+    // Handle WebRTC answer
+    peerConnection.setRemoteDescription(data.data);
+  }
+});
+```
+
+---
+
+## File Upload Guidelines
+
+### Supported File Types
+
+#### Images
+- **Formats**: JPEG, PNG, WebP, GIF
+- **Max Size**: 10MB
+- **Recommended**: 1920x1080 or smaller
+
+#### Videos
+- **Formats**: MP4, QuickTime, AVI, MOV
+- **Max Size**: 100MB
+- **Recommended**: 1080p or lower
+
+#### Audio
+- **Formats**: MP3, WAV, M4A, MPEG
+- **Max Size**: 50MB
+- **Recommended**: 320kbps or lower
+
+#### Documents
+- **Formats**: PDF, DOC, DOCX, TXT, ZIP, RAR
+- **Max Size**: 25MB
+
+### Upload Endpoints
+
+#### Profile Picture
+```http
+POST /user/upload/profile-picture
+Content-Type: multipart/form-data
+Authorization: Bearer <user_token>
+```
+
+#### ID Proof
+```http
+POST /user/upload/id-proof
+Content-Type: multipart/form-data
+Authorization: Bearer <user_token>
+```
+
+#### Message Attachments
+```http
+POST /api/v1/user/messages
+Content-Type: multipart/form-data
+Authorization: Bearer <user_token>
+```
+
+#### Post Media
+```http
+POST /user/posts
+Content-Type: multipart/form-data
+Authorization: Bearer <user_token>
+```
+
+### Upload Response Format
+
+```json
+{
+  "success": true,
+  "message": "File uploaded successfully",
+  "data": {
+    "fileId": "file_id",
+    "fileName": "image.jpg",
+    "fileSize": 1024000,
+    "fileType": "image/jpeg",
+    "fileUrl": "https://s3.amazonaws.com/bucket/path/image.jpg",
+    "thumbnailUrl": "https://s3.amazonaws.com/bucket/path/thumb_image.jpg"
+  }
+}
+```
+
+---
+
+## Best Practices
+
+### Authentication
+- Always include the Bearer token in the Authorization header
+- Store both access and refresh tokens securely (use httpOnly cookies or secure storage)
+- Implement automatic token refresh when access token expires
+- Handle 401 errors gracefully:
+  - If access token expired: Call refresh endpoint
+  - If refresh token expired: Redirect to login
+- Never expose tokens in URLs or logs
+- Clear tokens on logout
+
+### Error Handling
+- Check the `success` field in responses
+- Handle specific error codes appropriately
+- Implement retry logic for transient errors
+
+### Rate Limiting
+- Implement exponential backoff for rate-limited requests
+- Cache responses when possible
+- Monitor rate limit headers
+
+### File Uploads
+- Validate file types and sizes on the client
+- Show upload progress to users
+- Handle upload failures gracefully
+
+### Real-time Features
+- Implement connection retry logic for WebSocket
+- Handle offline/online states
+- Buffer messages when offline
+
+### Pagination
+- Use consistent page and limit parameters
+- Implement infinite scroll or load more buttons
+- Cache paginated results
+
+### Security
+- Never expose sensitive data in client-side code
+- Validate all user inputs
+- Use HTTPS in production
+- Implement proper CORS policies
+
+---
+
+## Support
+
+For API support and questions:
+- **Documentation**: This document
+- **Health Check**: `GET /health`
+- **API Info**: `GET /api/v1/info`
+
+---
+
+*Last Updated: January 2025*  
+*API Version: 2.0.0*

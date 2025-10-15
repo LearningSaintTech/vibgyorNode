@@ -70,8 +70,8 @@ process.on('unhandledRejection', (reason, promise) => {
 		console.log('✅ Database connected successfully');
 		
 		// Start server with error handling
-		// Always use 0.0.0.0 to allow external connections (required for Render)
-		const host = '0.0.0.0';
+		// Use localhost for development, 0.0.0.0 for production (Render)
+		const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 		
 		server.listen(PORT, host, () => {
 			console.log('🚀 VibgyorNode v2.0 Server Started!');
@@ -79,7 +79,7 @@ process.on('unhandledRejection', (reason, promise) => {
 			console.log(`🔌 WebSocket available at: ws://${host}:${PORT}`);
 			console.log(`📋 API Info: http://${host}:${PORT}/api/v1/info`);
 			console.log(`❤️  Health Check: http://${host}:${PORT}/health`);
-			console.log(`🌐 External Access: http://0.0.0.0:${PORT}`);
+			console.log(`🌐 Local Access: http://localhost:${PORT}`);
 			console.log('');
 			console.log('🎯 Enhanced Features Available:');
 			console.log('   • Real-time messaging with Socket.IO');
