@@ -3,23 +3,47 @@
   Populates database with comprehensive demo data for testing all features
   
   Usage:
-  node scriptFiles/seed.js --clear=true --users=50 --chats=100 --messages=500 --calls=30
-  node scriptFiles/seed.js --clear=false --users=10 --chats=20 --messages=100 --calls=5
+  node scriptFiles/seed.js --clear=true (uses default: 100 users, each with 3+ posts)
+  node scriptFiles/seed.js --clear=true --users=150 --posts=750
+  node scriptFiles/seed.js --clear=false --users=50 --chats=100 --messages=500 --calls=30
+  
+  Default Configuration:
+  - 100 users (each user gets minimum 3 posts)
+  - 200 chats, 1000 messages, 75 calls
+  - 150 follow requests, 125 message requests, 40 reports
+  - 500 posts (distributed: 3 per user + extras randomly)
+  - 50 post templates, 75 post collections
+  
+  Available Parameters:
+  --clear: Clear existing data (true/false, default: false)
+  --users: Number of users to create (default: 100)
+  --chats: Number of chats to create (default: 200)
+  --messages: Number of messages to create (default: 1000)
+  --calls: Number of calls to create (default: 75)
+  --followRequests: Number of follow requests (default: 150)
+  --messageRequests: Number of message requests (default: 125)
+  --reports: Number of user reports (default: 40)
+  --posts: Number of posts to create (default: 500, min 3 per user)
+  --postTemplates: Number of post templates (default: 50)
+  --postCollections: Number of post collections (default: 75)
 */
 
 require('dotenv').config();
-const { connectToDatabase, disconnectFromDatabase } = require('../vibgyor-backend/src/dbConfig/db');
+const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
 
 // Import models
-const Admin = require('../vibgyor-backend/src/admin/adminModel/adminModel');
-const SubAdmin = require('../vibgyor-backend/src/subAdmin/subAdminModel/subAdminAuthModel');
-const User = require('../vibgyor-backend/src/user/userModel/userAuthModel');
-const Chat = require('../vibgyor-backend/src/user/userModel/chatModel');
-const Message = require('../vibgyor-backend/src/user/userModel/messageModel');
-const Call = require('../vibgyor-backend/src/user/userModel/callModel');
-const FollowRequest = require('../vibgyor-backend/src/user/userModel/followRequestModel');
-const MessageRequest = require('../vibgyor-backend/src/user/userModel/messageRequestModel');
-const UserReport = require('../vibgyor-backend/src/user/userModel/userReportModel');
+const Admin = require('../src/admin/adminModel/adminModel');
+const SubAdmin = require('../src/subAdmin/subAdminModel/subAdminAuthModel');
+const User = require('../src/user/userModel/userAuthModel');
+const Chat = require('../src/user/userModel/chatModel');
+const Message = require('../src/user/userModel/messageModel');
+const Call = require('../src/user/userModel/callModel');
+const FollowRequest = require('../src/user/userModel/followRequestModel');
+const MessageRequest = require('../src/user/userModel/messageRequestModel');
+const UserReport = require('../src/user/userModel/userReportModel');
+const Post = require('../src/user/userModel/postModel');
+const PostTemplate = require('../src/user/userModel/postTemplateModel');
+const PostCollection = require('../src/user/userModel/postCollectionModel');
 
 // Demo data generators
 const { faker } = require('@faker-js/faker');
@@ -27,13 +51,16 @@ const { faker } = require('@faker-js/faker');
 // Configuration
 const DEFAULT_CONFIG = {
   clear: false,
-  users: 20,
-  chats: 40,
-  messages: 200,
-  calls: 15,
-  followRequests: 30,
-  messageRequests: 25,
-  reports: 8
+  users: 100,
+  chats: 200,
+  messages: 1000,
+  calls: 75,
+  followRequests: 150,
+  messageRequests: 125,
+  reports: 40,
+  posts: 500,
+  postTemplates: 50,
+  postCollections: 75
 };
 
 // Parse command line arguments
@@ -127,6 +154,49 @@ const SAMPLE_CALL_REASONS = [
   'user_ended', 'user_rejected', 'no_answer', 'busy', 'network_error', 'timeout'
 ];
 
+const SAMPLE_POST_CONTENT = [
+  'Just had an amazing day at the beach! 🌊',
+  'Working on some exciting new projects 💻',
+  'Beautiful sunset today! 🌅',
+  'Coffee and coding - perfect combination ☕',
+  'Weekend vibes are the best! 🎉',
+  'Learning something new every day 📚',
+  'Nature never fails to amaze me 🌿',
+  'Great workout session today! 💪',
+  'Food photography is my new passion 📸',
+  'Travel memories that last forever ✈️',
+  'Music is the language of the soul 🎵',
+  'Art is everywhere if you look closely 🎨',
+  'Friends make everything better 👫',
+  'Technology is changing the world 🚀',
+  'Books are windows to other worlds 📖',
+  'Cooking is an art form 👨‍🍳',
+  'Fitness is not just physical, it\'s mental 🧠',
+  'Photography captures moments in time 📷',
+  'Travel broadens the mind 🌍',
+  'Creativity knows no bounds ✨'
+];
+
+const SAMPLE_POST_CAPTIONS = [
+  'Living my best life!',
+  'Making memories',
+  'Grateful for today',
+  'Dreams coming true',
+  'Blessed and thankful',
+  'New adventures await',
+  'Life is beautiful',
+  'Creating magic',
+  'Inspired and motivated',
+  'Chasing dreams'
+];
+
+const SAMPLE_HASHTAGS = [
+  '#life', '#love', '#happy', '#blessed', '#grateful', '#motivation', '#inspiration',
+  '#travel', '#photography', '#nature', '#art', '#music', '#fitness', '#food',
+  '#technology', '#coding', '#design', '#creativity', '#adventure', '#friends',
+  '#family', '#work', '#success', '#goals', '#dreams', '#peace', '#joy'
+];
+
 // Utility functions
 function getRandomElement(array) {
   return array[Math.floor(Math.random() * array.length)];
@@ -165,7 +235,10 @@ async function clearDatabase() {
       Call.deleteMany({}),
       FollowRequest.deleteMany({}),
       MessageRequest.deleteMany({}),
-      UserReport.deleteMany({})
+      UserReport.deleteMany({}),
+      Post.deleteMany({}),
+      PostTemplate.deleteMany({}),
+      PostCollection.deleteMany({})
     ]);
     
     console.log('✅ Database cleared successfully');
@@ -185,7 +258,7 @@ async function createAdmins() {
       countryCode: '+91',
       name: 'Super Admin',
       email: 'admin@vibgyor.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
       isVerified: true
     },
     {
@@ -193,7 +266,7 @@ async function createAdmins() {
       countryCode: '+91',
       name: 'System Admin',
       email: 'system@vibgyor.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face',
+      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
       isVerified: true
     }
   ];
@@ -218,7 +291,7 @@ async function createSubAdmins() {
       countryCode: '+91',
       name: 'Moderator One',
       email: 'mod1@vibgyor.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
+      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
       isVerified: true,
       isActive: true
     },
@@ -227,7 +300,7 @@ async function createSubAdmins() {
       countryCode: '+91',
       name: 'Moderator Two',
       email: 'mod2@vibgyor.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face',
+      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
       isVerified: true,
       isActive: true
     }
@@ -251,38 +324,67 @@ async function createUsers(count) {
   
   for (let i = 0; i < count; i++) {
     const name = SAMPLE_NAMES[i] || faker.person.fullName();
-    const username = SAMPLE_USERNAMES[i] || faker.internet.userName();
+    const username = SAMPLE_USERNAMES[i] || faker.internet.username();
     const phoneNumber = SAMPLE_PHONE_NUMBERS[i] || faker.phone.number().replace(/\D/g, '').slice(0, 10);
     const email = SAMPLE_EMAILS[i] || faker.internet.email();
     
-    const user = {
+    // Create some users with incomplete profiles for realistic testing
+    const profileCompleteness = Math.random();
+    let userData = {
       phoneNumber: phoneNumber,
       countryCode: '+91',
       username: username,
-      fullName: name,
-      email: email,
-      bio: faker.lorem.sentence(),
-      dateOfBirth: faker.date.past({ years: 30, refDate: '2000-01-01' }),
-      gender: getRandomElement(SAMPLE_GENDERS),
-      pronouns: getRandomElement(SAMPLE_PRONOUNS),
-      interests: getRandomElements(SAMPLE_INTERESTS, Math.floor(Math.random() * 5) + 1),
-      likes: getRandomElements(SAMPLE_LIKES, Math.floor(Math.random() * 5) + 1),
-      location: {
+      usernameNorm: username.toLowerCase(),
+      fullName: profileCompleteness > 0.1 ? name : '', // 90% have names
+      email: profileCompleteness > 0.2 ? email : '', // 80% have emails
+      emailVerified: profileCompleteness > 0.3 && Math.random() > 0.3, // 70% verified if they have email
+      bio: profileCompleteness > 0.4 ? faker.lorem.sentence() : '', // 60% have bio
+      dob: profileCompleteness > 0.5 ? faker.date.past({ years: 30, refDate: '2000-01-01' }) : null, // 50% have DOB
+      gender: profileCompleteness > 0.6 ? getRandomElement(SAMPLE_GENDERS) : '', // 40% have gender
+      pronouns: profileCompleteness > 0.7 ? getRandomElement(SAMPLE_PRONOUNS) : '', // 30% have pronouns
+      interests: profileCompleteness > 0.8 ? getRandomElements(SAMPLE_INTERESTS, Math.floor(Math.random() * 5) + 1) : [], // 20% have interests
+      likes: profileCompleteness > 0.8 ? getRandomElements(SAMPLE_LIKES, Math.floor(Math.random() * 5) + 1) : [], // 20% have likes
+      location: profileCompleteness > 0.9 ? {
+        lat: parseFloat(faker.location.latitude()),
+        lng: parseFloat(faker.location.longitude()),
         city: faker.location.city(),
-        country: faker.location.country(),
-        coordinates: {
-          latitude: parseFloat(faker.location.latitude()),
-          longitude: parseFloat(faker.location.longitude())
-        }
-      },
-      profilePictureUrl: `https://images.unsplash.com/photo-${1500000000000 + i}?w=150&h=150&fit=crop&crop=face`,
+        country: faker.location.country()
+      } : { lat: null, lng: null, city: '', country: '' }, // 10% have location
+      profilePictureUrl: profileCompleteness > 0.3 ? 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg' : '',
       isActive: Math.random() > 0.1, // 90% active
-      isVerified: Math.random() > 0.3, // 70% verified
-      lastSeen: getRandomDate(7),
-      createdAt: getRandomDate(90)
+      isProfileCompleted: false, // Will be calculated based on actual data
+      profileCompletionStep: 'basic_info', // Will be calculated based on actual data
+      verificationStatus: getRandomElement(['none', 'pending', 'approved', 'rejected']),
+      verificationDocument: {
+        documentType: Math.random() > 0.7 ? getRandomElement(['id_proof', 'passport', 'driving_license']) : '',
+        documentUrl: Math.random() > 0.7 ? `https://example.com/documents/doc_${i}.pdf` : '',
+        documentNumber: Math.random() > 0.7 ? faker.string.alphanumeric(10) : '',
+        uploadedAt: Math.random() > 0.7 ? getRandomDate(30) : null,
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: '',
+        reviewerRole: null
+      },
+      following: [],
+      followers: [],
+      blockedUsers: [],
+      blockedBy: [],
+      privacySettings: {
+        isPrivate: Math.random() > 0.8, // 20% private
+        allowFollowRequests: Math.random() > 0.2, // 80% allow
+        showOnlineStatus: Math.random() > 0.3, // 70% show
+        allowMessages: getRandomElement(['everyone', 'followers', 'none'])
+      },
+      otpCode: null,
+      otpExpiresAt: null,
+      lastOtpSentAt: getRandomDate(7),
+      emailOtpCode: null,
+      emailOtpExpiresAt: null,
+      lastEmailOtpSentAt: getRandomDate(7),
+      lastLoginAt: getRandomDate(7)
     };
     
-    users.push(user);
+    users.push(userData);
   }
   
   try {
@@ -612,39 +714,370 @@ async function createUserReports(users, count) {
   }
 }
 
-// Update user statistics
+// Create posts
+async function createPosts(users, count) {
+  console.log(`📝 Creating ${count} posts (ensuring each user has posts)...`);
+  
+  const posts = [];
+  const minPostsPerUser = 3; // Minimum posts per user
+  const totalMinimumPosts = users.length * minPostsPerUser;
+  
+  // Ensure we create at least minPostsPerUser for each user
+  const actualPostCount = Math.max(count, totalMinimumPosts);
+  
+  // First, create minimum posts for each user
+  for (let i = 0; i < users.length; i++) {
+    const author = users[i];
+    
+    // Create minPostsPerUser posts for this user
+    for (let j = 0; j < minPostsPerUser; j++) {
+      const content = getRandomElement(SAMPLE_POST_CONTENT);
+      const caption = getRandomElement(SAMPLE_POST_CAPTIONS);
+      const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
+      const privacy = getRandomElement(['public', 'followers', 'close_friends']);
+      const status = getRandomElement(['published', 'published', 'published', 'draft']); // Mostly published
+      const publishedAt = getRandomDate(30);
+      
+      // Create some posts with media
+      const hasMedia = Math.random() > 0.6; // 40% have media
+      const media = hasMedia ? [{
+        type: 'image',
+        url: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+        thumbnail: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+        filename: `post_${posts.length}.jpg`,
+        fileSize: Math.floor(Math.random() * 2000000) + 500000,
+        mimeType: 'image/jpeg',
+        s3Key: `posts/images/post_${posts.length}.jpg`,
+        duration: null,
+        dimensions: {
+          width: 1920,
+          height: 1080
+        }
+      }] : [];
+      
+      // Create some posts with location
+      const hasLocation = Math.random() > 0.7; // 30% have location
+      const location = hasLocation ? {
+        name: faker.location.city(),
+        coordinates: {
+          lat: parseFloat(faker.location.latitude()),
+          lng: parseFloat(faker.location.longitude())
+        },
+        address: faker.location.streetAddress(),
+        placeId: `place_${posts.length}`,
+        placeType: 'locality',
+        accuracy: 'approximate',
+        isVisible: true
+      } : {};
+      
+      // Create some posts with mentions
+      const hasMentions = Math.random() > 0.8; // 20% have mentions
+      const mentions = hasMentions ? [{
+        user: getRandomElement(users)._id,
+        position: {
+          start: Math.floor(Math.random() * content.length / 2),
+          end: Math.floor(Math.random() * content.length / 2) + 10
+        },
+        context: 'content', // Valid enum: 'content', 'caption', 'comment', 'poll_option'
+        notified: false,
+        notificationSentAt: null
+      }] : [];
+      
+      const post = {
+        author: author._id,
+        content: content,
+        caption: caption,
+        media: media,
+        hashtags: hashtags,
+        mentions: mentions,
+        location: location,
+        privacy: privacy,
+        status: status,
+        publishedAt: status === 'published' ? publishedAt : null,
+        scheduledAt: null,
+        likesCount: Math.floor(Math.random() * 100),
+        commentsCount: Math.floor(Math.random() * 50),
+        sharesCount: Math.floor(Math.random() * 20),
+        viewsCount: Math.floor(Math.random() * 500),
+        createdAt: publishedAt,
+        updatedAt: publishedAt
+      };
+      
+      posts.push(post);
+    }
+  }
+  
+  // Create remaining random posts if needed
+  const remainingPosts = actualPostCount - posts.length;
+  for (let i = 0; i < remainingPosts; i++) {
+    const author = getRandomElement(users);
+    const content = getRandomElement(SAMPLE_POST_CONTENT);
+    const caption = getRandomElement(SAMPLE_POST_CAPTIONS);
+    const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
+    const privacy = getRandomElement(['public', 'followers', 'close_friends']);
+    const status = getRandomElement(['published', 'published', 'published', 'draft']); // Mostly published
+    const publishedAt = getRandomDate(30);
+    
+    // Create some posts with media
+    const hasMedia = Math.random() > 0.6; // 40% have media
+    const media = hasMedia ? [{
+      type: 'image',
+      url: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+      thumbnail: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+      filename: `post_${i}.jpg`,
+      fileSize: Math.floor(Math.random() * 2000000) + 500000,
+      mimeType: 'image/jpeg',
+      s3Key: `posts/images/post_${i}.jpg`,
+      duration: null,
+      dimensions: {
+        width: 1920,
+        height: 1080
+      }
+    }] : [];
+    
+    // Create some posts with location
+    const hasLocation = Math.random() > 0.7; // 30% have location
+    const location = hasLocation ? {
+      name: faker.location.city(),
+      coordinates: {
+        lat: parseFloat(faker.location.latitude()),
+        lng: parseFloat(faker.location.longitude())
+      },
+      address: faker.location.streetAddress(),
+      placeId: `place_${i}`,
+      placeType: 'locality',
+      accuracy: 'approximate',
+      isVisible: true
+    } : {};
+    
+    // Create some posts with mentions
+    const hasMentions = Math.random() > 0.8; // 20% have mentions
+    const mentions = hasMentions ? [{
+      user: getRandomElement(users)._id,
+      position: {
+        start: Math.floor(Math.random() * content.length / 2),
+        end: Math.floor(Math.random() * content.length / 2) + 10
+      },
+      context: 'content', // Valid enum: 'content', 'caption', 'comment', 'poll_option'
+      notified: false,
+      notificationSentAt: null
+    }] : [];
+    
+    const post = {
+      author: author._id,
+      content: content,
+      caption: caption,
+      media: media,
+      hashtags: hashtags,
+      mentions: mentions,
+      location: location,
+      privacy: privacy,
+      status: status,
+      publishedAt: status === 'published' ? publishedAt : null,
+      scheduledAt: null,
+      likesCount: Math.floor(Math.random() * 100),
+      commentsCount: Math.floor(Math.random() * 50),
+      sharesCount: Math.floor(Math.random() * 20),
+      viewsCount: Math.floor(Math.random() * 500),
+      createdAt: publishedAt,
+      updatedAt: publishedAt
+    };
+    
+    posts.push(post);
+  }
+  
+  try {
+    const createdPosts = await Post.insertMany(posts);
+    console.log(`✅ Created ${createdPosts.length} posts`);
+    return createdPosts;
+  } catch (error) {
+    console.error('❌ Error creating posts:', error);
+    throw error;
+  }
+}
+
+// Create post templates
+async function createPostTemplates(users, count) {
+  console.log(`📋 Creating ${count} post templates...`);
+  
+  const templates = [];
+  const templateNames = [
+    'Travel Post', 'Food Review', 'Daily Update', 'Motivational Quote',
+    'Work Achievement', 'Weekend Fun', 'Book Recommendation', 'Photo Story',
+    'Event Announcement', 'Product Review', 'Tutorial Post', 'Behind the Scenes'
+  ];
+  
+  for (let i = 0; i < count; i++) {
+    const creator = getRandomElement(users);
+    const templateName = templateNames[i] || `Template ${i + 1}`;
+    
+    const template = {
+      name: templateName,
+      description: `A template for ${templateName.toLowerCase()} posts`,
+      template: {
+        content: getRandomElement(SAMPLE_POST_CONTENT),
+        caption: getRandomElement(SAMPLE_POST_CAPTIONS),
+        media: [{
+          type: 'image',
+          placeholder: 'Add your image here',
+          required: Math.random() > 0.5
+        }],
+        hashtags: getRandomElements(SAMPLE_HASHTAGS, 3)
+      },
+      customFields: [
+        {
+          name: 'title',
+          type: 'text',
+          label: 'Title',
+          placeholder: 'Enter title',
+          required: false,
+          options: [],
+          defaultValue: ''
+        },
+        {
+          name: 'category',
+          type: 'select',
+          label: 'Category',
+          placeholder: 'Select category',
+          required: false,
+          options: ['general', 'travel', 'food', 'work', 'personal'],
+          defaultValue: 'general'
+        }
+      ],
+      createdBy: creator._id,
+      usageCount: Math.floor(Math.random() * 50),
+      isPublic: Math.random() > 0.3 // 70% are public
+    };
+    
+    templates.push(template);
+  }
+  
+  try {
+    const createdTemplates = await PostTemplate.insertMany(templates);
+    console.log(`✅ Created ${createdTemplates.length} post templates`);
+    return createdTemplates;
+  } catch (error) {
+    console.error('❌ Error creating post templates:', error);
+    throw error;
+  }
+}
+
+// Create post collections
+async function createPostCollections(users, posts, count) {
+  console.log(`📚 Creating ${count} post collections...`);
+  
+  const collections = [];
+  const collectionNames = [
+    'My Favorites', 'Travel Memories', 'Food Adventures', 'Work Projects',
+    'Weekend Fun', 'Inspiration', 'Tutorials', 'Behind the Scenes',
+    'Product Reviews', 'Daily Life', 'Achievements', 'Learning Journey',
+    'Creative Works', 'Nature Photos', 'Friends & Family'
+  ];
+  
+  for (let i = 0; i < count; i++) {
+    const owner = getRandomElement(users);
+    const collectionName = collectionNames[i] || `Collection ${i + 1}`;
+    
+    // Select random posts for this collection
+    const collectionPosts = getRandomElements(posts, Math.floor(Math.random() * 10) + 1);
+    
+    const collection = {
+      name: collectionName,
+      description: `A collection of ${collectionName.toLowerCase()}`,
+      owner: owner._id,
+      posts: collectionPosts.map(post => ({
+        post: post._id,
+        addedAt: getRandomDate(30),
+        addedBy: owner._id,
+        notes: Math.random() > 0.7 ? 'Great post!' : ''
+      })),
+      isPublic: Math.random() > 0.4, // 60% are public
+      coverImage: collectionPosts.length > 0 && collectionPosts[0].media.length > 0 ? collectionPosts[0].media[0].url : '',
+      tags: getRandomElements(['collection', 'saved', 'favorites'], Math.floor(Math.random() * 2) + 1),
+      stats: {
+        totalPosts: collectionPosts.length,
+        totalViews: Math.floor(Math.random() * 1000),
+        totalLikes: Math.floor(Math.random() * 500),
+        totalShares: Math.floor(Math.random() * 100),
+        lastActivity: getRandomDate(30)
+      },
+      isActive: true
+    };
+    
+    collections.push(collection);
+  }
+  
+  try {
+    const createdCollections = await PostCollection.insertMany(collections);
+    console.log(`✅ Created ${createdCollections.length} post collections`);
+    return createdCollections;
+  } catch (error) {
+    console.error('❌ Error creating post collections:', error);
+    throw error;
+  }
+}
+
+// Update user statistics and relationships
 async function updateUserStatistics(users, followRequests, messageRequests) {
-  console.log('📊 Updating user statistics...');
+  console.log('📊 Updating user statistics and relationships...');
   
   try {
     for (const user of users) {
-      const followersCount = followRequests.filter(fr => 
+      // Get accepted follow requests where this user is the recipient (followers)
+      const followers = followRequests.filter(fr => 
         fr.recipient && fr.recipient.toString() === user._id.toString() && fr.status === 'accepted'
-      ).length;
+      );
       
-      const followingCount = followRequests.filter(fr => 
+      // Get accepted follow requests where this user is the requester (following)
+      const following = followRequests.filter(fr => 
         fr.requester && fr.requester.toString() === user._id.toString() && fr.status === 'accepted'
-      ).length;
+      );
       
-      const messageRequestsSent = messageRequests.filter(mr => 
-        mr.fromUserId && mr.fromUserId.toString() === user._id.toString()
-      ).length;
+      // Extract user IDs for followers and following
+      const followerIds = followers.map(fr => fr.requester);
+      const followingIds = following.map(fr => fr.recipient);
       
-      const messageRequestsReceived = messageRequests.filter(mr => 
-        mr.toUserId && mr.toUserId.toString() === user._id.toString()
-      ).length;
+      // Determine profile completion step based on user data
+      let profileCompletionStep = 'basic_info';
+      let isProfileCompleted = false;
       
+      if (user.fullName && user.username && user.email && user.dob && user.bio) {
+        if (user.gender) {
+          if (user.pronouns) {
+            if (user.likes && user.likes.length > 0 && user.interests && user.interests.length > 0) {
+              if (user.idProofUrl) {
+                if (user.location && user.location.city && user.location.country) {
+                  profileCompletionStep = 'completed';
+                  isProfileCompleted = true;
+                } else {
+                  profileCompletionStep = 'location';
+                }
+              } else {
+                profileCompletionStep = 'id_upload';
+              }
+            } else {
+              profileCompletionStep = 'likes_interests';
+            }
+          } else {
+            profileCompletionStep = 'pronouns';
+          }
+        } else {
+          profileCompletionStep = 'gender';
+        }
+      }
+      
+      // Update user with actual relationships and correct profile completion
       await User.findByIdAndUpdate(user._id, {
         $set: {
-          'socialStats.followersCount': followersCount,
-          'socialStats.followingCount': followingCount,
-          'socialStats.messageRequestsSent': messageRequestsSent,
-          'socialStats.messageRequestsReceived': messageRequestsReceived
+          followers: followerIds,
+          following: followingIds,
+          profileCompletionStep: profileCompletionStep,
+          isProfileCompleted: isProfileCompleted
         }
       });
     }
     
-    console.log('✅ User statistics updated');
+    console.log('✅ User statistics and relationships updated');
   } catch (error) {
     console.error('❌ Error updating user statistics:', error);
     throw error;
@@ -678,6 +1111,11 @@ async function seedDatabase(config) {
     const messageRequests = await createMessageRequests(users, config.messageRequests);
     const reports = await createUserReports(users, config.reports);
     
+    // Create Posts features
+    const posts = await createPosts(users, config.posts);
+    const postTemplates = await createPostTemplates(users, config.postTemplates);
+    const postCollections = await createPostCollections(users, posts, config.postCollections);
+    
     // Update statistics
     await updateUserStatistics(users, followRequests, messageRequests);
     
@@ -693,6 +1131,9 @@ async function seedDatabase(config) {
     console.log(`   👥 Follow Requests: ${followRequests.length}`);
     console.log(`   📨 Message Requests: ${messageRequests.length}`);
     console.log(`   🚨 Reports: ${reports.length}`);
+    console.log(`   📝 Posts: ${posts.length}`);
+    console.log(`   📋 Post Templates: ${postTemplates.length}`);
+    console.log(`   📚 Post Collections: ${postCollections.length}`);
     
     console.log('\n🔑 Test Credentials:');
     console.log('   Admin: +91-9998887777 (OTP: 123456)');
@@ -744,5 +1185,8 @@ module.exports = {
   createCalls,
   createFollowRequests,
   createMessageRequests,
-  createUserReports
+  createUserReports,
+  createPosts,
+  createPostTemplates,
+  createPostCollections
 };

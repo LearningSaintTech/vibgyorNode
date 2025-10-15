@@ -1,7 +1,7 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
-const BUCKET = process.env.AWS_S3_BUCKET;
+const BUCKET = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_NAME;
 const REGION = process.env.AWS_REGION || process.env.AWS_S3_REGION;
 
 if (!BUCKET) {
@@ -70,9 +70,60 @@ async function listByPrefix(prefix, maxKeys = 1000) {
 	return result?.Contents || [];
 }
 
+// Enhanced upload function for posts with media type detection
+async function uploadToS3({ buffer, contentType, userId, category, type, filename, metadata = {} }) {
+	const Key = buildKey({ userId, category, type, filename });
+	const params = {
+		Bucket: BUCKET,
+		Key,
+		Body: buffer,
+		ContentType: contentType,
+		Metadata: {
+			...metadata,
+			originalName: filename,
+			uploadedAt: new Date().toISOString(),
+			userId: String(userId)
+		},
+	};
+
+	console.log('[S3] Uploading to S3:', { Key, ContentType: contentType, Size: buffer.length });
+	await s3.send(new PutObjectCommand(params));
+
+	// Generate proper S3 URL based on region
+	let url;
+	if (REGION === 'us-east-1') {
+		url = `https://${BUCKET}.s3.amazonaws.com/${Key}`;
+	} else {
+		url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${Key}`;
+	}
+
+	// Detect media type and return appropriate data
+	const mediaType = contentType.startsWith('image/') ? 'image' : 
+	                 contentType.startsWith('video/') ? 'video' : 
+	                 contentType.startsWith('audio/') ? 'audio' : 'document';
+
+	return {
+		key: Key,
+		bucket: BUCKET,
+		region: REGION,
+		url,
+		type: mediaType,
+		contentType,
+		filename,
+		size: buffer.length
+	};
+}
+
+// Delete from S3 (alias for deleteObject)
+async function deleteFromS3(key) {
+	return await deleteObject(key);
+}
+
 module.exports = {
 	uploadBuffer,
+	uploadToS3,
 	deleteObject,
+	deleteFromS3,
 	getObjectUrl,
 	listByPrefix,
 	buildKey,

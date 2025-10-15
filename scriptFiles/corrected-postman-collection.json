@@ -1,0 +1,3436 @@
+{
+  "info": {
+    "name": "VibgyorNode API - Complete Collection (Corrected)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "vibgyor-node-corrected-collection",
+    "description": "Complete API collection for VibgyorNode backend with all endpoints correctly organized.\n\n📸 Stories Feature (Simplified - 9 endpoints):\n- Image/Video/Text stories with 24h auto-expiration\n- Privacy controls: public/followers/close_friends\n- @mentions, hashtag search, view tracking\n- Replies (DM/public), reporting, analytics\n- NO notifications, reactions, polls, highlights\n\n🔐 Authentication:\n- Admin, SubAdmin, User roles\n- JWT access/refresh tokens\n- Phone & Email OTP verification\n\n💬 Enhanced Features:\n- Real-time chat & messaging\n- Video/Audio calls (WebRTC)\n- Posts, Search, Notifications\n- User management & moderation"
+  },
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/health"
+          }
+        },
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/"
+          }
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{BASE_URL}}/api/v1/info"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Authentication",
+          "item": [
+            {
+              "name": "Send OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"9998887777\",\n  \"countryCode\": \"+91\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/send-otp"
+              }
+            },
+            {
+              "name": "Verify OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"9998887777\",\n  \"otp\": \"123456\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/verify-otp"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "pm.environment.set('ADMIN_ACCESS_TOKEN', json.data && json.data.accessToken ? json.data.accessToken : '');",
+                      "pm.environment.set('ADMIN_REFRESH_TOKEN', json.data && json.data.refreshToken ? json.data.refreshToken : '');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Resend OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"9998887777\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/resend-otp"
+              }
+            },
+            {
+              "name": "Refresh Access Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{ADMIN_REFRESH_TOKEN}}\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/auth/refresh-token",
+                "description": "Refresh the access token using a valid refresh token. Returns new access and refresh tokens."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.accessToken) {",
+                      "  pm.environment.set('ADMIN_ACCESS_TOKEN', json.data.accessToken);",
+                      "}",
+                      "if (json.data && json.data.refreshToken) {",
+                      "  pm.environment.set('ADMIN_REFRESH_TOKEN', json.data.refreshToken);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Admin Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/me"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data._id) {",
+                      "  pm.environment.set('ADMIN_ID', json.data._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "User Management",
+          "item": [
+            {
+              "name": "Get All Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/users?page=1&limit=10&status=active"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.users && json.data.users.length > 0) {",
+                      "  pm.environment.set('USER_ID', json.data.users[0]._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get User Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/users/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Activate User",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isActive\": true\n}"
+                },
+                "url": "{{BASE_URL}}/admin/users/{{USER_ID}}/status"
+              }
+            },
+            {
+              "name": "Deactivate User",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isActive\": false\n}"
+                },
+                "url": "{{BASE_URL}}/admin/users/{{USER_ID}}/status"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Verification",
+          "item": [
+            {
+              "name": "Get Pending Verifications",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/users/verifications/pending?page=1&limit=10"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.pendingVerifications && json.data.pendingVerifications.length > 0) {",
+                      "  pm.environment.set('PENDING_VERIFICATION_USER_ID', json.data.pendingVerifications[0]._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Approve User Verification",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/users/{{PENDING_VERIFICATION_USER_ID}}/verification/approve"
+              }
+            },
+            {
+              "name": "Reject User Verification",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rejectionReason\": \"Document quality is not clear\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/users/{{PENDING_VERIFICATION_USER_ID}}/verification/reject"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Report Management",
+          "item": [
+            {
+              "name": "Get Pending Reports",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/reports/pending?page=1&limit=10"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.pendingReports && json.data.pendingReports.length > 0) {",
+                      "  pm.environment.set('PENDING_REPORT_ID', json.data.pendingReports[0]._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Report Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/reports/{{PENDING_REPORT_ID}}"
+              }
+            },
+            {
+              "name": "Update Report Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"resolved\",\n  \"actionTaken\": \"warning\",\n  \"reviewNotes\": \"User has been warned\",\n  \"priority\": \"medium\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/reports/{{PENDING_REPORT_ID}}/status"
+              }
+            },
+            {
+              "name": "Get Report Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/reports/stats"
+              }
+            }
+          ]
+        },
+        {
+          "name": "SubAdmin Management",
+          "item": [
+            {
+              "name": "Get All SubAdmins",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/subadmins?page=1&limit=10&status=active"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.subAdmins && json.data.subAdmins.length > 0) {",
+                      "  pm.environment.set('SUBADMIN_ID', json.data.subAdmins[0]._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get SubAdmin Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/subadmins/{{SUBADMIN_ID}}"
+              }
+            },
+            {
+              "name": "Toggle SubAdmin Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isActive\": true\n}"
+                },
+                "url": "{{BASE_URL}}/admin/subadmins/{{SUBADMIN_ID}}/status"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Content Moderation",
+          "item": [
+            {
+              "name": "Get Flagged Content",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/content-moderation/flagged"
+              }
+            },
+            {
+              "name": "Get Pending Reviews",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/content-moderation/pending"
+              }
+            },
+            {
+              "name": "Get Queue Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/content-moderation/queue-stats"
+              }
+            },
+            {
+              "name": "Review Content",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"approve\",\n  \"notes\": \"Content meets guidelines\"\n}"
+                },
+                "url": "{{BASE_URL}}/admin/content-moderation/{{MODERATION_ID}}/review"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Analytics",
+          "item": [
+            {
+              "name": "Platform Overview",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/analytics/platform-overview?period=7d"
+              }
+            },
+            {
+              "name": "Content Analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/analytics/content?period=7d"
+              }
+            },
+            {
+              "name": "Moderation Analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/analytics/moderation?period=7d"
+              }
+            },
+            {
+              "name": "User Analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/admin/analytics/users/{{USER_ID}}?period=30d"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SubAdmin",
+      "item": [
+        {
+          "name": "Authentication",
+          "item": [
+            {
+              "name": "Send OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"8887776666\",\n  \"countryCode\": \"+91\"\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/auth/send-otp"
+              }
+            },
+            {
+              "name": "Verify OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"8887776666\",\n  \"otp\": \"123456\"\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/auth/verify-otp"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "pm.environment.set('SUBADMIN_ACCESS_TOKEN', json.data && json.data.accessToken ? json.data.accessToken : '');",
+                      "pm.environment.set('SUBADMIN_REFRESH_TOKEN', json.data && json.data.refreshToken ? json.data.refreshToken : '');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Resend OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"8887776666\"\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/auth/resend-otp"
+              }
+            },
+            {
+              "name": "Refresh Access Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{SUBADMIN_REFRESH_TOKEN}}\"\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/auth/refresh-token",
+                "description": "Refresh the access token using a valid refresh token. Returns new access and refresh tokens."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.accessToken) {",
+                      "  pm.environment.set('SUBADMIN_ACCESS_TOKEN', json.data.accessToken);",
+                      "}",
+                      "if (json.data && json.data.refreshToken) {",
+                      "  pm.environment.set('SUBADMIN_REFRESH_TOKEN', json.data.refreshToken);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get SubAdmin Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/me"
+              }
+            },
+            {
+              "name": "Update SubAdmin Profile",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "name",
+                      "value": "SubAdmin User",
+                      "type": "text"
+                    },
+                    {
+                      "key": "email",
+                      "value": "subadmin@example.com",
+                      "type": "text"
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": "{{BASE_URL}}/subadmin/profile"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Management",
+          "item": [
+            {
+              "name": "Get All Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/users?page=1&limit=10&status=active"
+              }
+            },
+            {
+              "name": "Get User Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/users/stats"
+              }
+            },
+            {
+              "name": "Get User Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/users/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Toggle User Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isActive\": true\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/users/{{USER_ID}}/status"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Verification",
+          "item": [
+            {
+              "name": "Get Pending Verifications",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/users/verifications/pending?page=1&limit=10"
+              }
+            },
+            {
+              "name": "Approve User Verification",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/users/{{USER_ID}}/verification/approve"
+              }
+            },
+            {
+              "name": "Reject User Verification",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rejectionReason\": \"Document quality is not clear\"\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/users/{{USER_ID}}/verification/reject"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Report Management",
+          "item": [
+            {
+              "name": "Get Pending Reports",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/reports/pending?page=1&limit=10"
+              }
+            },
+            {
+              "name": "Get Report Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/reports/{{PENDING_REPORT_ID}}"
+              }
+            },
+            {
+              "name": "Update Report Status",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"resolved\",\n  \"actionTaken\": \"warning\",\n  \"reviewNotes\": \"User has been warned\",\n  \"priority\": \"medium\"\n}"
+                },
+                "url": "{{BASE_URL}}/subadmin/reports/{{PENDING_REPORT_ID}}/status"
+              }
+            },
+            {
+              "name": "Get Report Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{SUBADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/subadmin/reports/stats"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "Authentication",
+          "item": [
+            {
+              "name": "Send Phone OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"7776665555\",\n  \"countryCode\": \"+91\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/send-otp",
+                "description": "Send OTP to user's phone number for authentication"
+              }
+            },
+            {
+              "name": "Verify Phone OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"7776665555\",\n  \"otp\": \"123456\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/verify-otp"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "pm.environment.set('USER_ACCESS_TOKEN', json.data && json.data.accessToken ? json.data.accessToken : '');",
+                      "pm.environment.set('USER_REFRESH_TOKEN', json.data && json.data.refreshToken ? json.data.refreshToken : '');",
+                      "pm.environment.set('ACCESS_TOKEN', json.data && json.data.accessToken ? json.data.accessToken : '');",
+                      "pm.environment.set('REFRESH_TOKEN', json.data && json.data.refreshToken ? json.data.refreshToken : '');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Resend Phone OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phoneNumber\": \"7776665555\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/resend-otp"
+              }
+            },
+            {
+              "name": "Refresh Access Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{USER_REFRESH_TOKEN}}\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/update-access-token",
+                "description": "Refresh the access token using a valid refresh token. Returns new access and refresh tokens. Can also send refresh token via cookies with key 'jwt'."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.accessToken) {",
+                      "  pm.environment.set('USER_ACCESS_TOKEN', json.data.accessToken);",
+                      "  pm.environment.set('ACCESS_TOKEN', json.data.accessToken);",
+                      "}",
+                      "if (json.data && json.data.refreshToken) {",
+                      "  pm.environment.set('USER_REFRESH_TOKEN', json.data.refreshToken);",
+                      "  pm.environment.set('REFRESH_TOKEN', json.data.refreshToken);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Send Email OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"john@example.com\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/email/send-otp"
+              }
+            },
+            {
+              "name": "Verify Email OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"otp\": \"123456\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/email/verify-otp"
+              }
+            },
+            {
+              "name": "Resend Email OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"john@example.com\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/email/resend-otp"
+              }
+            },
+            {
+              "name": "Get Current User",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/auth/me"
+              }
+            },
+            {
+              "name": "Get User Profile",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/auth/profile"
+              }
+            },
+            {
+              "name": "Update User Profile",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fullName\": \"John Doe\",\n  \"username\": \"johndoe123\",\n  \"email\": \"john@example.com\",\n  \"dob\": \"1995-06-15\",\n  \"bio\": \"Love traveling and photography\",\n  \"gender\": \"male\",\n  \"pronouns\": \"he/him\",\n  \"likes\": [\"travel\", \"photography\", \"music\"],\n  \"interests\": [\"hiking\", \"coding\", \"art\"],\n  \"preferences\": {\n    \"hereFor\": \"friendship\",\n    \"primaryLanguage\": \"English\",\n    \"secondaryLanguage\": \"Hindi\"\n  },\n  \"location\": {\n    \"city\": \"Mumbai\",\n    \"country\": \"India\",\n    \"lat\": 19.0760,\n    \"lng\": 72.8777\n  }\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/profile",
+                "description": "Update user profile with all available fields. Profile completion step auto-advances.\n\nNew Preferences Field:\n- hereFor: friendship|dating|networking|fun|serious-relationship|new-friends|chat (required)\n- primaryLanguage: From catalog languages list (required)\n- secondaryLanguage: From catalog languages list (optional)\n\nProfile Steps: basic_info → gender → pronouns → likes_interests → preferences → location → completed"
+              }
+            },
+            {
+              "name": "Update Profile - Preferences Step (NEW)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"preferences\": {\n    \"hereFor\": \"friendship\",\n    \"primaryLanguage\": \"English\",\n    \"secondaryLanguage\": \"Hindi\"\n  }\n}"
+                },
+                "url": "{{BASE_URL}}/user/auth/profile",
+                "description": "Update ONLY the preferences step (Step 5 of 7).\n\nRequired Fields:\n✓ hereFor: Select from catalog.hereFor options\n✓ primaryLanguage: Select from catalog.languages options\n\nOptional Fields:\n⚠ secondaryLanguage: Can be empty or from catalog.languages\n\nThis completes the preferences step and advances to 'location' step."
+              }
+            },
+            {
+              "name": "Get Profile Step",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/auth/profile/step",
+                "description": "Get current profile completion step.\n\nPossible steps:\n- basic_info (Step 1)\n- gender (Step 2)\n- pronouns (Step 3)\n- likes_interests (Step 4)\n- preferences (Step 5) ← NEW\n- location (Step 6)\n- completed (Step 7)"
+              }
+            },
+            {
+              "name": "Get Email Verification Status",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/auth/email/status"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Catalog Management",
+          "description": "Catalog management for profile dropdown options.\n\nCatalog Lists (6 total):\n1. gender - Gender options\n2. pronouns - Pronoun options  \n3. likes - User likes/hobbies\n4. interests - User interests\n5. hereFor - Purpose/intent options (NEW)\n6. languages - Language options (NEW)\n\nAccess:\n- Read: All users\n- Create/Update/Delete: Admin/SubAdmin only",
+          "item": [
+            {
+              "name": "Get All Catalogs",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{BASE_URL}}/user/catalog",
+                "description": "Get all catalog options for profile setup.\n\nReturns:\n- gender: Array of gender options\n- pronouns: Array of pronoun options\n- likes: Array of like options\n- interests: Array of interest options\n- hereFor: Array of purpose/intent options (NEW)\n- languages: Array of language options (NEW)\n- version: Catalog version number\n\nUsed in profile completion steps 2-5."
+              }
+            },
+            {
+              "name": "Get Specific Catalog - Gender",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{BASE_URL}}/user/catalog/gender",
+                "description": "Get gender options from catalog. Returns array of gender options."
+              }
+            },
+            {
+              "name": "Get Specific Catalog - Languages (NEW)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{BASE_URL}}/user/catalog/languages",
+                "description": "Get available languages from catalog. Used for preferences.primaryLanguage and preferences.secondaryLanguage selection."
+              }
+            },
+            {
+              "name": "Get Specific Catalog - Here For (NEW)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{BASE_URL}}/user/catalog/hereFor",
+                "description": "Get 'here for' options from catalog. Used for preferences.hereFor selection (user intent/purpose)."
+              }
+            },
+            {
+              "name": "Create Catalog (Admin/SubAdmin)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"genderList\": [\"male\", \"female\", \"non-binary\"],\n  \"pronounList\": [\"he/him\", \"she/her\", \"they/them\"],\n  \"likeList\": [\"music\", \"travel\", \"movies\"],\n  \"interestList\": [\"hiking\", \"photography\", \"coding\"],\n  \"hereForList\": [\"friendship\", \"dating\", \"networking\", \"fun\"],\n  \"languageList\": [\"English\", \"Hindi\", \"Spanish\", \"French\"]\n}"
+                },
+                "url": "{{BASE_URL}}/user/catalog",
+                "description": "Create a new catalog with all lists including preferences (hereFor and languages). Only one catalog can exist - use PUT to update."
+              }
+            },
+            {
+              "name": "Update Catalog (Admin/SubAdmin)",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"genderList\": [\"male\", \"female\", \"non-binary\", \"transgender\"],\n  \"pronounList\": [\"he/him\", \"she/her\", \"they/them\", \"he/they\"],\n  \"likeList\": [\"music\", \"travel\", \"movies\", \"fitness\"],\n  \"interestList\": [\"hiking\", \"photography\", \"coding\", \"dancing\"],\n  \"hereForList\": [\"friendship\", \"dating\", \"networking\", \"fun\", \"serious-relationship\"],\n  \"languageList\": [\"English\", \"Hindi\", \"Spanish\", \"French\", \"German\", \"Chinese\"]\n}"
+                },
+                "url": "{{BASE_URL}}/user/catalog",
+                "description": "Update existing catalog with all lists. Increments version number. Can update individual lists or all at once."
+              }
+            },
+            {
+              "name": "Add Items to Catalog (Admin/SubAdmin)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"listType\": \"hereFor\",\n  \"items\": [\"language-exchange\", \"business\"]\n}"
+                },
+                "url": "{{BASE_URL}}/user/catalog/add",
+                "description": "Add new items to a specific catalog list.\n\nValid listTypes:\n- gender (genderList)\n- pronouns (pronounList)\n- likes (likeList)\n- interests (interestList)\n- hereFor (hereForList) ← NEW\n- languages (languageList) ← NEW\n\nExamples:\n- Add languages: {\"listType\": \"languages\", \"items\": [\"Bengali\", \"Tamil\"]}\n- Add interests: {\"listType\": \"interests\", \"items\": [\"yoga\", \"art\"]}\n- Add hereFor: {\"listType\": \"hereFor\", \"items\": [\"business\", \"mentorship\"]}"
+              }
+            },
+            {
+              "name": "Remove Items from Catalog (Admin/SubAdmin)",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"listType\": \"languages\",\n  \"items\": [\"Russian\"]\n}"
+                },
+                "url": "{{BASE_URL}}/user/catalog/remove",
+                "description": "Remove items from a specific catalog list.\n\nValid listTypes:\n- gender, pronouns, likes, interests, hereFor, languages\n\nExamples:\n- Remove language: {\"listType\": \"languages\", \"items\": [\"Russian\"]}\n- Remove hereFor: {\"listType\": \"hereFor\", \"items\": [\"fun\"]}\n- Remove interests: {\"listType\": \"interests\", \"items\": [\"pets\"]}"
+              }
+            },
+            {
+              "name": "Delete Catalog (Admin/SubAdmin)",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{ADMIN_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/catalog"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Username Management",
+          "item": [
+            {
+              "name": "Check Username Availability",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{BASE_URL}}/user/username/available?u=testuser123"
+              }
+            },
+            {
+              "name": "Get Username Suggestions",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": "{{BASE_URL}}/user/username/suggest?base=testuser"
+              }
+            }
+          ]
+        },
+        {
+          "name": "File Upload",
+          "item": [
+            {
+              "name": "Upload Profile Picture",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": "{{BASE_URL}}/user/upload/profile-picture"
+              }
+            },
+            {
+              "name": "Upload ID Proof",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": []
+                    },
+                    {
+                      "key": "documentType",
+                      "value": "id_proof",
+                      "type": "text"
+                    },
+                    {
+                      "key": "documentNumber",
+                      "value": "DOC123456789",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "url": "{{BASE_URL}}/user/upload/id-proof"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Social Features",
+          "item": [
+            {
+              "name": "Send Follow Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"message\": \"Hi! I'd like to follow you.\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/social/follow-request/{{USER_ID}}"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.success && json.data && json.data.requestId) {",
+                      "  pm.environment.set('FOLLOW_REQUEST_ID', json.data.requestId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Accept Follow Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/follow-request/{{FOLLOW_REQUEST_ID}}/accept"
+              }
+            },
+            {
+              "name": "Reject Follow Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/follow-request/{{FOLLOW_REQUEST_ID}}/reject"
+              }
+            },
+            {
+              "name": "Cancel Follow Request",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/follow-request/{{FOLLOW_REQUEST_ID}}/cancel"
+              }
+            },
+            {
+              "name": "Get Pending Follow Requests",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/follow-requests/pending?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Sent Follow Requests",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/follow-requests/sent?page=1&limit=20&status=all"
+              }
+            },
+            {
+              "name": "Unfollow User",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/follow/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Get Followers",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/followers?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Following",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/following?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Block User",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/block/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Unblock User",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/block/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Get Blocked Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/blocked?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Report User",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reportType\": \"spam\",\n  \"description\": \"This user is sending spam messages\",\n  \"contentType\": \"profile\",\n  \"contentId\": \"\",\n  \"contentUrl\": \"\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/social/report/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Get User Reports",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/reports?page=1&limit=10"
+              }
+            },
+            {
+              "name": "Get Social Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/social/social-stats"
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Status",
+          "item": [
+            {
+              "name": "Update User Status",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isOnline\": true,\n  \"status\": \"Available\",\n  \"privacySettings\": {\n    \"showOnlineStatus\": true,\n    \"showLastSeen\": true\n  }\n}"
+                },
+                "url": "{{BASE_URL}}/user/status"
+              }
+            },
+            {
+              "name": "Get User Status",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/status/{{USER_ID}}"
+              }
+            },
+            {
+              "name": "Get Online Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/status/online"
+              }
+            },
+            {
+              "name": "Get Recently Active Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/status/recent"
+              }
+            },
+            {
+              "name": "Get Batch User Statuses",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"userIds\": [\"{{USER_ID}}\"]\n}"
+                },
+                "url": "{{BASE_URL}}/user/status/batch"
+              }
+            },
+            {
+              "name": "Update Privacy Settings",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"showOnlineStatus\": true,\n  \"showLastSeen\": true\n}"
+                },
+                "url": "{{BASE_URL}}/user/status/privacy"
+              }
+            },
+            {
+              "name": "Get Status Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/status/stats"
+              }
+            },
+            {
+              "name": "Set User Offline",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{USER_ACCESS_TOKEN}}\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/status/offline"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Message Requests",
+          "item": [
+            {
+              "name": "Send Message Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/{{USER_ID}}"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.requestId) {",
+                      "  pm.environment.set('MESSAGE_REQUEST_ID', json.data.requestId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Pending Requests",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/pending"
+              }
+            },
+            {
+              "name": "Get Sent Requests",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/sent"
+              }
+            },
+            {
+              "name": "Accept Message Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/{{MESSAGE_REQUEST_ID}}/accept"
+              }
+            },
+            {
+              "name": "Reject Message Request",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/{{MESSAGE_REQUEST_ID}}/reject"
+              }
+            },
+            {
+              "name": "Delete Message Request",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/{{MESSAGE_REQUEST_ID}}"
+              }
+            },
+            {
+              "name": "Get Message Request Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/{{MESSAGE_REQUEST_ID}}"
+              }
+            },
+            {
+              "name": "Get Message Request Stats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/stats"
+              }
+            },
+            {
+              "name": "Get Request Between Users",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/message-requests/between/{{USER_ID}}"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Posts Management",
+          "item": [
+            {
+              "name": "Create Post",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "content",
+                      "value": "This is a test post! #vibgyor #test",
+                      "type": "text"
+                    },
+                    {
+                      "key": "caption",
+                      "value": "Test caption",
+                      "type": "text"
+                    },
+                    {
+                      "key": "privacy",
+                      "value": "public",
+                      "type": "text"
+                    },
+                    {
+                      "key": "files",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": "{{BASE_URL}}/user/posts"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data._id) {",
+                      "  pm.environment.set('POST_ID', json.data._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Feed Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/feed?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get User Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/user/{{USER_ID}}?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Single Post",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}"
+              }
+            },
+            {
+              "name": "Update Post",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Updated post content! #updated #vibgyor\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}"
+              }
+            },
+            {
+              "name": "Delete Post",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}"
+              }
+            },
+            {
+              "name": "Search Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/search?q=vibgyor&page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Trending Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/trending?hours=24&limit=20"
+              }
+            },
+            {
+              "name": "Get Posts by Hashtag",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/hashtag/vibgyor?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Like Post",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/like"
+              }
+            },
+            {
+              "name": "Add Comment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"This is a great post! 👍\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/comment"
+              }
+            },
+            {
+              "name": "Get Post Comments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/comments?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Share Post",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"shareType\": \"repost\",\n  \"shareMessage\": \"Check this out!\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/share"
+              }
+            },
+            {
+              "name": "Get Post Analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/analytics"
+              }
+            },
+            {
+              "name": "Report Post",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"spam\",\n  \"description\": \"This post contains spam content\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/report"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stories Management (Simplified)",
+          "description": "Simplified Stories API - 9 endpoints for ephemeral content sharing.\n\nFeatures:\n✓ Image/Video/Text stories (max 10MB media, 2200 chars text)\n✓ Privacy controls (public/followers/close_friends)\n✓ @mentions auto-detection\n✓ View tracking (silent, no notifications)\n✓ Replies (DM or public, max 200 chars)\n✓ Reporting system (auto-flag at 3+ reports)\n✓ Analytics (views, replies, shares, engagement rate)\n✓ Hashtag search\n✓ Auto-expiration (24 hours)\n✓ Content moderation (AI + manual review)\n\nRemoved:\n✗ Reactions, Polls, Questions, Music, Countdown\n✗ Location tagging, Filters, Stickers\n✗ Story Highlights\n✗ Reach & Impressions metrics\n✗ Notifications",
+          "item": [
+            {
+              "name": "Create Story",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "files",
+                      "type": "file",
+                      "src": [],
+                      "description": "Media files (image/video) - optional if content provided"
+                    },
+                    {
+                      "key": "content",
+                      "value": "Amazing sunset! @johndoe #nature",
+                      "type": "text",
+                      "description": "Text content (max 2200 chars) - optional if files provided"
+                    },
+                    {
+                      "key": "privacy",
+                      "value": "public",
+                      "type": "text",
+                      "description": "public | followers | close_friends (default: public)"
+                    },
+                    {
+                      "key": "closeFriends",
+                      "value": "",
+                      "type": "text",
+                      "description": "Comma-separated user IDs (required if privacy=close_friends)"
+                    }
+                  ]
+                },
+                "url": "{{BASE_URL}}/user/stories",
+                "description": "Create a story with image, video, or text. Supports @mentions in content. Auto-expires in 24 hours.\n\nValidations:\n- Content OR media required (at least one)\n- Content max 2200 characters\n- Media max 10MB\n- Supported formats: image (jpeg, png, webp, gif), video (mp4, mov, avi)\n\nResponse includes story object with auto-generated expiry time (24h from creation)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data._id) {",
+                      "  pm.environment.set('STORY_ID', json.data._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Stories Feed",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/user/stories/feed?page=1&limit=20",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "stories", "feed"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Items per page (default: 20)"
+                    }
+                  ]
+                },
+                "description": "Get stories from followed users grouped by author. Privacy-filtered based on relationships (public/followers/close_friends). Stories auto-expire after 24 hours."
+              }
+            },
+            {
+              "name": "Get User Stories",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/user/stories/user/{{USER_ID}}?includeExpired=false",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "stories", "user", "{{USER_ID}}"],
+                  "query": [
+                    {
+                      "key": "includeExpired",
+                      "value": "false",
+                      "description": "Include expired stories (default: false, auto true for own stories)"
+                    }
+                  ]
+                },
+                "description": "Get all stories from a specific user. If viewing own stories, expired stories are automatically included regardless of the includeExpired parameter."
+              }
+            },
+            {
+              "name": "Get Single Story",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}",
+                "description": "Get a specific story. Automatically tracks view if not the author (no notifications sent).\n\nBehavior:\n- Increments view count for unique users\n- Checks privacy settings (public/followers/close_friends)\n- Returns 400 if story expired\n- Returns 403 if private and user not authorized\n\nResponse includes story with mentions populated (username, fullName, profilePictureUrl)."
+              }
+            },
+            {
+              "name": "Delete Story",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}",
+                "description": "Delete a story (only author can delete). Soft deletes and removes media from S3."
+              }
+            },
+            {
+              "name": "Reply to Story",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Great story!\",\n  \"isDirectMessage\": true\n}"
+                },
+                "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}/replies",
+                "description": "Reply to a story. Max 200 characters. Can be sent as DM (default) or public.\n\nValidations:\n- Content required (cannot be empty)\n- Max 200 characters\n- Story must not be expired\n\nResponse includes updated replies array and repliesCount."
+              }
+            },
+            {
+              "name": "Report Story",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"spam\",\n  \"description\": \"This story contains spam content\"\n}"
+                },
+                "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}/report",
+                "description": "Report a story for policy violations.\n\nValid Reasons:\n- spam\n- inappropriate\n- harassment\n- fake_news\n- violence\n- other\n\nValidations:\n- Reason required\n- Description max 500 characters\n- Cannot report same story twice\n\nBehavior:\n- 3+ reports automatically flag for admin review\n- Content moderation record updated"
+              }
+            },
+            {
+              "name": "Get Story Analytics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}/analytics",
+                "description": "Get detailed story analytics. Only the story author can view analytics.\n\nReturns:\n- views: Total unique views\n- replies: Total replies count\n- shares: Total shares count\n- engagementRate: (replies / views) × 100\n- timeRemaining: Seconds until expiration\n- createdAt: Story creation timestamp\n- expiresAt: Story expiration timestamp (24h after creation)\n\nError:\n- 403: Not the author\n- 404: Story not found"
+              }
+            },
+            {
+              "name": "Search Stories by Hashtag",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/user/stories/hashtag/nature?page=1&limit=20",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "stories", "hashtag", "nature"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Items per page (default: 20)"
+                    }
+                  ]
+                },
+                "description": "Search public stories by hashtag (without # symbol in URL path). Only returns active, non-expired, public stories. Replace 'nature' in path with desired hashtag."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Notifications",
+          "item": [
+            {
+              "name": "Get Notifications",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notifications?page=1&limit=20&status=all&type=all&priority=all"
+              }
+            },
+            {
+              "name": "Get Unread Count",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notifications/unread-count"
+              }
+            },
+            {
+              "name": "Mark Notification as Read",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notifications/{{NOTIFICATION_ID}}/read"
+              }
+            },
+            {
+              "name": "Mark All as Read",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notifications/read-all"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Notification Preferences",
+          "item": [
+            {
+              "name": "Get Notification Preferences",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notification-preferences"
+              }
+            },
+            {
+              "name": "Update Notification Preferences",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"globalSettings\": {\n    \"enableNotifications\": true,\n    \"quietHours\": {\n      \"enabled\": true,\n      \"start\": \"22:00\",\n      \"end\": \"08:00\"\n    }\n  },\n  \"channels\": {\n    \"inApp\": { \"enabled\": true },\n    \"push\": { \"enabled\": true },\n    \"email\": { \"enabled\": false }\n  }\n}"
+                },
+                "url": "{{BASE_URL}}/user/notification-preferences"
+              }
+            },
+            {
+              "name": "Reset to Defaults",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notification-preferences/reset"
+              }
+            },
+            {
+              "name": "Get Preferences Summary",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/notification-preferences/summary"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search",
+          "item": [
+            {
+              "name": "Explore Feed (Default - All Posts)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?page=1&limit=20",
+                "description": "Get all public posts when no search keyword is provided. This is the default explore/discovery feed."
+              }
+            },
+            {
+              "name": "Search All",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?q=john travel&filter=all&page=1&limit=20",
+                "description": "Search across all categories (people, posts, hashtags, location) with a keyword."
+              }
+            },
+            {
+              "name": "Search People",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search/people?q=john&page=1&limit=20",
+                "description": "Search for people by name or username. Excludes blocked users and inactive accounts."
+              }
+            },
+            {
+              "name": "Search People (No Keyword - Empty)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search/people?page=1&limit=20",
+                "description": "When no keyword is provided for people search, returns empty results."
+              }
+            },
+            {
+              "name": "Search Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search/posts?q=travel adventure&page=1&limit=20",
+                "description": "Search posts by content, caption, hashtags, location, or mentions. Only shows public posts."
+              }
+            },
+            {
+              "name": "Search Posts (No Keyword - All Posts)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search/posts?page=1&limit=20",
+                "description": "When no keyword is provided, returns all public posts (explore feed)."
+              }
+            },
+            {
+              "name": "Search Hashtags",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search/hashtags?q=#adventure&page=1&limit=20",
+                "description": "Search posts by hashtags. Can include # symbol or just the hashtag name."
+              }
+            },
+            {
+              "name": "Search Location",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search/location?q=mumbai&page=1&limit=20",
+                "description": "Search posts by location (name, address, city, or country)."
+              }
+            },
+            {
+              "name": "Search with Filter - People Only",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?q=john&filter=people&page=1&limit=20",
+                "description": "Use filter parameter to search only in people category."
+              }
+            },
+            {
+              "name": "Search with Filter - Posts Only",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?q=travel&filter=posts&page=1&limit=20",
+                "description": "Use filter parameter to search only in posts category."
+              }
+            },
+            {
+              "name": "Search with Filter - Posts Only (No Keyword)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?filter=posts&page=1&limit=20",
+                "description": "When no keyword provided with filter=posts, returns all public posts (explore feed)."
+              }
+            },
+            {
+              "name": "Search with Filter - Hashtags Only",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?q=#adventure&filter=hashtags&page=1&limit=20",
+                "description": "Use filter parameter to search only in hashtags category."
+              }
+            },
+            {
+              "name": "Search with Filter - Location Only",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?q=mumbai&filter=location&page=1&limit=20",
+                "description": "Use filter parameter to search only in location category."
+              }
+            },
+            {
+              "name": "Search with Pagination",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?q=travel&page=2&limit=10",
+                "description": "Example of paginated search with custom page size."
+              }
+            },
+            {
+              "name": "Explore Feed - Page 2",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/search?page=2&limit=20",
+                "description": "Paginate through the explore feed (all public posts) without any search keyword."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Enhanced APIs (v2)",
+      "item": [
+        {
+          "name": "Enhanced Chat Management",
+          "item": [
+            {
+              "name": "Create or Get Chat",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"otherUserId\": \"{{USER_ID}}\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/chats"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.chatId) {",
+                      "  pm.environment.set('CHAT_ID', json.data.chatId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get User Chats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/chats?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Search Chats",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/chats/search?q=john&page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Chat Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/chats/{{CHAT_ID}}"
+              }
+            },
+            {
+              "name": "Update Chat Settings",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isArchived\": false,\n  \"isPinned\": true,\n  \"isMuted\": false\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/chats/{{CHAT_ID}}/settings"
+              }
+            },
+            {
+              "name": "Delete Chat",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/chats/{{CHAT_ID}}"
+              }
+            },
+            {
+              "name": "Join Chat Room",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/chats/{{CHAT_ID}}/join"
+              }
+            },
+            {
+              "name": "Leave Chat Room",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/chats/{{CHAT_ID}}/leave"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enhanced Message Management",
+          "item": [
+            {
+              "name": "Send Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "chatId",
+                      "value": "{{CHAT_ID}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "type",
+                      "value": "text",
+                      "type": "text"
+                    },
+                    {
+                      "key": "content",
+                      "value": "Hello! How are you?",
+                      "type": "text"
+                    },
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": []
+                    }
+                  ]
+                },
+                "url": "{{BASE_URL}}/api/v1/user/messages"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data._id) {",
+                      "  pm.environment.set('MESSAGE_ID', json.data._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Chat Messages",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/chat/{{CHAT_ID}}?page=1&limit=50"
+              }
+            },
+            {
+              "name": "Mark Messages as Read",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/chat/{{CHAT_ID}}/read"
+              }
+            },
+            {
+              "name": "Get Chat Media",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/chat/{{CHAT_ID}}/media?type=image&page=1&limit=20"
+              }
+            },
+            {
+              "name": "Search Messages",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/chat/{{CHAT_ID}}/search?q=hello&page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Message Details",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/{{MESSAGE_ID}}"
+              }
+            },
+            {
+              "name": "Edit Message",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Updated message content\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/messages/{{MESSAGE_ID}}"
+              }
+            },
+            {
+              "name": "Delete Message",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/{{MESSAGE_ID}}"
+              }
+            },
+            {
+              "name": "React to Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"emoji\": \"👍\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/messages/{{MESSAGE_ID}}/reactions"
+              }
+            },
+            {
+              "name": "Remove Reaction",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/messages/{{MESSAGE_ID}}/reactions"
+              }
+            },
+            {
+              "name": "Forward Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"targetChatId\": \"{{CHAT_ID}}\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/messages/{{MESSAGE_ID}}/forward"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enhanced Call Management",
+          "item": [
+            {
+              "name": "Initiate Call",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"chatId\": \"{{CHAT_ID}}\",\n  \"type\": \"video\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/calls"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.callId) {",
+                      "  pm.environment.set('CALL_ID', json.data.callId);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get Call Statistics",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/calls/stats?startDate=2025-01-01&endDate=2025-01-31"
+              }
+            },
+            {
+              "name": "Get Call Status",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/calls/{{CALL_ID}}/status"
+              }
+            },
+            {
+              "name": "Accept Call",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"signalingData\": {\n    \"answer\": \"webrtc_answer_sdp\"\n  }\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/calls/{{CALL_ID}}/accept"
+              }
+            },
+            {
+              "name": "Reject Call",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Busy right now\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/calls/{{CALL_ID}}/reject"
+              }
+            },
+            {
+              "name": "End Call",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"user_ended\"\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/calls/{{CALL_ID}}/end"
+              }
+            },
+            {
+              "name": "Update Call Settings",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isMuted\": true,\n  \"isVideoEnabled\": false,\n  \"isScreenSharing\": false,\n  \"isSpeakerEnabled\": true\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/calls/{{CALL_ID}}/settings"
+              }
+            },
+            {
+              "name": "Handle WebRTC Signaling",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"type\": \"offer\",\n  \"data\": {\n    \"type\": \"offer\",\n    \"sdp\": \"webrtc_offer_sdp\"\n  }\n}"
+                },
+                "url": "{{BASE_URL}}/api/v1/user/calls/{{CALL_ID}}/signaling"
+              }
+            },
+            {
+              "name": "Get Call History",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/calls/chat/{{CHAT_ID}}/history?page=1&limit=20&type=video"
+              }
+            },
+            {
+              "name": "Get Active Call",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/calls/chat/{{CHAT_ID}}/active"
+              }
+            },
+            {
+              "name": "Force Cleanup Calls",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/api/v1/user/calls/chat/{{CHAT_ID}}/cleanup"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "ACCESS_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "REFRESH_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "ADMIN_ACCESS_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "ADMIN_REFRESH_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "SUBADMIN_ACCESS_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "SUBADMIN_REFRESH_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "USER_ACCESS_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "USER_REFRESH_TOKEN",
+      "value": ""
+    },
+    {
+      "key": "USER_ID",
+      "value": ""
+    },
+    {
+      "key": "POST_ID",
+      "value": ""
+    },
+    {
+      "key": "STORY_ID",
+      "value": ""
+    },
+    {
+      "key": "SUBADMIN_ID",
+      "value": ""
+    },
+    {
+      "key": "ADMIN_ID",
+      "value": ""
+    },
+    {
+      "key": "PENDING_VERIFICATION_USER_ID",
+      "value": ""
+    },
+    {
+      "key": "PENDING_REPORT_ID",
+      "value": ""
+    },
+    {
+      "key": "CHAT_ID",
+      "value": ""
+    },
+    {
+      "key": "MESSAGE_ID",
+      "value": ""
+    },
+    {
+      "key": "MESSAGE_REQUEST_ID",
+      "value": ""
+    },
+    {
+      "key": "FOLLOW_REQUEST_ID",
+      "value": ""
+    },
+    {
+      "key": "CALL_ID",
+      "value": ""
+    },
+    {
+      "key": "NOTIFICATION_ID",
+      "value": ""
+    },
+    {
+      "key": "MODERATION_ID",
+      "value": ""
+    }
+  ]
+}
