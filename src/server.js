@@ -15,7 +15,7 @@ const { server } = require('./app'); // Import server from app.js
 const { connectToDatabase } = require('./dbConfig/db');
 
 // Get port from environment variable (Render provides PORT automatically)
-const PORT = process.env.PORT ;
+const PORT = process.env.PORT || 3000;
 const SHUTDOWN_TIMEOUT = parseInt(process.env.SHUTDOWN_TIMEOUT) || 10000;
 
 console.log('📋 Environment Configuration:');
