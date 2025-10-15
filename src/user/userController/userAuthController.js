@@ -199,6 +199,11 @@ async function getMe(req, res) {
 			pronouns: user.pronouns,
 			likes: user.likes || [],
 			interests: user.interests || [],
+			preferences: user.preferences || {
+				hereFor: '',
+				primaryLanguage: '',
+				secondaryLanguage: ''
+			},
 			profilePictureUrl: user.profilePictureUrl,
 			idProofUrl: user.idProofUrl,
 			location: user.location,
@@ -232,38 +237,43 @@ async function getProfile(req, res) {
 		const user = await User.findById(req.user?.userId).select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt');
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 
-		const profileData = {
-			id: user._id,
-			phoneNumber: user.maskedPhone(),
-			countryCode: user.countryCode,
-			email: user.email,
-			emailVerified: user.emailVerified,
-			username: user.username,
-			fullName: user.fullName,
-			dob: user.dob,
-			bio: user.bio,
-			gender: user.gender,
-			pronouns: user.pronouns,
-			likes: user.likes || [],
-			interests: user.interests || [],
-			profilePictureUrl: user.profilePictureUrl,
-			idProofUrl: user.idProofUrl,
-			location: user.location,
-			role: user.role,
-			isProfileCompleted: user.isProfileCompleted,
-			isActive: user.isActive,
-			verificationStatus: user.verificationStatus,
-			verificationDocument: user.verificationDocument,
-			following: user.following || [],
-			followers: user.followers || [],
-			blockedUsers: user.blockedUsers || [],
-			privacySettings: user.privacySettings,
-			lastLoginAt: user.lastLoginAt,
-			createdAt: user.createdAt,
-			updatedAt: user.updatedAt
-		};
+	const profileData = {
+		id: user._id,
+		phoneNumber: user.maskedPhone(),
+		countryCode: user.countryCode,
+		email: user.email,
+		emailVerified: user.emailVerified,
+		username: user.username,
+		fullName: user.fullName,
+		dob: user.dob,
+		bio: user.bio,
+		gender: user.gender,
+		pronouns: user.pronouns,
+		likes: user.likes || [],
+		interests: user.interests || [],
+		preferences: user.preferences || {
+			hereFor: '',
+			primaryLanguage: '',
+			secondaryLanguage: ''
+		},
+		profilePictureUrl: user.profilePictureUrl,
+		idProofUrl: user.idProofUrl,
+		location: user.location,
+		role: user.role,
+		isProfileCompleted: user.isProfileCompleted,
+		isActive: user.isActive,
+		verificationStatus: user.verificationStatus,
+		verificationDocument: user.verificationDocument,
+		following: user.following || [],
+		followers: user.followers || [],
+		blockedUsers: user.blockedUsers || [],
+		privacySettings: user.privacySettings,
+		lastLoginAt: user.lastLoginAt,
+		createdAt: user.createdAt,
+		updatedAt: user.updatedAt
+	};
 
-		return ApiResponse.success(res, profileData, 'Profile retrieved successfully');
+	return ApiResponse.success(res, profileData, 'Profile retrieved successfully');
 	} catch (e) {
 		// eslint-disable-next-line no-console
 		console.error('[USER][AUTH] getProfile error', e?.message || e);
