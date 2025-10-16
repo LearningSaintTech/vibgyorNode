@@ -25,7 +25,7 @@ const PostSchema = new mongoose.Schema(
     media: [{
       type: {
         type: String,
-        enum: ['image', 'video', 'audio', 'document'],
+        enum: ['image', 'video'],
         required: true
       },
       url: {
@@ -49,7 +49,7 @@ const PostSchema = new mongoose.Schema(
         required: true
       },
       duration: {
-        type: Number, // For video/audio duration in seconds
+        type: Number, // For video duration in seconds
         default: null
       },
       dimensions: {
@@ -173,212 +173,8 @@ const PostSchema = new mongoose.Schema(
     // Post Status
     status: {
       type: String,
-      enum: ['draft', 'published', 'scheduled', 'archived', 'deleted'],
+      enum: ['draft', 'published', 'archived', 'deleted'],
       default: 'published'
-    },
-    scheduledAt: {
-      type: Date,
-      default: null
-    },
-    
-    // Post Scheduling
-    scheduling: {
-      isScheduled: {
-        type: Boolean,
-        default: false
-      },
-      scheduledFor: {
-        type: Date,
-        default: null
-      },
-      timezone: {
-        type: String,
-        default: 'UTC'
-      },
-      repeatSettings: {
-        enabled: {
-          type: Boolean,
-          default: false
-        },
-        frequency: {
-          type: String,
-          enum: ['daily', 'weekly', 'monthly', 'yearly'],
-          default: 'daily'
-        },
-        interval: {
-          type: Number,
-          default: 1
-        },
-        endDate: {
-          type: Date,
-          default: null
-        },
-        lastScheduled: {
-          type: Date,
-          default: null
-        }
-      }
-    },
-    
-    // Post Collections
-    collections: [{
-      name: {
-        type: String,
-        required: true
-      },
-      description: {
-        type: String,
-        default: ''
-      },
-      isPublic: {
-        type: Boolean,
-        default: false
-      },
-      addedAt: {
-        type: Date,
-        default: Date.now
-      }
-    }],
-    
-    // Post Templates
-    template: {
-      templateId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'PostTemplate',
-        default: null
-      },
-      templateName: {
-        type: String,
-        default: ''
-      },
-      customFields: {
-        type: Map,
-        of: mongoose.Schema.Types.Mixed,
-        default: {}
-      }
-    },
-    
-    // Post Collaboration
-    collaboration: {
-      isCollaborative: {
-        type: Boolean,
-        default: false
-      },
-      collaborators: [{
-        user: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
-          required: true
-        },
-        role: {
-          type: String,
-          enum: ['editor', 'contributor', 'viewer'],
-          default: 'contributor'
-        },
-        permissions: {
-          canEdit: {
-            type: Boolean,
-            default: true
-          },
-          canDelete: {
-            type: Boolean,
-            default: false
-          },
-          canInvite: {
-            type: Boolean,
-            default: false
-          }
-        },
-        invitedAt: {
-          type: Date,
-          default: Date.now
-        },
-        acceptedAt: {
-          type: Date,
-          default: null
-        },
-        status: {
-          type: String,
-          enum: ['pending', 'accepted', 'declined', 'removed'],
-          default: 'pending'
-        }
-      }],
-      editHistory: [{
-        user: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: 'User',
-          required: true
-        },
-        action: {
-          type: String,
-          enum: ['created', 'edited', 'added_media', 'removed_media', 'changed_privacy', 'added_collaborator', 'removed_collaborator'],
-          required: true
-        },
-        changes: {
-          type: Map,
-          of: mongoose.Schema.Types.Mixed,
-          default: {}
-        },
-        timestamp: {
-          type: Date,
-          default: Date.now
-        }
-      }]
-    },
-    
-    // Interactive Polls
-    poll: {
-      isPoll: {
-        type: Boolean,
-        default: false
-      },
-      question: {
-        type: String,
-        default: ''
-      },
-      options: [{
-        text: {
-          type: String,
-          required: true
-        },
-        votes: [{
-          user: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User',
-            required: true
-          },
-          votedAt: {
-            type: Date,
-            default: Date.now
-          }
-        }],
-        voteCount: {
-          type: Number,
-          default: 0
-        }
-      }],
-      settings: {
-        allowMultipleVotes: {
-          type: Boolean,
-          default: false
-        },
-        showResultsBeforeVoting: {
-          type: Boolean,
-          default: false
-        },
-        allowVoteChanges: {
-          type: Boolean,
-          default: true
-        },
-        endDate: {
-          type: Date,
-          default: null
-        }
-      },
-      totalVotes: {
-        type: Number,
-        default: 0
-      }
     },
     
     // Enhanced Location Tagging
@@ -425,7 +221,7 @@ const PostSchema = new mongoose.Schema(
       },
       context: {
         type: String,
-        enum: ['content', 'caption', 'comment', 'poll_option'],
+        enum: ['content', 'caption', 'comment'],
         default: 'content'
       },
       notified: {
@@ -531,7 +327,6 @@ PostSchema.index({ mentions: 1 });
 PostSchema.index({ 'likes.user': 1 });
 PostSchema.index({ 'comments.user': 1 });
 PostSchema.index({ privacy: 1, publishedAt: -1 });
-PostSchema.index({ scheduledAt: 1 });
 PostSchema.index({ isReported: 1 });
 
 // Virtual for engagement rate
@@ -620,165 +415,6 @@ PostSchema.methods.reportPost = function(userId, reason, description = '') {
   this.reports.push(report);
   this.isReported = true;
   return this.save();
-};
-
-// Post Scheduling Methods
-PostSchema.methods.schedulePost = function(scheduledFor, timezone = 'UTC', repeatSettings = null) {
-  this.scheduling.isScheduled = true;
-  this.scheduling.scheduledFor = scheduledFor;
-  this.scheduling.timezone = timezone;
-  this.status = 'scheduled';
-  
-  if (repeatSettings) {
-    this.scheduling.repeatSettings = { ...this.scheduling.repeatSettings, ...repeatSettings };
-  }
-  
-  return this.save();
-};
-
-PostSchema.methods.unschedulePost = function() {
-  this.scheduling.isScheduled = false;
-  this.scheduling.scheduledFor = null;
-  this.scheduling.repeatSettings.enabled = false;
-  this.status = 'draft';
-  return this.save();
-};
-
-// Post Collections Methods
-PostSchema.methods.addToCollection = function(collectionName, description = '', isPublic = false) {
-  const existingCollection = this.collections.find(c => c.name === collectionName);
-  if (!existingCollection) {
-    this.collections.push({
-      name: collectionName,
-      description,
-      isPublic,
-      addedAt: new Date()
-    });
-  }
-  return this.save();
-};
-
-PostSchema.methods.removeFromCollection = function(collectionName) {
-  this.collections = this.collections.filter(c => c.name !== collectionName);
-  return this.save();
-};
-
-// Post Collaboration Methods
-PostSchema.methods.addCollaborator = function(userId, role = 'contributor', permissions = {}) {
-  const existingCollaborator = this.collaboration.collaborators.find(c => c.user.toString() === userId.toString());
-  if (!existingCollaborator) {
-    this.collaboration.collaborators.push({
-      user: userId,
-      role,
-      permissions: {
-        canEdit: permissions.canEdit !== undefined ? permissions.canEdit : true,
-        canDelete: permissions.canDelete !== undefined ? permissions.canDelete : false,
-        canInvite: permissions.canInvite !== undefined ? permissions.canInvite : false
-      },
-      invitedAt: new Date(),
-      status: 'pending'
-    });
-    this.collaboration.isCollaborative = true;
-  }
-  return this.save();
-};
-
-PostSchema.methods.acceptCollaboration = function(userId) {
-  const collaborator = this.collaboration.collaborators.find(c => c.user.toString() === userId.toString());
-  if (collaborator && collaborator.status === 'pending') {
-    collaborator.status = 'accepted';
-    collaborator.acceptedAt = new Date();
-  }
-  return this.save();
-};
-
-PostSchema.methods.removeCollaborator = function(userId) {
-  this.collaboration.collaborators = this.collaboration.collaborators.filter(c => c.user.toString() !== userId.toString());
-  if (this.collaboration.collaborators.length === 0) {
-    this.collaboration.isCollaborative = false;
-  }
-  return this.save();
-};
-
-PostSchema.methods.addEditHistory = function(userId, action, changes = {}) {
-  this.collaboration.editHistory.push({
-    user: userId,
-    action,
-    changes,
-    timestamp: new Date()
-  });
-  return this.save();
-};
-
-// Poll Methods
-PostSchema.methods.createPoll = function(question, options, settings = {}) {
-  this.poll.isPoll = true;
-  this.poll.question = question;
-  this.poll.options = options.map(option => ({
-    text: option,
-    votes: [],
-    voteCount: 0
-  }));
-  this.poll.settings = {
-    allowMultipleVotes: settings.allowMultipleVotes || false,
-    showResultsBeforeVoting: settings.showResultsBeforeVoting || false,
-    allowVoteChanges: settings.allowVoteChanges !== undefined ? settings.allowVoteChanges : true,
-    endDate: settings.endDate || null
-  };
-  this.poll.totalVotes = 0;
-  return this.save();
-};
-
-PostSchema.methods.voteInPoll = function(userId, optionIndex) {
-  if (!this.poll.isPoll) {
-    throw new Error('This post is not a poll');
-  }
-  
-  if (optionIndex < 0 || optionIndex >= this.poll.options.length) {
-    throw new Error('Invalid option index');
-  }
-  
-  const option = this.poll.options[optionIndex];
-  const existingVote = option.votes.find(vote => vote.user.toString() === userId.toString());
-  
-  if (existingVote) {
-    if (this.poll.settings.allowVoteChanges) {
-      // Remove existing vote
-      option.votes = option.votes.filter(vote => vote.user.toString() !== userId.toString());
-      option.voteCount = option.votes.length;
-      this.poll.totalVotes--;
-    } else {
-      throw new Error('Vote changes not allowed');
-    }
-  }
-  
-  // Add new vote
-  option.votes.push({
-    user: userId,
-    votedAt: new Date()
-  });
-  option.voteCount = option.votes.length;
-  this.poll.totalVotes++;
-  
-  return this.save();
-};
-
-PostSchema.methods.removeVoteFromPoll = function(userId, optionIndex) {
-  if (!this.poll.isPoll) {
-    throw new Error('This post is not a poll');
-  }
-  
-  const option = this.poll.options[optionIndex];
-  const existingVote = option.votes.find(vote => vote.user.toString() === userId.toString());
-  
-  if (existingVote) {
-    option.votes = option.votes.filter(vote => vote.user.toString() !== userId.toString());
-    option.voteCount = option.votes.length;
-    this.poll.totalVotes--;
-    return this.save();
-  }
-  
-  return Promise.resolve(this);
 };
 
 // Advanced Mentions Methods

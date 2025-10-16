@@ -1,7 +1,5 @@
 const Post = require('../userModel/postModel');
 const User = require('../userModel/userAuthModel');
-const PostTemplate = require('../userModel/postTemplateModel');
-const PostCollection = require('../userModel/postCollectionModel');
 const ApiResponse = require('../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../services/s3Service');
 const feedAlgorithmService = require('../../services/feedAlgorithmService');
@@ -11,7 +9,7 @@ const contentModeration = require('../userModel/contentModerationModel');
 // Create a new post
 async function createPost(req, res) {
   try {
-    const { content, caption, hashtags, mentions, location, privacy, scheduledAt } = req.body;
+    const { content, caption, hashtags, mentions, location, privacy } = req.body;
     const userId = req.user?.userId;
 
     if (!content && (!req.files || req.files.length === 0)) {
@@ -22,6 +20,11 @@ async function createPost(req, res) {
     const media = [];
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
+        // Validate media type - only images and videos allowed
+        if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
+          return ApiResponse.badRequest(res, 'Only images and videos are allowed');
+        }
+
         try {
           // Upload to S3
           const uploadResult = await uploadToS3({
@@ -29,9 +32,7 @@ async function createPost(req, res) {
             contentType: file.mimetype,
             userId: userId,
             category: 'posts',
-            type: file.mimetype.startsWith('image/') ? 'image' : 
-                  file.mimetype.startsWith('video/') ? 'video' : 
-                  file.mimetype.startsWith('audio/') ? 'audio' : 'document',
+            type: file.mimetype.startsWith('image/') ? 'image' : 'video',
             filename: file.originalname,
             metadata: {
               originalName: file.originalname,
@@ -97,8 +98,7 @@ async function createPost(req, res) {
       hashtags: processedHashtags,
       mentions: processedMentions,
       privacy: privacy || 'public',
-      status: scheduledAt ? 'scheduled' : 'published',
-      scheduledAt: scheduledAt || null
+      status: 'published'
     };
 
     // Add location if provided
@@ -668,319 +668,6 @@ async function getPostsByHashtag(req, res) {
   }
 }
 
-// ===== ADVANCED FEATURES =====
-
-// Post Scheduling
-async function schedulePost(req, res) {
-  try {
-    const { postId } = req.params;
-    const { scheduledFor, timezone = 'UTC', repeatSettings } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    // Check if user can schedule this post
-    if (post.author.toString() !== userId && !post.collaboration.collaborators.find(c => c.user.toString() === userId && c.permissions.canEdit)) {
-      return ApiResponse.forbidden(res, 'You cannot schedule this post');
-    }
-
-    await post.schedulePost(scheduledFor, timezone, repeatSettings);
-
-    console.log('[POST] Post scheduled successfully:', postId);
-    return ApiResponse.success(res, {
-      postId: post._id,
-      scheduledFor: post.scheduling.scheduledFor,
-      timezone: post.scheduling.timezone,
-      isScheduled: post.scheduling.isScheduled
-    }, 'Post scheduled successfully');
-  } catch (error) {
-    console.error('[POST] Schedule post error:', error);
-    return ApiResponse.serverError(res, 'Failed to schedule post');
-  }
-}
-
-async function unschedulePost(req, res) {
-  try {
-    const { postId } = req.params;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    if (post.author.toString() !== userId) {
-      return ApiResponse.forbidden(res, 'You can only unschedule your own posts');
-    }
-
-    await post.unschedulePost();
-
-    console.log('[POST] Post unscheduled successfully:', postId);
-    return ApiResponse.success(res, null, 'Post unscheduled successfully');
-  } catch (error) {
-    console.error('[POST] Unschedule post error:', error);
-    return ApiResponse.serverError(res, 'Failed to unschedule post');
-  }
-}
-
-// Post Collections
-async function addToCollection(req, res) {
-  try {
-    const { postId } = req.params;
-    const { collectionName, description = '', isPublic = false } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    await post.addToCollection(collectionName, description, isPublic);
-
-    console.log('[POST] Post added to collection successfully');
-    return ApiResponse.success(res, {
-      collections: post.collections
-    }, 'Post added to collection successfully');
-  } catch (error) {
-    console.error('[POST] Add to collection error:', error);
-    return ApiResponse.serverError(res, 'Failed to add post to collection');
-  }
-}
-
-async function removeFromCollection(req, res) {
-  try {
-    const { postId } = req.params;
-    const { collectionName } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    await post.removeFromCollection(collectionName);
-
-    console.log('[POST] Post removed from collection successfully');
-    return ApiResponse.success(res, {
-      collections: post.collections
-    }, 'Post removed from collection successfully');
-  } catch (error) {
-    console.error('[POST] Remove from collection error:', error);
-    return ApiResponse.serverError(res, 'Failed to remove post from collection');
-  }
-}
-
-// Post Collaboration
-async function addCollaborator(req, res) {
-  try {
-    const { postId } = req.params;
-    const { userId: collaboratorId, role = 'contributor', permissions = {} } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    // Check if user can add collaborators
-    if (post.author.toString() !== userId && !post.collaboration.collaborators.find(c => c.user.toString() === userId && c.permissions.canInvite)) {
-      return ApiResponse.forbidden(res, 'You cannot add collaborators to this post');
-    }
-
-    await post.addCollaborator(collaboratorId, role, permissions);
-
-    console.log('[POST] Collaborator added successfully');
-    return ApiResponse.success(res, {
-      collaborators: post.collaboration.collaborators
-    }, 'Collaborator added successfully');
-  } catch (error) {
-    console.error('[POST] Add collaborator error:', error);
-    return ApiResponse.serverError(res, 'Failed to add collaborator');
-  }
-}
-
-async function acceptCollaboration(req, res) {
-  try {
-    const { postId } = req.params;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    await post.acceptCollaboration(userId);
-
-    console.log('[POST] Collaboration accepted successfully');
-    return ApiResponse.success(res, null, 'Collaboration accepted successfully');
-  } catch (error) {
-    console.error('[POST] Accept collaboration error:', error);
-    return ApiResponse.serverError(res, 'Failed to accept collaboration');
-  }
-}
-
-async function removeCollaborator(req, res) {
-  try {
-    const { postId } = req.params;
-    const { collaboratorId } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    // Check if user can remove collaborators
-    if (post.author.toString() !== userId && !post.collaboration.collaborators.find(c => c.user.toString() === userId && c.permissions.canInvite)) {
-      return ApiResponse.forbidden(res, 'You cannot remove collaborators from this post');
-    }
-
-    await post.removeCollaborator(collaboratorId);
-
-    console.log('[POST] Collaborator removed successfully');
-    return ApiResponse.success(res, {
-      collaborators: post.collaboration.collaborators
-    }, 'Collaborator removed successfully');
-  } catch (error) {
-    console.error('[POST] Remove collaborator error:', error);
-    return ApiResponse.serverError(res, 'Failed to remove collaborator');
-  }
-}
-
-// Interactive Polls
-async function createPoll(req, res) {
-  try {
-    const { postId } = req.params;
-    const { question, options, settings = {} } = req.body;
-    const userId = req.user?.userId;
-
-    if (!question || !options || options.length < 2) {
-      return ApiResponse.badRequest(res, 'Poll question and at least 2 options are required');
-    }
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    // Check if user can create poll
-    if (post.author.toString() !== userId && !post.collaboration.collaborators.find(c => c.user.toString() === userId && c.permissions.canEdit)) {
-      return ApiResponse.forbidden(res, 'You cannot create polls for this post');
-    }
-
-    await post.createPoll(question, options, settings);
-
-    console.log('[POST] Poll created successfully');
-    return ApiResponse.success(res, {
-      poll: post.poll
-    }, 'Poll created successfully');
-  } catch (error) {
-    console.error('[POST] Create poll error:', error);
-    return ApiResponse.serverError(res, 'Failed to create poll');
-  }
-}
-
-async function voteInPoll(req, res) {
-  try {
-    const { postId } = req.params;
-    const { optionIndex } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    if (!post.poll.isPoll) {
-      return ApiResponse.badRequest(res, 'This post is not a poll');
-    }
-
-    await post.voteInPoll(userId, optionIndex);
-
-    console.log('[POST] Vote cast successfully');
-    return ApiResponse.success(res, {
-      poll: post.poll,
-      votedOption: optionIndex
-    }, 'Vote cast successfully');
-  } catch (error) {
-    console.error('[POST] Vote in poll error:', error);
-    return ApiResponse.serverError(res, error.message || 'Failed to vote in poll');
-  }
-}
-
-async function removeVoteFromPoll(req, res) {
-  try {
-    const { postId } = req.params;
-    const { optionIndex } = req.body;
-    const userId = req.user?.userId;
-
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
-    }
-
-    await post.removeVoteFromPoll(userId, optionIndex);
-
-    console.log('[POST] Vote removed successfully');
-    return ApiResponse.success(res, {
-      poll: post.poll
-    }, 'Vote removed successfully');
-  } catch (error) {
-    console.error('[POST] Remove vote error:', error);
-    return ApiResponse.serverError(res, 'Failed to remove vote');
-  }
-}
-
-// Post Templates
-async function createPostFromTemplate(req, res) {
-  try {
-    const { templateId, customFields = {} } = req.body;
-    const userId = req.user?.userId;
-
-    const template = await PostTemplate.findById(templateId);
-    if (!template) {
-      return ApiResponse.notFound(res, 'Template not found');
-    }
-
-    // Increment template usage
-    await template.incrementUsage();
-
-    // Create post from template
-    const postData = {
-      author: userId,
-      content: template.template.content,
-      caption: template.template.caption,
-      hashtags: template.template.hashtags,
-      template: {
-        templateId: template._id,
-        templateName: template.name,
-        customFields
-      }
-    };
-
-    // Add custom fields
-    if (template.customFields && template.customFields.length > 0) {
-      template.customFields.forEach(field => {
-        if (customFields[field.name] !== undefined) {
-          postData.template.customFields.set(field.name, customFields[field.name]);
-        }
-      });
-    }
-
-    const post = new Post(postData);
-    await post.save();
-
-    console.log('[POST] Post created from template successfully');
-    return ApiResponse.success(res, post, 'Post created from template successfully');
-  } catch (error) {
-    console.error('[POST] Create from template error:', error);
-    return ApiResponse.serverError(res, 'Failed to create post from template');
-  }
-}
-
 // Location Tagging
 async function updateLocation(req, res) {
   try {
@@ -993,9 +680,9 @@ async function updateLocation(req, res) {
       return ApiResponse.notFound(res, 'Post not found');
     }
 
-    // Check if user can update location
-    if (post.author.toString() !== userId && !post.collaboration.collaborators.find(c => c.user.toString() === userId && c.permissions.canEdit)) {
-      return ApiResponse.forbidden(res, 'You cannot update location for this post');
+    // Check if user is the author
+    if (post.author.toString() !== userId) {
+      return ApiResponse.forbidden(res, 'You can only update location for your own posts');
     }
 
     post.location = location;
@@ -1035,88 +722,6 @@ async function addMention(req, res) {
   }
 }
 
-// Get scheduled posts
-async function getScheduledPosts(req, res) {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const userId = req.user?.userId;
-
-    const posts = await Post.find({
-      author: userId,
-      'scheduling.isScheduled': true,
-      status: 'scheduled'
-    })
-    .populate('author', 'username fullName profilePictureUrl')
-    .sort({ 'scheduling.scheduledFor': 1 })
-    .skip((page - 1) * limit)
-    .limit(parseInt(limit));
-
-    const totalPosts = await Post.countDocuments({
-      author: userId,
-      'scheduling.isScheduled': true,
-      status: 'scheduled'
-    });
-
-    return ApiResponse.success(res, {
-      posts,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalPosts / limit),
-        totalPosts,
-        hasNext: page * limit < totalPosts,
-        hasPrev: page > 1
-      }
-    }, 'Scheduled posts retrieved successfully');
-  } catch (error) {
-    console.error('[POST] Get scheduled posts error:', error);
-    return ApiResponse.serverError(res, 'Failed to get scheduled posts');
-  }
-}
-
-// Get posts by collection
-async function getPostsByCollection(req, res) {
-  try {
-    const { collectionName } = req.params;
-    const { page = 1, limit = 20 } = req.query;
-    const userId = req.user?.userId;
-
-    const posts = await Post.find({
-      'collections.name': collectionName,
-      $or: [
-        { author: userId },
-        { 'collections.isPublic': true }
-      ]
-    })
-    .populate('author', 'username fullName profilePictureUrl')
-    .sort({ 'collections.addedAt': -1 })
-    .skip((page - 1) * limit)
-    .limit(parseInt(limit));
-
-    const totalPosts = await Post.countDocuments({
-      'collections.name': collectionName,
-      $or: [
-        { author: userId },
-        { 'collections.isPublic': true }
-      ]
-    });
-
-    return ApiResponse.success(res, {
-      posts,
-      collectionName,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalPosts / limit),
-        totalPosts,
-        hasNext: page * limit < totalPosts,
-        hasPrev: page > 1
-      }
-    }, 'Collection posts retrieved successfully');
-  } catch (error) {
-    console.error('[POST] Get posts by collection error:', error);
-    return ApiResponse.serverError(res, 'Failed to get collection posts');
-  }
-}
-
 module.exports = {
   // Basic CRUD
   createPost,
@@ -1142,19 +747,6 @@ module.exports = {
   getPostAnalytics,
   
   // Advanced Features
-  schedulePost,
-  unschedulePost,
-  getScheduledPosts,
-  addToCollection,
-  removeFromCollection,
-  getPostsByCollection,
-  addCollaborator,
-  acceptCollaboration,
-  removeCollaborator,
-  createPoll,
-  voteInPoll,
-  removeVoteFromPoll,
-  createPostFromTemplate,
   updateLocation,
   addMention
 };

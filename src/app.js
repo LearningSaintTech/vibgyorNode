@@ -27,8 +27,6 @@ const userMessageRequestRoutes = require('./user/userRoutes/userMessageRequestRo
 const userStatusRoutes = require('./user/userRoutes/userStatusRoutes');
 const userFileUploadRoutes = require('./user/userRoutes/userFileUploadRoutes');
 const postRoutes = require('./user/userRoutes/postRoutes');
-const postTemplateRoutes = require('./user/userRoutes/postTemplateRoutes');
-const postCollectionRoutes = require('./user/userRoutes/postCollectionRoutes');
 const storyRoutes = require('./user/userRoutes/storyRoutes');
 const notificationRoutes = require('./user/userRoutes/notificationRoutes');
 const notificationPreferencesRoutes = require('./user/userRoutes/notificationPreferencesRoutes');
@@ -86,8 +84,6 @@ app.use('/user/message-requests', userMessageRequestRoutes);
 app.use('/user/status', userStatusRoutes);
 app.use('/user/upload', userFileUploadRoutes);
 app.use('/user/posts', postRoutes);
-app.use('/user/post-templates', postTemplateRoutes);
-app.use('/user/post-collections', postCollectionRoutes);
 app.use('/user/stories', storyRoutes);
 app.use('/user/notifications', notificationRoutes);
 app.use('/user/notification-preferences', notificationPreferencesRoutes);
