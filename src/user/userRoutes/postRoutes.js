@@ -18,19 +18,6 @@ const {
   getPostAnalytics,
   getTrendingPosts,
   getPostsByHashtag,
-  schedulePost,
-  unschedulePost,
-  getScheduledPosts,
-  addToCollection,
-  removeFromCollection,
-  getPostsByCollection,
-  addCollaborator,
-  acceptCollaboration,
-  removeCollaborator,
-  createPoll,
-  voteInPoll,
-  removeVoteFromPoll,
-  createPostFromTemplate,
   updateLocation,
   addMention
 } = require('../userController/postController');
@@ -193,76 +180,6 @@ router.post('/:postId/report',
 );
 
 // ===== ADVANCED FEATURES ROUTES =====
-
-// Post Scheduling
-router.post('/:postId/schedule', 
-  authorize([Roles.USER]), 
-  schedulePost
-);
-
-router.delete('/:postId/schedule', 
-  authorize([Roles.USER]), 
-  unschedulePost
-);
-
-router.get('/scheduled', 
-  authorize([Roles.USER]), 
-  getScheduledPosts
-);
-
-// Post Collections
-router.post('/:postId/collections', 
-  authorize([Roles.USER]), 
-  addToCollection
-);
-
-router.delete('/:postId/collections', 
-  authorize([Roles.USER]), 
-  removeFromCollection
-);
-
-router.get('/collections/:collectionName', 
-  authorize([Roles.USER]), 
-  getPostsByCollection
-);
-
-// Post Collaboration
-router.post('/:postId/collaborators', 
-  authorize([Roles.USER]), 
-  addCollaborator
-);
-
-router.post('/:postId/collaborators/accept', 
-  authorize([Roles.USER]), 
-  acceptCollaboration
-);
-
-router.delete('/:postId/collaborators', 
-  authorize([Roles.USER]), 
-  removeCollaborator
-);
-
-// Interactive Polls
-router.post('/:postId/poll', 
-  authorize([Roles.USER]), 
-  createPoll
-);
-
-router.post('/:postId/poll/vote', 
-  authorize([Roles.USER]), 
-  voteInPoll
-);
-
-router.delete('/:postId/poll/vote', 
-  authorize([Roles.USER]), 
-  removeVoteFromPoll
-);
-
-// Post Templates
-router.post('/from-template', 
-  authorize([Roles.USER]), 
-  createPostFromTemplate
-);
 
 // Location Tagging
 router.put('/:postId/location', 

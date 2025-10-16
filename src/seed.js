@@ -15,8 +15,6 @@ const UserCatalog = require('./user/userModel/userCatalogModel');
 const Report = require('./user/userModel/userReportModel');
 const Post = require('./user/userModel/postModel');
 const Story = require('./user/userModel/storyModel');
-const PostTemplate = require('./user/userModel/postTemplateModel');
-const PostCollection = require('./user/userModel/postCollectionModel');
 const StoryHighlight = require('./user/userModel/storyHighlightModel');
 const Notification = require('./user/userModel/notificationModel');
 const NotificationPreferences = require('./user/userModel/notificationPreferencesModel');
@@ -245,60 +243,6 @@ const demoData = {
     'Grateful today 🙏',
     'New beginnings 🌱',
     'Weekend energy 🎉'
-  ],
-
-  postTemplateNames: [
-    'Daily Reflection',
-    'Food Photography',
-    'Travel Diary',
-    'Workout Log',
-    'Book Review',
-    'Recipe Share',
-    'Motivational Quote',
-    'Behind the Scenes',
-    'Product Showcase',
-    'Event Announcement',
-    'Personal Update',
-    'Question of the Day',
-    'Throwback Thursday',
-    'Weekend Plans',
-    'New Discovery'
-  ],
-
-  postTemplateDescriptions: [
-    'Template for daily reflection posts',
-    'Perfect for food photography content',
-    'Share your travel experiences',
-    'Track your fitness journey',
-    'Review and recommend books',
-    'Share your favorite recipes',
-    'Inspire others with motivational content',
-    'Show behind-the-scenes content',
-    'Showcase products or services',
-    'Announce events and updates',
-    'Share personal life updates',
-    'Engage with questions',
-    'Share nostalgic moments',
-    'Plan and share weekend activities',
-    'Share new discoveries and experiences'
-  ],
-
-  collectionNames: [
-    'My Travels',
-    'Food Adventures',
-    'Workout Journey',
-    'Book Collection',
-    'Art Gallery',
-    'Music Playlist',
-    'Photography Portfolio',
-    'Recipe Collection',
-    'Fashion Finds',
-    'Tech Reviews',
-    'Movie Collection',
-    'Nature Shots',
-    'City Life',
-    'Pet Moments',
-    'Inspiration Board'
   ],
 
   highlightNames: [
@@ -986,112 +930,6 @@ const seedStories = async (users) => {
   return createdStories;
 };
 
-const seedPostTemplates = async (users) => {
-  console.log('🌱 Seeding Post Templates...');
-  
-  const templates = [];
-  const templateCount = Math.floor(users.length * 0.5); // 0.5 templates per user on average
-  
-  for (let i = 0; i < templateCount; i++) {
-    const creator = getRandomElement(users);
-    const name = getRandomElement(demoData.postTemplateNames);
-    const description = getRandomElement(demoData.postTemplateDescriptions);
-    
-    const template = {
-      name: name,
-      description: description,
-      category: getRandomElement(['business', 'personal', 'marketing', 'education', 'entertainment', 'news', 'custom']),
-      isPublic: Math.random() > 0.7,
-      createdBy: creator._id,
-      template: {
-        content: getRandomElement(demoData.postContents),
-        caption: getRandomElement(demoData.postContents).substring(0, 100),
-        hashtags: getRandomElements(demoData.hashtags, Math.floor(Math.random() * 3) + 1),
-        media: [{
-          type: getRandomElement(['image', 'video']),
-          placeholder: 'Add your media here',
-          required: Math.random() > 0.5
-        }]
-      },
-      usage: {
-        totalUses: Math.floor(Math.random() * 20),
-        lastUsed: Math.random() > 0.5 ? getRandomDate(30) : null
-      },
-      tags: getRandomElements(['template', 'social', 'content', 'marketing'], Math.floor(Math.random() * 3) + 1),
-      isActive: true
-    };
-    
-    templates.push(template);
-  }
-  
-  const createdTemplates = await PostTemplate.insertMany(templates);
-  console.log(`✅ Created ${createdTemplates.length} post templates`);
-  return createdTemplates;
-};
-
-const seedPostCollections = async (users, posts) => {
-  console.log('🌱 Seeding Post Collections...');
-  
-  const collections = [];
-  const collectionCount = Math.floor(users.length * 0.3); // 0.3 collections per user on average
-  
-  for (let i = 0; i < collectionCount; i++) {
-    const owner = getRandomElement(users);
-    const name = getRandomElement(demoData.collectionNames);
-    const description = `Collection of ${name.toLowerCase()}`;
-    
-    // Select random posts for this collection
-    const collectionPosts = getRandomElements(posts, Math.floor(Math.random() * 10) + 1);
-    
-    const collection = {
-      name: name,
-      description: description,
-      owner: owner._id,
-      isPublic: Math.random() > 0.6,
-      posts: collectionPosts.map(post => ({
-        post: post._id,
-        addedAt: getRandomDate(30),
-        addedBy: owner._id,
-        notes: Math.random() > 0.7 ? 'Great post!' : ''
-      })),
-      collaborators: Math.random() > 0.8 ? [{
-        user: getRandomElement(users)._id,
-        role: getRandomElement(['viewer', 'contributor', 'editor']),
-        permissions: {
-          canAddPosts: Math.random() > 0.5,
-          canRemovePosts: Math.random() > 0.7,
-          canEditCollection: Math.random() > 0.8,
-          canInvite: Math.random() > 0.9
-        },
-        invitedAt: getRandomDate(30),
-        acceptedAt: Math.random() > 0.3 ? getRandomDate(30) : null,
-        status: getRandomElement(['pending', 'accepted', 'declined'])
-      }] : [],
-      tags: getRandomElements(['collection', 'curated', 'personal'], Math.floor(Math.random() * 2) + 1),
-      settings: {
-        allowPublicViewing: Math.random() > 0.5,
-        allowPublicContributions: Math.random() > 0.7,
-        autoApprovePosts: Math.random() > 0.6,
-        maxPosts: 1000
-      },
-      stats: {
-        totalPosts: collectionPosts.length,
-        totalViews: Math.floor(Math.random() * 1000),
-        totalLikes: Math.floor(Math.random() * 500),
-        totalShares: Math.floor(Math.random() * 100),
-        lastActivity: getRandomDate(30)
-      },
-      isActive: true
-    };
-    
-    collections.push(collection);
-  }
-  
-  const createdCollections = await PostCollection.insertMany(collections);
-  console.log(`✅ Created ${createdCollections.length} post collections`);
-  return createdCollections;
-};
-
 const seedStoryHighlights = async (users, stories) => {
   console.log('🌱 Seeding Story Highlights...');
   
@@ -1362,8 +1200,6 @@ const seedDatabase = async (clearFirst = false) => {
         Report.deleteMany({}),
         Post.deleteMany({}),
         Story.deleteMany({}),
-        PostTemplate.deleteMany({}),
-        PostCollection.deleteMany({}),
         StoryHighlight.deleteMany({}),
         Notification.deleteMany({}),
         NotificationPreferences.deleteMany({}),
@@ -1388,8 +1224,6 @@ const seedDatabase = async (clearFirst = false) => {
     // Seed new models
     const posts = await seedPosts(users);
     const stories = await seedStories(users);
-    const postTemplates = await seedPostTemplates(users);
-    const postCollections = await seedPostCollections(users, posts);
     const storyHighlights = await seedStoryHighlights(users, stories);
     const notifications = await seedNotifications(users, posts, stories);
     const notificationPreferences = await seedNotificationPreferences(users);
@@ -1414,8 +1248,6 @@ const seedDatabase = async (clearFirst = false) => {
     console.log(`   🚨 Reports: ${reports.length}`);
     console.log(`   📝 Posts: ${posts.length}`);
     console.log(`   📖 Stories: ${stories.length}`);
-    console.log(`   📋 Post Templates: ${postTemplates.length}`);
-    console.log(`   📚 Post Collections: ${postCollections.length}`);
     console.log(`   ⭐ Story Highlights: ${storyHighlights.length}`);
     console.log(`   🔔 Notifications: ${notifications.length}`);
     console.log(`   ⚙️  Notification Preferences: ${notificationPreferences.length}`);
