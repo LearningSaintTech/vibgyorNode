@@ -1967,13 +1967,32 @@
                       "description": "everyone | followers | none (default: everyone)"
                     },
                     {
+                      "key": "location",
+                      "value": "{\"name\":\"Mumbai\",\"coordinates\":{\"lat\":19.0760,\"lng\":72.8777},\"address\":\"Mumbai, Maharashtra, India\",\"placeId\":\"ChIJwe1EZjDG5zsRaYxkjY_tpF0\",\"placeType\":\"locality\",\"accuracy\":\"city\"}",
+                      "type": "text",
+                      "description": "Location object (JSON string): {name, coordinates: {lat, lng}, address, placeId, placeType, accuracy}"
+                    },
+                    {
+                      "key": "hashtags",
+                      "value": "[\"vibgyor\",\"test\",\"social\"]",
+                      "type": "text",
+                      "description": "Array of hashtags (JSON string) - auto-extracted from content but can be added explicitly"
+                    },
+                    {
+                      "key": "mentions",
+                      "value": "[]",
+                      "type": "text",
+                      "description": "Array of user IDs to mention (JSON string) - auto-extracted from @username in content"
+                    },
+                    {
                       "key": "files",
                       "type": "file",
                       "src": []
                     }
                   ]
                 },
-                "url": "{{BASE_URL}}/user/posts"
+                "url": "{{BASE_URL}}/user/posts",
+                "description": "Create a new post with text, media, location, and privacy settings.\n\n**Form-Data Fields:**\n- content: Post text content (required if no media)\n- caption: Post caption/title (optional)\n- visibility: public | followers | private (default: public)\n- commentVisibility: everyone | followers | none (default: everyone)\n- location: JSON string with location details (optional)\n  - Example: {\"name\":\"Mumbai\",\"coordinates\":{\"lat\":19.0760,\"lng\":72.8777},\"address\":\"Mumbai, India\",\"placeId\":\"...\",\"placeType\":\"locality\",\"accuracy\":\"city\"}\n- hashtags: JSON array of hashtags (optional, auto-extracted from content)\n  - Example: [\"travel\",\"photography\",\"nature\"]\n- mentions: JSON array of user IDs to mention (optional, auto-extracted from @username)\n  - Example: [\"user_id_1\",\"user_id_2\"]\n- files: Image or video files (optional, max 10MB)\n\n**Location Fields:**\n- name: Location name (e.g., \"Mumbai\", \"Eiffel Tower\")\n- coordinates: {lat: number, lng: number}\n- address: Full address string\n- placeId: Google Places ID (optional)\n- placeType: locality | city | region | point_of_interest | etc.\n- accuracy: exact | approximate | city | region | country\n\n**Privacy Options:**\n- visibility: Who can see the post\n  - public: Everyone can see\n  - followers: Only followers can see\n  - private: Only you can see\n- commentVisibility: Who can comment\n  - everyone: Anyone can comment\n  - followers: Only followers can comment\n  - none: Comments disabled\n\n**Automatic Features:**\n- Hashtags (#) are auto-extracted from content\n- Mentions (@username) are auto-extracted from content\n- Post status is automatically set to 'published'\n- Media is uploaded to S3 with optimization\n\n**Response:**\n- Returns created post with ID\n- Auto-populated POST_ID environment variable"
               },
               "event": [
                 {
@@ -2013,7 +2032,24 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/posts/me"
+                "url": {
+                  "raw": "{{BASE_URL}}/user/posts/me?page=1&limit=20",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "posts", "me"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Results per page (default: 20)"
+                    }
+                  ]
+                },
+                "description": "Get all posts created by the current authenticated user.\n\n**Query Parameters:**\n- page: Page number (default: 1)\n- limit: Results per page (default: 20)\n\n**Returns:**\n- Array of user's own posts (published and drafts)\n- Each post includes a `lastComment` field showing the newest comment\n- Total count\n- Pagination metadata\n\n**Response Structure:**\n```json\n{\n  \"posts\": [\n    {\n      \"_id\": \"...\",\n      \"content\": \"Post content\",\n      \"author\": {...},\n      \"comments\": [...],\n      \"lastComment\": {\n        \"_id\": \"...\",\n        \"user\": {\n          \"_id\": \"...\",\n          \"username\": \"john_doe\",\n          \"fullName\": \"John Doe\",\n          \"profilePictureUrl\": \"...\"\n        },\n        \"content\": \"Latest comment text\",\n        \"createdAt\": \"2024-01-15T10:30:00.000Z\"\n      },\n      \"likesCount\": 10,\n      \"commentsCount\": 5\n    }\n  ]\n}\n```"
               }
             },
             {
@@ -2026,7 +2062,24 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/posts/user/{{USER_ID}}?page=1&limit=20"
+                "url": {
+                  "raw": "{{BASE_URL}}/user/posts/user/{{USER_ID}}?page=1&limit=20",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "posts", "user", "{{USER_ID}}"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Results per page (default: 20)"
+                    }
+                  ]
+                },
+                "description": "Get all posts from a specific user.\n\n**Path Parameters:**\n- userId: ID of the user whose posts to retrieve\n\n**Query Parameters:**\n- page: Page number (default: 1)\n- limit: Results per page (default: 20)\n\n**Returns:**\n- Array of user's published posts\n- Each post includes a `lastComment` field showing the newest comment\n- Total count\n- Pagination metadata\n\n**Note:** Only shows published posts unless viewing your own profile."
               }
             },
             {
@@ -2039,7 +2092,8 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}"
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}",
+                "description": "Get a single post by ID with full details.\n\n**Path Parameters:**\n- postId: ID of the post to retrieve\n\n**Returns:**\n- Full post details with populated author, comments, and likes\n- `lastComment` field showing the newest comment\n- View count (incremented if not the author)\n\n**Response Structure:**\n```json\n{\n  \"_id\": \"...\",\n  \"content\": \"Post content\",\n  \"author\": {\n    \"_id\": \"...\",\n    \"username\": \"john_doe\",\n    \"fullName\": \"John Doe\",\n    \"profilePictureUrl\": \"...\",\n    \"isVerified\": true\n  },\n  \"comments\": [...],\n  \"lastComment\": {\n    \"_id\": \"...\",\n    \"user\": {\n      \"_id\": \"...\",\n      \"username\": \"jane_doe\",\n      \"fullName\": \"Jane Doe\",\n      \"profilePictureUrl\": \"...\"\n    },\n    \"content\": \"Latest comment text\",\n    \"createdAt\": \"2024-01-15T10:30:00.000Z\"\n  },\n  \"likes\": [...],\n  \"likesCount\": 10,\n  \"commentsCount\": 5,\n  \"viewsCount\": 100,\n  \"visibility\": \"public\",\n  \"location\": {...}\n}\n```\n\n**Privacy Checks:**\n- Private posts: Only author can view\n- Followers-only posts: Author + followers can view\n- Public posts: Everyone can view"
               }
             },
             {
@@ -2058,29 +2112,38 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"content\": \"Updated post content! #updated #vibgyor\",\n  \"visibility\": \"followers\",\n  \"commentVisibility\": \"followers\"\n}"
+                  "raw": "{\n  \"content\": \"Updated post content! #updated #vibgyor\",\n  \"visibility\": \"followers\",\n  \"commentVisibility\": \"followers\",\n  \"location\": {\n    \"name\": \"Delhi\",\n    \"coordinates\": {\n      \"lat\": 28.7041,\n      \"lng\": 77.1025\n    },\n    \"address\": \"New Delhi, India\",\n    \"placeId\": \"ChIJLbZ-NFv9DDkRzk0gTkm3wlI\",\n    \"placeType\": \"locality\",\n    \"accuracy\": \"city\"\n  }\n}"
                 },
-                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}"
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}",
+                "description": "Update post content, visibility, comment settings, and location.\n\n**Body Fields:**\n- content: Post text content (optional)\n- visibility: public | followers | private (optional)\n- commentVisibility: everyone | followers | none (optional)\n- location: Location object with coordinates and place details (optional)\n  - name: Location name (e.g., \"Mumbai\")\n  - coordinates: { lat: number, lng: number }\n  - address: Full address string\n  - placeId: Google Places ID\n  - placeType: locality, city, region, etc.\n  - accuracy: exact | approximate | city | region | country\n\n**Note:** All fields are optional. Only provided fields will be updated."
               }
             },
-            {
-              "name": "Archive Post",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
-                ],
-                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/archive"
-              }
-            },
+             {
+               "name": "Archive Post",
+               "request": {
+                 "method": "PUT",
+                 "header": [
+                   { 
+                     "key": "Authorization", 
+                     "value": "Bearer {{USER_ACCESS_TOKEN}}" 
+                   }
+                 ],
+                 "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/archive",
+                 "description": "Archive a post. Archived posts are hidden from feed and profile but can be unarchived later.\n\n**Path Parameters:**\n- postId: ID of the post to archive\n\n**Response:**\n- Updated post with isArchived: true\n\n**Note:** Only the post author can archive their posts."
+               }
+             },
             {
               "name": "Unarchive Post",
               "request": {
                 "method": "PUT",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                  { 
+                    "key": "Authorization", 
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}" 
+                  }
                 ],
-                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/unarchive"
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/unarchive",
+                "description": "Unarchive a previously archived post. The post will be visible again in feed and profile.\n\n**Path Parameters:**\n- postId: ID of the post to unarchive\n\n**Response:**\n- Updated post with isArchived: false\n\n**Note:** Only the post author can unarchive their posts."
               }
             },
             {
@@ -2088,10 +2151,17 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" },
-                  { "key": "Content-Type", "value": "application/json" }
+                  { 
+                    "key": "Authorization", 
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}" 
+                  },
+                  { 
+                    "key": "Content-Type", 
+                    "value": "application/json" 
+                  }
                 ],
-                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/save"
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/save",
+                "description": "Save a post to your saved collection for later viewing.\n\n**Path Parameters:**\n- postId: ID of the post to save\n\n**Response:**\n- Success message\n- Updated saved posts count\n\n**Note:** Can save any public post or posts from users you follow."
               }
             },
             {
@@ -2099,9 +2169,13 @@
               "request": {
                 "method": "DELETE",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                  { 
+                    "key": "Authorization", 
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}" 
+                  }
                 ],
-                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/save"
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/save",
+                "description": "Remove a post from your saved collection.\n\n**Path Parameters:**\n- postId: ID of the post to unsave\n\n**Response:**\n- Success message\n- Updated saved posts count"
               }
             },
             {
@@ -2109,9 +2183,29 @@
               "request": {
                 "method": "GET",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                  { 
+                    "key": "Authorization", 
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}" 
+                  }
                 ],
-                "url": "{{BASE_URL}}/user/posts/saved?page=1&limit=20"
+                "url": {
+                  "raw": "{{BASE_URL}}/user/posts/saved?page=1&limit=20",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "posts", "saved"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Results per page (default: 20)"
+                    }
+                  ]
+                },
+                "description": "Get all posts saved by the current user.\n\n**Query Parameters:**\n- page: Page number (default: 1)\n- limit: Results per page (default: 20)\n\n**Returns:**\n- Array of saved posts\n- Total count\n- Pagination metadata\n- Date saved for each post"
               }
             },
             {

@@ -138,6 +138,23 @@ router.get('/hashtag/:hashtag',
   getPostsByHashtag
 );
 
+// User Posts Routes - MUST come BEFORE /:postId to avoid conflicts
+router.get('/me', 
+  authorize([Roles.USER]), 
+  getCurrentUserPosts
+);
+
+router.get('/saved', 
+  authorize([Roles.USER]), 
+  getSavedPosts
+);
+
+router.get('/user/:userId', 
+  authorize([Roles.USER]), 
+  getUserPosts
+);
+
+// Single Post Routes - MUST come AFTER specific routes like /me, /saved
 router.get('/:postId', 
   authorize([Roles.USER]), 
   getPost
@@ -163,17 +180,6 @@ router.put('/:postId/archive',
 router.put('/:postId/unarchive', 
   authorize([Roles.USER]), 
   unarchivePost
-);
-
-// User Posts Routes
-router.get('/me', 
-  authorize([Roles.USER]), 
-  getCurrentUserPosts
-);
-
-router.get('/user/:userId', 
-  authorize([Roles.USER]), 
-  getUserPosts
 );
 
 // Engagement Routes
@@ -207,11 +213,6 @@ router.post('/:postId/save',
 router.delete('/:postId/save', 
   authorize([Roles.USER]), 
   unsavePost
-);
-
-router.get('/saved', 
-  authorize([Roles.USER]), 
-  getSavedPosts
 );
 
 // Analytics and Reporting Routes
