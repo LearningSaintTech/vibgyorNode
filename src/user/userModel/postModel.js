@@ -159,22 +159,24 @@ const PostSchema = new mongoose.Schema(
       trim: true
     }],
     
-    // Privacy and Visibility
-    privacy: {
-      type: String,
-      enum: ['public', 'followers', 'close_friends', 'private'],
-      default: 'public'
-    },
-    closeFriends: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    }],
-    
     // Post Status
     status: {
       type: String,
       enum: ['draft', 'published', 'archived', 'deleted'],
       default: 'published'
+    },
+    
+    // Visibility Controls
+    visibility: {
+      type: String,
+      enum: ['public', 'followers', 'private'],
+      default: 'public',
+      index: true
+    },
+    commentVisibility: {
+      type: String,
+      enum: ['everyone', 'followers', 'none'],
+      default: 'everyone'
     },
     
     // Enhanced Location Tagging
@@ -326,7 +328,6 @@ PostSchema.index({ hashtags: 1 });
 PostSchema.index({ mentions: 1 });
 PostSchema.index({ 'likes.user': 1 });
 PostSchema.index({ 'comments.user': 1 });
-PostSchema.index({ privacy: 1, publishedAt: -1 });
 PostSchema.index({ isReported: 1 });
 
 // Virtual for engagement rate
@@ -455,15 +456,10 @@ PostSchema.methods.markMentionAsNotified = function(userId, start, end) {
 // Static methods
 PostSchema.statics.getFeedPosts = async function(userId, page = 1, limit = 20) {
   const followingIds = await this.getUserFollowing(userId);
-  const closeFriendsIds = await this.getUserCloseFriends(userId);
   
   return this.find({
     status: 'published',
-    $or: [
-      { privacy: 'public' },
-      { privacy: 'followers', author: { $in: followingIds } },
-      { privacy: 'close_friends', author: { $in: closeFriendsIds } }
-    ]
+    author: { $in: [...followingIds, userId] }
   })
   .populate('author', 'username fullName profilePictureUrl isVerified')
   .populate('comments.user', 'username fullName profilePictureUrl')
@@ -479,16 +475,9 @@ PostSchema.statics.getUserFollowing = async function(userId) {
   return user ? user.following : [];
 };
 
-PostSchema.statics.getUserCloseFriends = async function(userId) {
-  const User = require('./userAuthModel');
-  const user = await User.findById(userId).select('closeFriends');
-  return user ? user.closeFriends : [];
-};
-
 PostSchema.statics.searchPosts = function(query, page = 1, limit = 20) {
   return this.find({
     status: 'published',
-    privacy: 'public',
     $or: [
       { content: { $regex: query, $options: 'i' } },
       { caption: { $regex: query, $options: 'i' } },

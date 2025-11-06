@@ -1955,9 +1955,16 @@
                       "type": "text"
                     },
                     {
-                      "key": "privacy",
+                      "key": "visibility",
                       "value": "public",
-                      "type": "text"
+                      "type": "text",
+                      "description": "public | followers | private (default: public)"
+                    },
+                    {
+                      "key": "commentVisibility",
+                      "value": "everyone",
+                      "type": "text",
+                      "description": "everyone | followers | none (default: everyone)"
                     },
                     {
                       "key": "files",
@@ -1994,6 +2001,19 @@
                   }
                 ],
                 "url": "{{BASE_URL}}/user/posts/feed?page=1&limit=20"
+              }
+            },
+            {
+              "name": "Get Current User Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": "{{BASE_URL}}/user/posts/me"
               }
             },
             {
@@ -2038,9 +2058,60 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"content\": \"Updated post content! #updated #vibgyor\"\n}"
+                  "raw": "{\n  \"content\": \"Updated post content! #updated #vibgyor\",\n  \"visibility\": \"followers\",\n  \"commentVisibility\": \"followers\"\n}"
                 },
                 "url": "{{BASE_URL}}/user/posts/{{POST_ID}}"
+              }
+            },
+            {
+              "name": "Archive Post",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/archive"
+              }
+            },
+            {
+              "name": "Unarchive Post",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/unarchive"
+              }
+            },
+            {
+              "name": "Save Post",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/save"
+              }
+            },
+            {
+              "name": "Unsave Post",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                ],
+                "url": "{{BASE_URL}}/user/posts/{{POST_ID}}/save"
+              }
+            },
+            {
+              "name": "Get Saved Posts",
+              "request": {
+                "method": "GET",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}" }
+                ],
+                "url": "{{BASE_URL}}/user/posts/saved?page=1&limit=20"
               }
             },
             {
