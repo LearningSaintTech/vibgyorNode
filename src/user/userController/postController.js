@@ -9,7 +9,7 @@ const contentModeration = require('../userModel/contentModerationModel');
 // Create a new post
 async function createPost(req, res) {
   try {
-    const { content, caption, hashtags, mentions, location, privacy } = req.body;
+    const { content, caption, hashtags, mentions, location, visibility, commentVisibility } = req.body;
     const userId = req.user?.userId;
 
     if (!content && (!req.files || req.files.length === 0)) {
@@ -97,8 +97,9 @@ async function createPost(req, res) {
       media: media,
       hashtags: processedHashtags,
       mentions: processedMentions,
-      privacy: privacy || 'public',
-      status: 'published'
+      status: 'published',
+      visibility: visibility || 'public',
+      commentVisibility: commentVisibility || 'everyone'
     };
 
     // Add location if provided
@@ -188,17 +189,12 @@ async function getFeedPosts(req, res) {
     );
 
     // Get total count for pagination
-    const user = await User.findById(userId).select('following closeFriends');
+    const user = await User.findById(userId).select('following');
     const followingIds = user?.following || [];
-    const closeFriendsIds = user?.closeFriends || [];
 
     const totalPosts = await Post.countDocuments({
       status: 'published',
-      $or: [
-        { privacy: 'public' },
-        { privacy: 'followers', author: { $in: followingIds } },
-        { privacy: 'close_friends', author: { $in: closeFriendsIds } }
-      ]
+      author: { $in: [...followingIds, userId] }
     });
 
     return ApiResponse.success(res, {
@@ -232,9 +228,16 @@ async function getPost(req, res) {
       return ApiResponse.notFound(res, 'Post not found');
     }
 
-    // Check if user can view this post
-    if (post.privacy === 'private' && post.author._id.toString() !== userId) {
-      return ApiResponse.forbidden(res, 'You cannot view this post');
+    // Enforce post visibility on single post fetch
+    if (post.visibility === 'private' && post.author._id.toString() !== userId) {
+      return ApiResponse.forbidden(res, 'This post is private');
+    }
+    if (post.visibility === 'followers' && post.author._id.toString() !== userId) {
+      const author = await User.findById(post.author._id).select('followers');
+      const isFollower = author?.followers?.some(f => f.toString() === userId);
+      if (!isFollower) {
+        return ApiResponse.forbidden(res, 'Only followers can view this post');
+      }
     }
 
     // Add view if user is not the author
@@ -253,7 +256,7 @@ async function getPost(req, res) {
 async function updatePost(req, res) {
   try {
     const { postId } = req.params;
-    const { content, caption, hashtags, mentions, location, privacy } = req.body;
+    const { content, caption, hashtags, mentions, location, visibility, commentVisibility } = req.body;
     const userId = req.user?.userId;
 
     const post = await Post.findById(postId);
@@ -269,8 +272,9 @@ async function updatePost(req, res) {
     // Update post fields
     if (content !== undefined) post.content = content;
     if (caption !== undefined) post.caption = caption;
-    if (privacy !== undefined) post.privacy = privacy;
     if (location !== undefined) post.location = location;
+    if (visibility !== undefined) post.visibility = visibility;
+    if (commentVisibility !== undefined) post.commentVisibility = commentVisibility;
 
     // Process hashtags
     if (hashtags !== undefined) {
@@ -407,9 +411,21 @@ async function addComment(req, res) {
       return ApiResponse.badRequest(res, 'Comment content is required');
     }
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).populate('author', 'followers');
     if (!post) {
       return ApiResponse.notFound(res, 'Post not found');
+    }
+
+    // Enforce comment visibility
+    if (post.commentVisibility === 'none') {
+      return ApiResponse.forbidden(res, 'Comments are disabled for this post');
+    }
+    if (post.commentVisibility === 'followers') {
+      const authorFollowers = post.author?.followers?.map(f => f.toString()) || [];
+      const isAuthor = post.author && post.author._id && post.author._id.toString() === userId;
+      if (!isAuthor && !authorFollowers.includes(userId)) {
+        return ApiResponse.forbidden(res, 'Only followers can comment on this post');
+      }
     }
 
     await post.addComment(userId, content.trim(), parentCommentId);
@@ -517,7 +533,6 @@ async function searchPosts(req, res) {
 
     const totalPosts = await Post.countDocuments({
       status: 'published',
-      privacy: 'public',
       $or: [
         { content: { $regex: query, $options: 'i' } },
         { caption: { $regex: query, $options: 'i' } },
@@ -647,7 +662,6 @@ async function getPostsByHashtag(req, res) {
 
     const totalPosts = await Post.countDocuments({
       status: 'published',
-      privacy: 'public',
       hashtags: { $in: [hashtag.toLowerCase()] }
     });
 
@@ -726,10 +740,137 @@ module.exports = {
   // Basic CRUD
   createPost,
   getUserPosts,
+  getCurrentUserPosts: async function getCurrentUserPosts(req, res) {
+    try {
+      // Reuse getUserPosts by setting params.userId to the authenticated user
+      req.params.userId = req.user?.userId;
+      return await getUserPosts(req, res);
+    } catch (error) {
+      console.error('[POST] Get current user posts error:', error);
+      return ApiResponse.serverError(res, 'Failed to get current user posts');
+    }
+  },
   getFeedPosts,
   getPost,
   updatePost,
   deletePost,
+  archivePost,
+  unarchivePost,
+  // Save/Unsave
+  async function savePost(req, res) {
+    try {
+      const { postId } = req.params;
+      const userId = req.user?.userId;
+
+      const post = await Post.findById(postId).select('_id status');
+      if (!post) return ApiResponse.notFound(res, 'Post not found');
+      if (post.status === 'deleted') return ApiResponse.badRequest(res, 'Cannot save a deleted post');
+
+      const user = await User.findById(userId).select('savedPosts');
+      if (!user) return ApiResponse.forbidden(res, 'User not found');
+
+      const alreadySaved = user.savedPosts?.some(p => p.toString() === postId);
+      if (alreadySaved) {
+        return ApiResponse.success(res, { saved: true }, 'Post already saved');
+      }
+
+      user.savedPosts = [...(user.savedPosts || []), postId];
+      await user.save();
+
+      return ApiResponse.success(res, { saved: true }, 'Post saved');
+    } catch (error) {
+      console.error('[POST] Save post error:', error);
+      return ApiResponse.serverError(res, 'Failed to save post');
+    }
+  },
+  async function unsavePost(req, res) {
+    try {
+      const { postId } = req.params;
+      const userId = req.user?.userId;
+
+      const user = await User.findById(userId).select('savedPosts');
+      if (!user) return ApiResponse.forbidden(res, 'User not found');
+
+      user.savedPosts = (user.savedPosts || []).filter(p => p.toString() !== postId);
+      await user.save();
+
+      return ApiResponse.success(res, { saved: false }, 'Post unsaved');
+    } catch (error) {
+      console.error('[POST] Unsave post error:', error);
+      return ApiResponse.serverError(res, 'Failed to unsave post');
+    }
+  },
+  async function getSavedPosts(req, res) {
+    try {
+      const userId = req.user?.userId;
+      const { page = 1, limit = 20 } = req.query;
+
+      const user = await User.findById(userId).select('savedPosts');
+      if (!user) return ApiResponse.forbidden(res, 'User not found');
+
+      const savedIds = user.savedPosts || [];
+      const posts = await Post.find({ _id: { $in: savedIds }, status: { $ne: 'deleted' } })
+        .populate('author', 'username fullName profilePictureUrl isVerified')
+        .sort({ publishedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit));
+
+      const totalPosts = await Post.countDocuments({ _id: { $in: savedIds }, status: { $ne: 'deleted' } });
+
+      return ApiResponse.success(res, {
+        posts,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalPosts / limit),
+          totalPosts,
+          hasNext: page * limit < totalPosts,
+          hasPrev: page > 1
+        }
+      }, 'Saved posts retrieved successfully');
+    } catch (error) {
+      console.error('[POST] Get saved posts error:', error);
+      return ApiResponse.serverError(res, 'Failed to get saved posts');
+    }
+  },
+  // Archive/Unarchive
+  async function archivePost(req, res) {
+    try {
+      const { postId } = req.params;
+      const userId = req.user?.userId;
+
+      const post = await Post.findById(postId);
+      if (!post) return ApiResponse.notFound(res, 'Post not found');
+      if (post.author.toString() !== userId) {
+        return ApiResponse.forbidden(res, 'You can only archive your own posts');
+      }
+
+      post.status = 'archived';
+      await post.save();
+      return ApiResponse.success(res, post, 'Post archived successfully');
+    } catch (error) {
+      console.error('[POST] Archive post error:', error);
+      return ApiResponse.serverError(res, 'Failed to archive post');
+    }
+  },
+  async function unarchivePost(req, res) {
+    try {
+      const { postId } = req.params;
+      const userId = req.user?.userId;
+
+      const post = await Post.findById(postId);
+      if (!post) return ApiResponse.notFound(res, 'Post not found');
+      if (post.author.toString() !== userId) {
+        return ApiResponse.forbidden(res, 'You can only unarchive your own posts');
+      }
+
+      post.status = 'published';
+      await post.save();
+      return ApiResponse.success(res, post, 'Post unarchived successfully');
+    } catch (error) {
+      console.error('[POST] Unarchive post error:', error);
+      return ApiResponse.serverError(res, 'Failed to unarchive post');
+    }
+  },
   
   // Engagement
   toggleLike,

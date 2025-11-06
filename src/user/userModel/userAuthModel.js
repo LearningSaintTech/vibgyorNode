@@ -58,6 +58,7 @@ const UserSchema = new mongoose.Schema(
 		closeFriends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 		blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 		blockedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+		savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post', index: true }],
 		privacySettings: {
 			isPrivate: { type: Boolean, default: false },
 			allowFollowRequests: { type: Boolean, default: true },
