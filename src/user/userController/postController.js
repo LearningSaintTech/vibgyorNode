@@ -159,8 +159,26 @@ async function getUserPosts(req, res) {
 
     const totalPosts = await Post.countDocuments(query);
 
+    // Add lastComment field to each post (showing only the newest comment)
+    const postsWithLastComment = posts.map(post => {
+      const postObj = post.toObject();
+      
+      // Get the newest comment (comments are sorted by createdAt descending in the model)
+      if (postObj.comments && postObj.comments.length > 0) {
+        // Sort comments by createdAt descending to get the newest first
+        const sortedComments = [...postObj.comments].sort((a, b) => 
+          new Date(b.createdAt) - new Date(a.createdAt)
+        );
+        postObj.lastComment = sortedComments[0];
+      } else {
+        postObj.lastComment = null;
+      }
+      
+      return postObj;
+    });
+
     return ApiResponse.success(res, {
-      posts,
+      posts: postsWithLastComment,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalPosts / limit),
@@ -245,7 +263,19 @@ async function getPost(req, res) {
       await post.addView(userId);
     }
 
-    return ApiResponse.success(res, post, 'Post retrieved successfully');
+    // Add lastComment field (showing only the newest comment)
+    const postObj = post.toObject();
+    if (postObj.comments && postObj.comments.length > 0) {
+      // Sort comments by createdAt descending to get the newest first
+      const sortedComments = [...postObj.comments].sort((a, b) => 
+        new Date(b.createdAt) - new Date(a.createdAt)
+      );
+      postObj.lastComment = sortedComments[0];
+    } else {
+      postObj.lastComment = null;
+    }
+
+    return ApiResponse.success(res, postObj, 'Post retrieved successfully');
   } catch (error) {
     console.error('[POST] Get post error:', error);
     return ApiResponse.serverError(res, 'Failed to get post');
@@ -430,9 +460,11 @@ async function addComment(req, res) {
 
     await post.addComment(userId, content.trim(), parentCommentId);
     
-    // Populate the new comment
-    const newComment = post.comments[post.comments.length - 1];
-    await newComment.populate('user', 'username fullName profilePictureUrl');
+    // Populate the new comment using the parent document
+    // Mongoose doesn't support calling populate() on nested docs directly
+    const commentIndex = post.comments.length - 1;
+    await post.populate(`comments.${commentIndex}.user`, 'username fullName profilePictureUrl');
+    const newComment = post.comments[commentIndex];
 
     // Send notification for comment
     try {
@@ -754,10 +786,8 @@ module.exports = {
   getPost,
   updatePost,
   deletePost,
-  archivePost,
-  unarchivePost,
   // Save/Unsave
-  async function savePost(req, res) {
+  async savePost(req, res) {
     try {
       const { postId } = req.params;
       const userId = req.user?.userId;
@@ -783,7 +813,7 @@ module.exports = {
       return ApiResponse.serverError(res, 'Failed to save post');
     }
   },
-  async function unsavePost(req, res) {
+  async unsavePost(req, res) {
     try {
       const { postId } = req.params;
       const userId = req.user?.userId;
@@ -800,7 +830,7 @@ module.exports = {
       return ApiResponse.serverError(res, 'Failed to unsave post');
     }
   },
-  async function getSavedPosts(req, res) {
+  async getSavedPosts(req, res) {
     try {
       const userId = req.user?.userId;
       const { page = 1, limit = 20 } = req.query;
@@ -833,7 +863,7 @@ module.exports = {
     }
   },
   // Archive/Unarchive
-  async function archivePost(req, res) {
+  async archivePost(req, res) {
     try {
       const { postId } = req.params;
       const userId = req.user?.userId;
@@ -852,7 +882,7 @@ module.exports = {
       return ApiResponse.serverError(res, 'Failed to archive post');
     }
   },
-  async function unarchivePost(req, res) {
+  async unarchivePost(req, res) {
     try {
       const { postId } = req.params;
       const userId = req.user?.userId;
