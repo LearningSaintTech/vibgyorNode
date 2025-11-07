@@ -6,6 +6,45 @@ const feedAlgorithmService = require('../../services/feedAlgorithmService');
 const notificationService = require('../../services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
 
+// Helper function to transform post media into a cleaner structure
+function transformPostMedia(post) {
+  const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
+  
+  // Separate images and videos
+  const images = [];
+  const videos = [];
+  
+  if (postObj.media && Array.isArray(postObj.media)) {
+    postObj.media.forEach(mediaItem => {
+      if (mediaItem.type === 'image') {
+        images.push({
+          url: mediaItem.url,
+          thumbnail: mediaItem.thumbnail,
+          dimensions: mediaItem.dimensions
+        });
+      } else if (mediaItem.type === 'video') {
+        videos.push({
+          url: mediaItem.url,
+          thumbnail: mediaItem.thumbnail,
+          duration: mediaItem.duration,
+          dimensions: mediaItem.dimensions
+        });
+      }
+    });
+  }
+  
+  // Replace media with organized structure
+  postObj.media = {
+    images: images,
+    videos: videos,
+    totalCount: images.length + videos.length,
+    hasImages: images.length > 0,
+    hasVideos: videos.length > 0
+  };
+  
+  return postObj;
+}
+
 // Create a new post
 async function createPost(req, res) {
   try {
@@ -127,8 +166,11 @@ async function createPost(req, res) {
       // Don't fail the post creation if moderation fails
     }
 
+    // Transform media into organized structure before returning
+    const transformedPost = transformPostMedia(post);
+
     console.log('[POST] Post created successfully:', post._id);
-    return ApiResponse.success(res, post, 'Post created successfully');
+    return ApiResponse.success(res, transformedPost, 'Post created successfully');
   } catch (error) {
     console.error('[POST] Create post error:', error);
     return ApiResponse.serverError(res, 'Failed to create post');
@@ -159,7 +201,7 @@ async function getUserPosts(req, res) {
 
     const totalPosts = await Post.countDocuments(query);
 
-    // Add lastComment field to each post (showing only the newest comment)
+    // Add lastComment field and transform media for each post
     const postsWithLastComment = posts.map(post => {
       const postObj = post.toObject();
       
@@ -174,7 +216,8 @@ async function getUserPosts(req, res) {
         postObj.lastComment = null;
       }
       
-      return postObj;
+      // Transform media into organized structure
+      return transformPostMedia(postObj);
     });
 
     return ApiResponse.success(res, {
@@ -206,6 +249,9 @@ async function getFeedPosts(req, res) {
       parseInt(limit)
     );
 
+    // Transform media for all feed posts
+    const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post));
+
     // Get total count for pagination
     const user = await User.findById(userId).select('following');
     const followingIds = user?.following || [];
@@ -216,7 +262,7 @@ async function getFeedPosts(req, res) {
     });
 
     return ApiResponse.success(res, {
-      posts: feedPosts,
+      posts: transformedFeedPosts,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalPosts / limit),
@@ -275,7 +321,10 @@ async function getPost(req, res) {
       postObj.lastComment = null;
     }
 
-    return ApiResponse.success(res, postObj, 'Post retrieved successfully');
+    // Transform media into organized structure
+    const transformedPost = transformPostMedia(postObj);
+
+    return ApiResponse.success(res, transformedPost, 'Post retrieved successfully');
   } catch (error) {
     console.error('[POST] Get post error:', error);
     return ApiResponse.serverError(res, 'Failed to get post');
@@ -348,8 +397,11 @@ async function updatePost(req, res) {
     await post.save();
     await post.populate('author', 'username fullName profilePictureUrl isVerified');
 
+    // Transform media into organized structure before returning
+    const transformedPost = transformPostMedia(post);
+
     console.log('[POST] Post updated successfully:', postId);
-    return ApiResponse.success(res, post, 'Post updated successfully');
+    return ApiResponse.success(res, transformedPost, 'Post updated successfully');
   } catch (error) {
     console.error('[POST] Update post error:', error);
     return ApiResponse.serverError(res, 'Failed to update post');
@@ -563,6 +615,9 @@ async function searchPosts(req, res) {
     const query = q.trim();
     const posts = await Post.searchPosts(query, parseInt(page), parseInt(limit));
 
+    // Transform media for all search results
+    const transformedPosts = posts.map(post => transformPostMedia(post));
+
     const totalPosts = await Post.countDocuments({
       status: 'published',
       $or: [
@@ -573,7 +628,7 @@ async function searchPosts(req, res) {
     });
 
     return ApiResponse.success(res, {
-      posts,
+      posts: transformedPosts,
       query,
       pagination: {
         currentPage: parseInt(page),
@@ -666,8 +721,11 @@ async function getTrendingPosts(req, res) {
       parseInt(limit)
     );
 
+    // Transform media for all trending posts
+    const transformedPosts = trendingPosts.map(post => transformPostMedia(post));
+
     return ApiResponse.success(res, {
-      posts: trendingPosts,
+      posts: transformedPosts,
       timeWindow: `${hours} hours`
     }, 'Trending posts retrieved successfully');
   } catch (error) {
@@ -692,13 +750,16 @@ async function getPostsByHashtag(req, res) {
       parseInt(limit)
     );
 
+    // Transform media for all hashtag posts
+    const transformedPosts = posts.map(post => transformPostMedia(post));
+
     const totalPosts = await Post.countDocuments({
       status: 'published',
       hashtags: { $in: [hashtag.toLowerCase()] }
     });
 
     return ApiResponse.success(res, {
-      posts,
+      posts: transformedPosts,
       hashtag,
       pagination: {
         currentPage: parseInt(page),
@@ -845,10 +906,13 @@ module.exports = {
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
+      // Transform media for all saved posts
+      const transformedPosts = posts.map(post => transformPostMedia(post));
+
       const totalPosts = await Post.countDocuments({ _id: { $in: savedIds }, status: { $ne: 'deleted' } });
 
       return ApiResponse.success(res, {
-        posts,
+        posts: transformedPosts,
         pagination: {
           currentPage: parseInt(page),
           totalPages: Math.ceil(totalPosts / limit),
@@ -876,7 +940,9 @@ module.exports = {
 
       post.status = 'archived';
       await post.save();
-      return ApiResponse.success(res, post, 'Post archived successfully');
+      
+      const transformedPost = transformPostMedia(post);
+      return ApiResponse.success(res, transformedPost, 'Post archived successfully');
     } catch (error) {
       console.error('[POST] Archive post error:', error);
       return ApiResponse.serverError(res, 'Failed to archive post');
@@ -895,7 +961,9 @@ module.exports = {
 
       post.status = 'published';
       await post.save();
-      return ApiResponse.success(res, post, 'Post unarchived successfully');
+      
+      const transformedPost = transformPostMedia(post);
+      return ApiResponse.success(res, transformedPost, 'Post unarchived successfully');
     } catch (error) {
       console.error('[POST] Unarchive post error:', error);
       return ApiResponse.serverError(res, 'Failed to unarchive post');
