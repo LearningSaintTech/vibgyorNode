@@ -148,9 +148,17 @@ async function getUserStories(req, res) {
 
     const stories = await Story.getUserStories(userId, includeExpiredStories);
 
+    // Add hasViewed flag to each story
+    const storiesWithViewedFlag = stories.map(story => {
+      const storyObj = story.toObject();
+      const hasViewed = story.views.some(view => view.user.toString() === currentUserId);
+      storyObj.hasViewed = hasViewed;
+      return storyObj;
+    });
+
     return ApiResponse.success(res, {
-      stories,
-      totalStories: stories.length
+      stories: storiesWithViewedFlag,
+      totalStories: storiesWithViewedFlag.length
     }, 'User stories retrieved successfully');
   } catch (error) {
     console.error('[STORY] Get user stories error:', error);
@@ -184,17 +192,30 @@ async function getStoriesFeed(req, res) {
     .skip((page - 1) * limit)
     .limit(parseInt(limit));
 
-    // Group stories by author
+    // Add hasViewed flag to each story and group by author
     const groupedStories = {};
     stories.forEach(story => {
+      const storyObj = story.toObject();
+      
+      // Check if current user has viewed this story
+      const hasViewed = story.views.some(view => view.user.toString() === userId);
+      storyObj.hasViewed = hasViewed;
+      
       const authorId = story.author._id.toString();
       if (!groupedStories[authorId]) {
         groupedStories[authorId] = {
           author: story.author,
-          stories: []
+          stories: [],
+          hasUnviewedStories: false
         };
       }
-      groupedStories[authorId].stories.push(story);
+      
+      groupedStories[authorId].stories.push(storyObj);
+      
+      // Track if this author has any unviewed stories
+      if (!hasViewed) {
+        groupedStories[authorId].hasUnviewedStories = true;
+      }
     });
 
     return ApiResponse.success(res, {
@@ -236,7 +257,12 @@ async function getStory(req, res) {
       await story.addView(userId);
     }
 
-    return ApiResponse.success(res, story, 'Story retrieved successfully');
+    // Add hasViewed flag
+    const storyObj = story.toObject();
+    const hasViewed = story.views.some(view => view.user.toString() === userId);
+    storyObj.hasViewed = hasViewed;
+
+    return ApiResponse.success(res, storyObj, 'Story retrieved successfully');
   } catch (error) {
     console.error('[STORY] Get story error:', error);
     return ApiResponse.serverError(res, 'Failed to get story');
@@ -383,12 +409,21 @@ async function getStoriesByHashtag(req, res) {
   try {
     const { hashtag } = req.params;
     const { page = 1, limit = 20 } = req.query;
+    const userId = req.user?.userId;
 
     if (!hashtag) {
       return ApiResponse.badRequest(res, 'Hashtag is required');
     }
 
     const stories = await Story.getStoriesByHashtag(hashtag, parseInt(page), parseInt(limit));
+
+    // Add hasViewed flag to each story
+    const storiesWithViewedFlag = stories.map(story => {
+      const storyObj = story.toObject();
+      const hasViewed = story.views.some(view => view.user.toString() === userId);
+      storyObj.hasViewed = hasViewed;
+      return storyObj;
+    });
 
     const totalStories = await Story.countDocuments({
       status: 'active',
@@ -398,7 +433,7 @@ async function getStoriesByHashtag(req, res) {
     });
 
     return ApiResponse.success(res, {
-      stories,
+      stories: storiesWithViewedFlag,
       hashtag,
       pagination: {
         currentPage: parseInt(page),
