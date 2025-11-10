@@ -11,7 +11,7 @@ const PostSchema = new mongoose.Schema(
     },
     content: {
       type: String,
-      required: true,
+      // required: true,
       maxlength: 2200, // Instagram-like limit
       trim: true
     },
