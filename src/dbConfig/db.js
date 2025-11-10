@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const DEFAULT_URI = 'mongodb+srv://hraj6398_db_user:KIhzZWRFPMVk1Wie@cluster0.jq5gny8.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const DEFAULT_URI = 'mongodb://127.0.0.1:27017/vibgyor';
 
 const getMongoUri = () => process.env.MONGODB_URI || DEFAULT_URI;
 

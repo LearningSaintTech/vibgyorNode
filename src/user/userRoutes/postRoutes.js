@@ -33,10 +33,10 @@ const validateCreatePost = (req, res, next) => {
   const { content, caption, visibility, commentVisibility } = req.body;
   
   // Check if at least content or media is provided
-  if (!content && (!req.files || req.files.length === 0)) {
+  if ((!req.files || req.files.length === 0)) {
     return res.status(400).json({
       success: false,
-      message: 'Post content or media is required'
+      message: 'Post  media is required'
     });
   }
   
@@ -162,7 +162,7 @@ router.get('/:postId',
 
 router.put('/:postId', 
   authorize([Roles.USER]), 
-  validateCreatePost, 
+  // validateCreatePost, 
   updatePost
 );
 
