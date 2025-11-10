@@ -51,8 +51,8 @@ async function createPost(req, res) {
     const { content, caption, hashtags, mentions, location, visibility, commentVisibility } = req.body;
     const userId = req.user?.userId;
 
-    if (!content && (!req.files || req.files.length === 0)) {
-      return ApiResponse.badRequest(res, 'Post content or media is required');
+    if ((!req.files || req.files.length === 0)) {
+      return ApiResponse.badRequest(res, 'Post media is required');
     }
 
     // Process media files
@@ -112,6 +112,15 @@ async function createPost(req, res) {
       }
     });
 
+    // Extract hashtags from caption as well
+    const captionHashtags = caption ? caption.match(/#\w+/g) || [] : [];
+    captionHashtags.forEach(tag => {
+      const cleanTag = tag.toLowerCase().replace('#', '').trim();
+      if (!processedHashtags.includes(cleanTag)) {
+        processedHashtags.push(cleanTag);
+      }
+    });
+
     // Process mentions
     const processedMentions = [];
     if (mentions && Array.isArray(mentions)) {
@@ -123,7 +132,17 @@ async function createPost(req, res) {
     for (const mention of contentMentions) {
       const username = mention.replace('@', '').trim();
       const user = await User.findOne({ username: username });
-      if (user && !processedMentions.includes(user._id)) {
+      if (user && !processedMentions.includes(user._id.toString())) {
+        processedMentions.push(user._id);
+      }
+    }
+
+    // Extract mentions from caption as well
+    const captionMentions = caption ? caption.match(/@\w+/g) || [] : [];
+    for (const mention of captionMentions) {
+      const username = mention.replace('@', '').trim();
+      const user = await User.findOne({ username: username });
+      if (user && !processedMentions.some(id => id.toString() === user._id.toString())) {
         processedMentions.push(user._id);
       }
     }
@@ -355,16 +374,27 @@ async function updatePost(req, res) {
     if (visibility !== undefined) post.visibility = visibility;
     if (commentVisibility !== undefined) post.commentVisibility = commentVisibility;
 
-    // Process hashtags
-    if (hashtags !== undefined) {
+    // Process hashtags - extract from both content and caption
+    if (hashtags !== undefined || content !== undefined || caption !== undefined) {
       const processedHashtags = [];
-      if (Array.isArray(hashtags)) {
+      
+      // Add explicit hashtags if provided
+      if (hashtags && Array.isArray(hashtags)) {
         processedHashtags.push(...hashtags.map(tag => tag.toLowerCase().replace('#', '').trim()));
       }
       
       // Extract hashtags from content
-      const contentHashtags = content ? content.match(/#\w+/g) || [] : [];
+      const contentHashtags = (content || post.content) ? (content || post.content).match(/#\w+/g) || [] : [];
       contentHashtags.forEach(tag => {
+        const cleanTag = tag.toLowerCase().replace('#', '').trim();
+        if (!processedHashtags.includes(cleanTag)) {
+          processedHashtags.push(cleanTag);
+        }
+      });
+      
+      // Extract hashtags from caption as well
+      const captionHashtags = (caption || post.caption) ? (caption || post.caption).match(/#\w+/g) || [] : [];
+      captionHashtags.forEach(tag => {
         const cleanTag = tag.toLowerCase().replace('#', '').trim();
         if (!processedHashtags.includes(cleanTag)) {
           processedHashtags.push(cleanTag);
@@ -374,19 +404,31 @@ async function updatePost(req, res) {
       post.hashtags = processedHashtags;
     }
 
-    // Process mentions
-    if (mentions !== undefined) {
+    // Process mentions - extract from both content and caption
+    if (mentions !== undefined || content !== undefined || caption !== undefined) {
       const processedMentions = [];
-      if (Array.isArray(mentions)) {
+      
+      // Add explicit mentions if provided
+      if (mentions && Array.isArray(mentions)) {
         processedMentions.push(...mentions);
       }
       
       // Extract mentions from content
-      const contentMentions = content ? content.match(/@\w+/g) || [] : [];
+      const contentMentions = (content || post.content) ? (content || post.content).match(/@\w+/g) || [] : [];
       for (const mention of contentMentions) {
         const username = mention.replace('@', '').trim();
         const user = await User.findOne({ username: username });
-        if (user && !processedMentions.includes(user._id)) {
+        if (user && !processedMentions.some(id => id.toString() === user._id.toString())) {
+          processedMentions.push(user._id);
+        }
+      }
+      
+      // Extract mentions from caption as well
+      const captionMentions = (caption || post.caption) ? (caption || post.caption).match(/@\w+/g) || [] : [];
+      for (const mention of captionMentions) {
+        const username = mention.replace('@', '').trim();
+        const user = await User.findOne({ username: username });
+        if (user && !processedMentions.some(id => id.toString() === user._id.toString())) {
           processedMentions.push(user._id);
         }
       }
