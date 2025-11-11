@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authorize, Roles } = require('../../middleware/authMiddleware');
-const { sendPhoneOtp, verifyPhoneOtp, resendPhoneOtp, sendEmailOtp, verifyEmailOtp, resendEmailOtp, getMe, getProfile, updateProfile, getProfileStep, getEmailVerificationStatus,refreshToken } = require('../userController/userAuthController');
+const { sendPhoneOtp, verifyPhoneOtp, resendPhoneOtp, sendEmailOtp, verifyEmailOtp, resendEmailOtp, getMe, getProfile, getUserProfile, updateProfile, getProfileStep, getEmailVerificationStatus,refreshToken } = require('../userController/userAuthController');
 
 // Phone OTP auth
 router.post('/send-otp', sendPhoneOtp);
@@ -19,11 +19,14 @@ router.get('/me', authorize([Roles.USER]), getMe);
 // Get detailed user profile
 router.get('/profile', authorize([Roles.USER]), getProfile);
 
+// Get profile completion step (must be before /:userId)
+router.get('/profile/step', authorize([Roles.USER]), getProfileStep);
+
+// Get other user's profile
+router.get('/profile/:userId', authorize([Roles.USER]), getUserProfile);
+
 // Profile update
 router.put('/profile', authorize([Roles.USER]), updateProfile);
-
-// Get profile completion step
-router.get('/profile/step', authorize([Roles.USER]), getProfileStep);
 
 // Get email verification status
 router.get('/email/status', authorize([Roles.USER]), getEmailVerificationStatus);

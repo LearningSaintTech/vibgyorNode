@@ -159,9 +159,8 @@ class FeedAlgorithmService {
           $match: {
             status: 'published',
             $or: [
-              { privacy: 'public' },
-              { privacy: 'followers', author: { $in: followingIds } },
-              { privacy: 'close_friends', author: { $in: closeFriendsIds } }
+              { visibility: 'public' },
+              { visibility: 'followers', author: { $in: followingIds } }
             ]
           }
         },

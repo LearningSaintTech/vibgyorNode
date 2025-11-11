@@ -208,6 +208,19 @@ async function getUserPosts(req, res) {
     // If viewing own posts, show all statuses except deleted
     if (userId === currentUserId) {
       query.status = { $ne: 'deleted' };
+    } else {
+      // If viewing another user's posts, filter by visibility
+      // Check if current user is a follower
+      const author = await User.findById(userId).select('followers');
+      const isFollower = author?.followers?.some(f => f.toString() === currentUserId);
+      
+      if (isFollower) {
+        // Followers can see public and followers-only posts
+        query.visibility = { $in: ['public', 'followers'] };
+      } else {
+        // Non-followers can only see public posts
+        query.visibility = 'public';
+      }
     }
 
     const posts = await Post.find(query)
@@ -312,9 +325,7 @@ async function getPost(req, res) {
     }
 
     // Enforce post visibility on single post fetch
-    if (post.visibility === 'private' && post.author._id.toString() !== userId) {
-      return ApiResponse.forbidden(res, 'This post is private');
-    }
+    // Public: everyone can see | Followers: only followers (and author) can see
     if (post.visibility === 'followers' && post.author._id.toString() !== userId) {
       const author = await User.findById(post.author._id).select('followers');
       const isFollower = author?.followers?.some(f => f.toString() === userId);

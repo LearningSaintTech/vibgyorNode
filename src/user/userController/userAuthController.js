@@ -491,6 +491,90 @@ async function getEmailVerificationStatus(req, res) {
 	}
 }
 
+async function getUserProfile(req, res) {
+	try {
+		console.log('[USER][AUTH] getUserProfile');
+		const { userId } = req.params;
+		const currentUserId = req.user?.userId;
+
+		if (!userId) {
+			return ApiResponse.badRequest(res, 'User ID is required');
+		}
+
+		// Fetch the target user
+		const user = await User.findById(userId)
+			.select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt -lastOtpSentAt -lastEmailOtpSentAt -phoneNumber');
+
+		if (!user) {
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		// Check if user is inactive
+		if (!user.isActive) {
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		// Fetch current user to check relationships
+		const currentUser = await User.findById(currentUserId);
+		if (!currentUser) {
+			return ApiResponse.unauthorized(res, 'Current user not found');
+		}
+
+		// Calculate relationship flags
+		const isFollowing = currentUser.following.some(f => f.toString() === userId);
+		const isFollower = currentUser.followers.some(f => f.toString() === userId);
+		const isBlocked = currentUser.blockedUsers.some(b => b.toString() === userId);
+		const hasBlockedYou = user.blockedUsers.some(b => b.toString() === currentUserId);
+
+		// Calculate mutual followers
+		const mutualFollowers = user.followers.filter(f => 
+			currentUser.following.some(cf => cf.toString() === f.toString())
+		).length;
+
+		// Full profile data (visible to everyone)
+		const profileData = {
+			id: user._id,
+			username: user.username,
+			fullName: user.fullName,
+			profilePictureUrl: user.profilePictureUrl,
+			bio: user.bio,
+			gender: user.gender,
+			pronouns: user.pronouns,
+			likes: user.likes || [],
+			interests: user.interests || [],
+			preferences: {
+				hereFor: user.preferences?.hereFor || '',
+				primaryLanguage: user.preferences?.primaryLanguage || '',
+				secondaryLanguage: user.preferences?.secondaryLanguage || ''
+			},
+			location: user.location ? {
+				city: user.location.city,
+				country: user.location.country,
+				lat: user.location.lat,
+				lng: user.location.lng
+			} : null,
+			isVerified: user.verificationStatus === 'approved',
+			isPrivate: user.privacySettings?.isPrivate || false,
+			followersCount: user.followers?.length || 0,
+			followingCount: user.following?.length || 0,
+			createdAt: user.createdAt,
+			// Relationship flags
+			isFollowing: isFollowing,
+			isFollower: isFollower,
+			isBlocked: isBlocked,
+			hasBlockedYou: hasBlockedYou,
+			mutualFollowers: mutualFollowers
+		};
+
+		console.log('[USER][AUTH] Profile returned for user:', userId);
+		return ApiResponse.success(res, profileData, 'User profile retrieved');
+
+	} catch (e) {
+		console.error('[USER][AUTH] getUserProfile error', e?.message || e);
+		return ApiResponse.serverError(res, 'Failed to get user profile');
+	}
+}
+
 
 async function refreshToken(req, res) {
 	try {
@@ -578,6 +662,7 @@ module.exports = {
 	resendEmailOtp,
 	getMe,
 	getProfile,
+	getUserProfile,
 	updateProfile,
 	getProfileStep,
 	getEmailVerificationStatus,

@@ -38,7 +38,7 @@ const followRequestSchema = new Schema({
 });
 
 // Indexes for efficient queries
-followRequestSchema.index({ requester: 1, recipient: 1 }, { unique: true });
+// followRequestSchema.index({ requester: 1, recipient: 1 }, { unique: true });
 followRequestSchema.index({ recipient: 1, status: 1 });
 followRequestSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
