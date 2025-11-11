@@ -4,6 +4,7 @@ const { authorize, Roles } = require('../../middleware/authMiddleware');
 const {
 	sendFollowRequest,
 	unfollowUser,
+	removeFollower,
 	getFollowers,
 	getFollowing,
 	blockUser,
@@ -30,6 +31,7 @@ router.get('/follow-requests/sent', authorize([Roles.USER]), getSentFollowReques
 
 // Follow/Unfollow (after request is accepted)
 router.delete('/follow/:userId', authorize([Roles.USER]), unfollowUser);
+router.delete('/follower/:userId', authorize([Roles.USER]), removeFollower);
 router.get('/followers', authorize([Roles.USER]), getFollowers);
 router.get('/following', authorize([Roles.USER]), getFollowing);
 

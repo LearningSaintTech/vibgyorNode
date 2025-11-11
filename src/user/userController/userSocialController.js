@@ -3,18 +3,18 @@ const Report = require('../userModel/userReportModel');
 const FollowRequest = require('../userModel/followRequestModel');
 const ApiResponse = require('../../utils/apiResponse');
 
-// Send follow request to a user
+// Send follow request to a user (or directly follow if public account)
 async function sendFollowRequest(req, res) {
 	try {
 		console.log('[USER][SOCIAL] sendFollowRequest request started');
 		console.log('[USER][SOCIAL] Request params:', req.params);
 		console.log('[USER][SOCIAL] Request body:', req.body);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { userId } = req.params || {};
 		const { message = '' } = req.body || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { userId, message, currentUserId });
 
 		if (!userId || userId === currentUserId) {
@@ -31,7 +31,7 @@ async function sendFollowRequest(req, res) {
 
 		console.log('[USER][SOCIAL] Database query results:', {
 			currentUser: currentUser ? { id: currentUser._id, isActive: currentUser.isActive } : null,
-			targetUser: targetUser ? { id: targetUser._id, isActive: targetUser.isActive } : null
+			targetUser: targetUser ? { id: targetUser._id, isActive: targetUser.isActive, isPrivate: targetUser.privacySettings?.isPrivate } : null
 		});
 
 		if (!currentUser || !targetUser) {
@@ -53,7 +53,7 @@ async function sendFollowRequest(req, res) {
 			targetUserId: userId,
 			isFollowing: currentUser.following.includes(userId)
 		});
-		
+
 		if (currentUser.following.includes(userId)) {
 			console.log('[USER][SOCIAL] Already following this user');
 			return ApiResponse.badRequest(res, 'Already following this user');
@@ -65,43 +65,122 @@ async function sendFollowRequest(req, res) {
 			targetUserBlockedUsers: targetUser.blockedUsers,
 			isBlocked: currentUser.blockedUsers.includes(userId) || targetUser.blockedUsers.includes(currentUserId)
 		});
-		
+
 		if (currentUser.blockedUsers.includes(userId) || targetUser.blockedUsers.includes(currentUserId)) {
 			console.log('[USER][SOCIAL] Blocked user detected');
 			return ApiResponse.forbidden(res, 'Cannot follow blocked users');
 		}
 
-		console.log('[USER][SOCIAL] Checking for existing follow requests...');
+		// Check if target user has a public account
+		const isPublicAccount = !targetUser.privacySettings?.isPrivate;
+		console.log('[USER][SOCIAL] Target account type:', isPublicAccount ? 'PUBLIC' : 'PRIVATE');
+
+		// PUBLIC ACCOUNT - Direct follow (Instagram style)
+		if (isPublicAccount) {
+			console.log('[USER][SOCIAL] Public account detected - adding to following/followers directly...');
+			
+			// Update both users' following/followers arrays
+			await Promise.all([
+				User.findByIdAndUpdate(currentUserId, { $addToSet: { following: userId } }),
+				User.findByIdAndUpdate(userId, { $addToSet: { followers: currentUserId } })
+			]);
+
+			// Check if there's an existing follow request and update it to accepted
+			const existingRequest = await FollowRequest.findOne({
+				requester: currentUserId,
+				recipient: userId
+			});
+
+			if (existingRequest) {
+				existingRequest.status = 'accepted';
+				existingRequest.respondedAt = new Date();
+				await existingRequest.save();
+			} else {
+				// Create a follow request record with accepted status
+				await FollowRequest.create({
+					requester: currentUserId,
+					recipient: userId,
+					message: message.trim(),
+					status: 'accepted',
+					respondedAt: new Date()
+				});
+			}
+
+			console.log('[USER][SOCIAL] User followed successfully (public account)');
+			return ApiResponse.success(res, {
+				userId: targetUser._id,
+				username: targetUser.username,
+				fullName: targetUser.fullName,
+				accountType: 'public',
+				following: true
+			}, 'User followed successfully');
+		}
+
+		// PRIVATE ACCOUNT - Follow request flow (Instagram style)
+		console.log('[USER][SOCIAL] Private account detected - creating follow request...');
+
 		// Check if there's already a pending request
-		const existingRequest = await FollowRequest.findOne({
+		const existingPendingRequest = await FollowRequest.findOne({
 			requester: currentUserId,
 			recipient: userId,
 			status: 'pending'
 		});
 
-		console.log('[USER][SOCIAL] Existing request check result:', existingRequest ? { id: existingRequest._id, status: existingRequest.status } : 'No existing request');
+		console.log('[USER][SOCIAL] Existing pending request check result:', existingPendingRequest ? { id: existingPendingRequest._id, status: existingPendingRequest.status } : 'No existing pending request');
 
-		if (existingRequest) {
+		if (existingPendingRequest) {
 			console.log('[USER][SOCIAL] Follow request already sent');
 			return ApiResponse.badRequest(res, 'Follow request already sent');
 		}
 
-		console.log('[USER][SOCIAL] Creating follow request...');
-		// Create follow request
-		const followRequest = await FollowRequest.create({
+		// Check if there's a rejected request that can be reused
+		const existingRejectedRequest = await FollowRequest.findOne({
 			requester: currentUserId,
 			recipient: userId,
-			message: message.trim()
-		});
+			status: 'rejected'
+		}).sort({ respondedAt: -1 }); // Get the most recent one
 
-		console.log('[USER][SOCIAL] Follow request created:', {
-			id: followRequest._id,
-			requester: followRequest.requester,
-			recipient: followRequest.recipient,
-			message: followRequest.message,
-			status: followRequest.status,
-			expiresAt: followRequest.expiresAt
-		});
+		console.log('[USER][SOCIAL] Existing rejected request check result:', existingRejectedRequest ? { id: existingRejectedRequest._id, status: existingRejectedRequest.status } : 'No existing rejected request');
+
+		let followRequest;
+
+		if (existingRejectedRequest) {
+			console.log('[USER][SOCIAL] Reusing rejected follow request, updating to pending...');
+			// Reuse the rejected request by updating it to pending
+			existingRejectedRequest.status = 'pending';
+			existingRejectedRequest.message = message.trim();
+			existingRejectedRequest.respondedAt = null;
+			existingRejectedRequest.createdAt = new Date(); // Update to current time
+			existingRejectedRequest.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Reset expiration to 7 days from now
+			await existingRejectedRequest.save();
+			followRequest = existingRejectedRequest;
+
+			console.log('[USER][SOCIAL] Rejected follow request updated to pending:', {
+				id: followRequest._id,
+				requester: followRequest.requester,
+				recipient: followRequest.recipient,
+				message: followRequest.message,
+				status: followRequest.status,
+				expiresAt: followRequest.expiresAt
+			});
+		} else {
+			console.log('[USER][SOCIAL] Creating new follow request...');
+			// Create new follow request
+			followRequest = await FollowRequest.create({
+				requester: currentUserId,
+				recipient: userId,
+				message: message.trim()
+			});
+
+			console.log('[USER][SOCIAL] Follow request created:', {
+				id: followRequest._id,
+				requester: followRequest.requester,
+				recipient: followRequest.recipient,
+				message: followRequest.message,
+				status: followRequest.status,
+				expiresAt: followRequest.expiresAt
+			});
+		}
 
 		console.log('[USER][SOCIAL] Populating follow request data...');
 		// Populate the request for response
@@ -132,6 +211,7 @@ async function sendFollowRequest(req, res) {
 			},
 			message: followRequest.message,
 			status: followRequest.status,
+			accountType: 'private',
 			expiresAt: followRequest.expiresAt,
 			createdAt: followRequest.createdAt
 		};
@@ -150,10 +230,10 @@ async function unfollowUser(req, res) {
 		console.log('[USER][SOCIAL] unfollowUser request started');
 		console.log('[USER][SOCIAL] Request params:', req.params);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { userId } = req.params || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { userId, currentUserId });
 
 		if (!userId || userId === currentUserId) {
@@ -184,18 +264,24 @@ async function unfollowUser(req, res) {
 			targetUserId: userId,
 			isFollowing: currentUser.following.includes(userId)
 		});
-		
+
 		if (!currentUser.following.includes(userId)) {
 			console.log('[USER][SOCIAL] Not currently following this user');
 			return ApiResponse.badRequest(res, 'Not following this user');
 		}
 
-		console.log('[USER][SOCIAL] Updating following/followers arrays...');
-		// Update both users' following/followers arrays
+		console.log('[USER][SOCIAL] Updating following/followers arrays and deleting follow request...');
+		// Update both users' following/followers arrays and delete the follow request
 		await Promise.all([
 			User.findByIdAndUpdate(currentUserId, { $pull: { following: userId } }),
-			User.findByIdAndUpdate(userId, { $pull: { followers: currentUserId } })
+			User.findByIdAndUpdate(userId, { $pull: { followers: currentUserId } }),
+			FollowRequest.findOneAndDelete({
+				requester: currentUserId,
+				recipient: userId
+			})
 		]);
+
+		console.log('[USER][SOCIAL] User unfollowed and follow request deleted');
 
 		const responseData = {
 			following: currentUser.following.length - 1,
@@ -208,6 +294,91 @@ async function unfollowUser(req, res) {
 	} catch (e) {
 		console.error('[USER][SOCIAL] unfollowUser error:', e?.message || e);
 		return ApiResponse.serverError(res, 'Failed to unfollow user');
+	}
+}
+
+// Remove a follower (kick them out from following you)
+async function removeFollower(req, res) {
+	try {
+		console.log('[USER][SOCIAL] removeFollower request started');
+		console.log('[USER][SOCIAL] Request params:', req.params);
+		console.log('[USER][SOCIAL] Current user info:', req.user);
+
+		const { userId } = req.params || {};
+		const currentUserId = req.user?.userId;
+
+		console.log('[USER][SOCIAL] Extracted data:', { userId, currentUserId });
+
+		if (!userId || userId === currentUserId) {
+			console.log('[USER][SOCIAL] Invalid request: userId or self-remove attempt');
+			return ApiResponse.badRequest(res, 'Invalid user ID or cannot remove yourself');
+		}
+
+		console.log('[USER][SOCIAL] Fetching users from database...');
+		// Check if both users exist
+		const [currentUser, followerUser] = await Promise.all([
+			User.findById(currentUserId),
+			User.findById(userId)
+		]);
+
+		console.log('[USER][SOCIAL] Database query results:', {
+			currentUser: currentUser ? { id: currentUser._id, followers: currentUser.followers } : null,
+			followerUser: followerUser ? { id: followerUser._id, following: followerUser.following } : null
+		});
+
+		if (!currentUser || !followerUser) {
+			console.log('[USER][SOCIAL] User not found in database');
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		// Check if the user is actually a follower
+		console.log('[USER][SOCIAL] Checking if user is a follower:', {
+			currentUserFollowers: currentUser.followers,
+			followerUserId: userId,
+			isFollower: currentUser.followers.some(f => f.toString() === userId)
+		});
+
+		if (!currentUser.followers.some(f => f.toString() === userId)) {
+			console.log('[USER][SOCIAL] User is not a follower');
+			return ApiResponse.badRequest(res, 'This user is not following you');
+		}
+
+		console.log('[USER][SOCIAL] Removing follower and setting follow request to pending...');
+		// Remove from current user's followers and from the follower's following list
+		// Set follow request status to pending so they can easily request again
+		await Promise.all([
+			User.findByIdAndUpdate(currentUserId, { $pull: { followers: userId } }),
+			User.findByIdAndUpdate(userId, { $pull: { following: currentUserId } }),
+			FollowRequest.findOneAndUpdate(
+				{
+					requester: userId,
+					recipient: currentUserId,
+					status: 'accepted'
+				},
+				{
+					status: 'pending',
+					respondedAt: null
+				}
+			)
+		]);
+
+		console.log('[USER][SOCIAL] Follower removed and follow request set to pending');
+
+		const responseData = {
+			removedUser: {
+				id: followerUser._id,
+				username: followerUser.username,
+				fullName: followerUser.fullName
+			},
+			followers: currentUser.followers.length - 1,
+			message: `Removed ${followerUser.username || followerUser.fullName} from followers`
+		};
+
+		console.log('[USER][SOCIAL] Follower removed successfully, returning response:', responseData);
+		return ApiResponse.success(res, responseData, 'Follower removed successfully');
+	} catch (e) {
+		console.error('[USER][SOCIAL] removeFollower error:', e?.message || e);
+		return ApiResponse.serverError(res, 'Failed to remove follower');
 	}
 }
 
@@ -501,7 +672,7 @@ async function getUserReports(req, res) {
 		const currentUserId = req.user?.userId;
 
 		const skip = (parseInt(page) - 1) * parseInt(limit);
-		
+
 		const reports = await Report.find({ reporter: currentUserId })
 			.populate('reportedUser', 'username fullName profilePictureUrl')
 			.sort({ createdAt: -1 })
@@ -559,10 +730,10 @@ async function acceptFollowRequest(req, res) {
 		console.log('[USER][SOCIAL] acceptFollowRequest request started');
 		console.log('[USER][SOCIAL] Request params:', req.params);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { requestId } = req.params || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { requestId, currentUserId });
 
 		if (!requestId) {
@@ -613,7 +784,7 @@ async function acceptFollowRequest(req, res) {
 			recipientId: recipient._id,
 			isAlreadyFollowing: requester.following.includes(recipient._id)
 		});
-		
+
 		if (requester.following.includes(recipient._id)) {
 			console.log('[USER][SOCIAL] Already following this user, updating request status');
 			// Update request status to accepted and return
@@ -661,10 +832,10 @@ async function rejectFollowRequest(req, res) {
 		console.log('[USER][SOCIAL] rejectFollowRequest request started');
 		console.log('[USER][SOCIAL] Request params:', req.params);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { requestId } = req.params || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { requestId, currentUserId });
 
 		if (!requestId) {
@@ -724,21 +895,21 @@ async function getPendingFollowRequests(req, res) {
 		console.log('[USER][SOCIAL] getPendingFollowRequests request started');
 		console.log('[USER][SOCIAL] Request query:', req.query);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { page = 1, limit = 20 } = req.query || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { page, limit, currentUserId });
 
 		const skip = (parseInt(page) - 1) * parseInt(limit);
-		
+
 		console.log('[USER][SOCIAL] Database query parameters:', {
 			recipient: currentUserId,
 			status: 'pending',
 			skip: skip,
 			limit: parseInt(limit)
 		});
-		
+
 		const requests = await FollowRequest.find({
 			recipient: currentUserId,
 			status: 'pending'
@@ -793,26 +964,26 @@ async function getSentFollowRequests(req, res) {
 		console.log('[USER][SOCIAL] getSentFollowRequests request started');
 		console.log('[USER][SOCIAL] Request query:', req.query);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { page = 1, limit = 20, status = 'all' } = req.query || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { page, limit, status, currentUserId });
 
 		const skip = (parseInt(page) - 1) * parseInt(limit);
-		
+
 		// Build query based on status filter
 		let query = { requester: currentUserId };
 		if (status !== 'all') {
 			query.status = status;
 		}
-		
+
 		console.log('[USER][SOCIAL] Database query parameters:', {
 			query: query,
 			skip: skip,
 			limit: parseInt(limit)
 		});
-		
+
 		const requests = await FollowRequest.find(query)
 			.populate('recipient', 'username fullName profilePictureUrl verificationStatus')
 			.sort({ createdAt: -1 })
@@ -861,10 +1032,10 @@ async function cancelFollowRequest(req, res) {
 		console.log('[USER][SOCIAL] cancelFollowRequest request started');
 		console.log('[USER][SOCIAL] Request params:', req.params);
 		console.log('[USER][SOCIAL] Current user info:', req.user);
-		
+
 		const { requestId } = req.params || {};
 		const currentUserId = req.user?.userId;
-		
+
 		console.log('[USER][SOCIAL] Extracted data:', { requestId, currentUserId });
 
 		if (!requestId) {
@@ -873,7 +1044,7 @@ async function cancelFollowRequest(req, res) {
 		}
 
 		console.log('[USER][SOCIAL] Finding and deleting follow request...');
-		// Find and delete the follow request
+		// Find and delete the pending follow request
 		const followRequest = await FollowRequest.findOneAndDelete({
 			_id: requestId,
 			requester: currentUserId,
@@ -911,6 +1082,7 @@ async function cancelFollowRequest(req, res) {
 module.exports = {
 	sendFollowRequest,
 	unfollowUser,
+	removeFollower,
 	getFollowers,
 	getFollowing,
 	blockUser,
