@@ -23,6 +23,7 @@ const {
   addMention,
   archivePost,
   unarchivePost,
+  getArchivedPosts,
   savePost,
   unsavePost,
   getSavedPosts
@@ -147,6 +148,11 @@ router.get('/me',
 router.get('/saved', 
   authorize([Roles.USER]), 
   getSavedPosts
+);
+
+router.get('/archived', 
+  authorize([Roles.USER]), 
+  getArchivedPosts
 );
 
 router.get('/user/:userId', 

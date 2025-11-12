@@ -1022,6 +1022,60 @@ module.exports = {
       return ApiResponse.serverError(res, 'Failed to unarchive post');
     }
   },
+  async getArchivedPosts(req, res) {
+    try {
+      const userId = req.user?.userId;
+      const { page = 1, limit = 20 } = req.query;
+
+      // Only get archived posts from the current user
+      const posts = await Post.find({
+        author: userId,
+        status: 'archived'
+      })
+        .populate('author', 'username fullName profilePictureUrl isVerified')
+        .populate('comments.user', 'username fullName profilePictureUrl')
+        .populate('likes.user', 'username fullName')
+        .sort({ publishedAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit));
+
+      // Transform media for all archived posts
+      const transformedPosts = posts.map(post => {
+        const postObj = post.toObject();
+        
+        // Add lastComment field
+        if (postObj.comments && postObj.comments.length > 0) {
+          const sortedComments = [...postObj.comments].sort((a, b) => 
+            new Date(b.createdAt) - new Date(a.createdAt)
+          );
+          postObj.lastComment = sortedComments[0];
+        } else {
+          postObj.lastComment = null;
+        }
+        
+        return transformPostMedia(postObj);
+      });
+
+      const totalPosts = await Post.countDocuments({
+        author: userId,
+        status: 'archived'
+      });
+
+      return ApiResponse.success(res, {
+        posts: transformedPosts,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalPosts / limit),
+          totalPosts,
+          hasNext: page * limit < totalPosts,
+          hasPrev: page > 1
+        }
+      }, 'Archived posts retrieved successfully');
+    } catch (error) {
+      console.error('[POST] Get archived posts error:', error);
+      return ApiResponse.serverError(res, 'Failed to get archived posts');
+    }
+  },
   
   // Engagement
   toggleLike,
