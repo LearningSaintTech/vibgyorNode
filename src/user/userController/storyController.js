@@ -493,6 +493,7 @@ async function getStoryAnalytics(req, res) {
 
     const analytics = {
       views: story.analytics.viewsCount,
+      likes: story.analytics.likesCount,
       replies: story.analytics.repliesCount,
       shares: story.analytics.sharesCount,
       engagementRate: story.engagementRate,
@@ -631,6 +632,75 @@ async function trackStoryView(req, res) {
   }
 }
 
+// Like/Unlike story (toggle)
+async function toggleLikeStory(req, res) {
+  try {
+    const { storyId } = req.params;
+    const userId = req.user?.userId;
+
+    console.log('[STORY] Toggle like story - START:', { storyId, userId });
+
+    const story = await Story.findById(storyId)
+      .populate('author', 'privacySettings followers username');
+      
+    if (!story) {
+      return ApiResponse.notFound(res, 'Story not found');
+    }
+
+    // Check if story is expired
+    if (story.expiresAt < new Date()) {
+      return ApiResponse.badRequest(res, 'Story has expired');
+    }
+
+    const isOwnStory = story.author._id.toString() === userId;
+    const isPrivateAccount = story.author.privacySettings?.isPrivate || false;
+    const isFollowing = story.author.followers?.some(followerId => followerId.toString() === userId);
+
+    console.log('[STORY] Like privacy check:', {
+      storyAuthor: story.author.username,
+      isOwnStory,
+      isPrivateAccount,
+      isFollowing
+    });
+
+    // Cannot like own story
+    if (isOwnStory) {
+      console.log('[STORY] Cannot like own story');
+      return ApiResponse.badRequest(res, 'Cannot like your own story');
+    }
+
+    // Instagram-like account privacy check:
+    // - If PUBLIC account → anyone can like
+    // - If PRIVATE account → only followers can like
+    if (isPrivateAccount && !isFollowing) {
+      console.log('[STORY] Private account - cannot like');
+      return ApiResponse.forbidden(res, 'This account is private. Follow to like their stories.');
+    }
+
+    // Toggle like status
+    await story.toggleLike(userId);
+
+    // Find the updated view to check isLiked status
+    const userView = story.views.find(view => view.user.toString() === userId);
+    const isLiked = userView ? userView.isLiked : false;
+
+    console.log('[STORY] Story like toggled successfully:', {
+      storyId: story._id,
+      storyAuthor: story.author.username,
+      isLiked: isLiked,
+      likesCount: story.analytics.likesCount
+    });
+
+    return ApiResponse.success(res, {
+      isLiked: isLiked,
+      likesCount: story.analytics.likesCount
+    }, isLiked ? 'Story liked successfully' : 'Story unliked successfully');
+  } catch (error) {
+    console.error('[STORY] Toggle like story error:', error);
+    return ApiResponse.serverError(res, 'Failed to toggle like story');
+  }
+}
+
 // Get story views (who viewed the story)
 async function getStoryViews(req, res) {
   try {
@@ -658,7 +728,7 @@ async function getStoryViews(req, res) {
     const totalViews = story.views.length;
     const paginatedViews = story.views.slice(skip, skip + parseInt(limit));
 
-    // Format views data
+    // Format views data including isLiked flag
     const viewsData = paginatedViews.map(view => ({
       user: {
         id: view.user._id,
@@ -668,17 +738,20 @@ async function getStoryViews(req, res) {
         isVerified: view.user.isVerified
       },
       viewedAt: view.viewedAt,
-      viewDuration: view.viewDuration
+      viewDuration: view.viewDuration,
+      isLiked: view.isLiked || false
     }));
 
     console.log('[STORY] Story views retrieved:', {
       storyId: story._id,
-      totalViews: totalViews
+      totalViews: totalViews,
+      totalLikes: story.analytics.likesCount
     });
 
     return ApiResponse.success(res, {
       views: viewsData,
       totalViews: totalViews,
+      totalLikes: story.analytics.likesCount,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -704,6 +777,7 @@ module.exports = {
   // Engagement
   replyToStory,
   trackStoryView,
+  toggleLikeStory,
   getStoryViews,
   
   // Discovery & Analytics

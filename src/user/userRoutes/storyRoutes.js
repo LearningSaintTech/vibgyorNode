@@ -45,6 +45,13 @@ router.get('/:storyId', storyController.getStory);
 router.post('/:storyId/view', storyController.trackStoryView);
 
 /**
+ * @route POST /user/stories/:storyId/like
+ * @desc Toggle like on story (like/unlike)
+ * @access Private
+ */
+router.post('/:storyId/like', storyController.toggleLikeStory);
+
+/**
  * @route GET /user/stories/:storyId/views
  * @desc Get story views (who viewed)
  * @access Private

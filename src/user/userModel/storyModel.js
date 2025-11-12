@@ -97,6 +97,10 @@ const StorySchema = new mongoose.Schema(
       viewDuration: {
         type: Number, // Time spent viewing in seconds
         default: 0
+      },
+      isLiked: {
+        type: Boolean,
+        default: false
       }
     }],
     replies: [{
@@ -148,6 +152,10 @@ const StorySchema = new mongoose.Schema(
     // Analytics
     analytics: {
       viewsCount: {
+        type: Number,
+        default: 0
+      },
+      likesCount: {
         type: Number,
         default: 0
       },
@@ -222,7 +230,7 @@ StorySchema.virtual('timeRemaining').get(function() {
 // Virtual for engagement rate
 StorySchema.virtual('engagementRate').get(function() {
   if (this.analytics.viewsCount === 0) return 0;
-  const engagement = this.analytics.repliesCount;
+  const engagement = this.analytics.likesCount + this.analytics.repliesCount;
   return ((engagement / this.analytics.viewsCount) * 100).toFixed(2);
 });
 
@@ -235,6 +243,30 @@ StorySchema.methods.addView = function(userId, viewDuration = 0) {
     this.analytics.viewsCount = this.views.length;
     this.lastEngagementAt = new Date();
   }
+  return this.save();
+};
+
+StorySchema.methods.toggleLike = function(userId) {
+  // Find the user in views array
+  const existingView = this.views.find(view => view.user.toString() === userId.toString());
+  
+  if (existingView) {
+    // Toggle isLiked status
+    existingView.isLiked = !existingView.isLiked;
+  } else {
+    // User hasn't viewed the story yet, add them with isLiked: true
+    this.views.push({ 
+      user: userId, 
+      viewDuration: 0,
+      isLiked: true 
+    });
+    this.analytics.viewsCount = this.views.length;
+  }
+  
+  // Update likes count
+  this.analytics.likesCount = this.views.filter(view => view.isLiked).length;
+  this.lastEngagementAt = new Date();
+  
   return this.save();
 };
 
@@ -344,6 +376,7 @@ StorySchema.pre('save', function(next) {
 StorySchema.pre('save', function(next) {
   if (this.isModified('views')) {
     this.analytics.viewsCount = this.views.length;
+    this.analytics.likesCount = this.views.filter(view => view.isLiked).length;
   }
   if (this.isModified('replies')) {
     this.analytics.repliesCount = this.replies.length;
