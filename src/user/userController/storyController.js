@@ -133,20 +133,79 @@ async function createStory(req, res) {
   }
 }
 
-// Get user's stories
+// Get user's stories (Instagram-like: Account privacy only)
 async function getUserStories(req, res) {
   try {
     const { userId } = req.params;
     const { includeExpired = false } = req.query;
     const currentUserId = req.user?.userId;
 
+    console.log('[STORY] Get user stories - START:', { 
+      targetUserId: userId, 
+      currentUserId,
+      includeExpired 
+    });
+
+    // Get the story author's profile to check privacy settings
+    const author = await User.findById(userId).select('privacySettings followers username fullName');
+    if (!author) {
+      console.log('[STORY] Target user not found:', userId);
+      return ApiResponse.notFound(res, 'User not found');
+    }
+
+    console.log('[STORY] Target user found:', {
+      userId: author._id,
+      username: author.username,
+      fullName: author.fullName,
+      hasPrivacySettings: !!author.privacySettings,
+      followersCount: author.followers?.length || 0
+    });
+
+    // Check privacy permissions
+    const isOwnStories = userId === currentUserId;
+    const isPrivateAccount = author.privacySettings?.isPrivate || false;
+    const isFollowing = author.followers?.some(followerId => followerId.toString() === currentUserId);
+
+    console.log('[STORY] Privacy check:', {
+      targetUser: author.username || author.fullName || 'Unknown',
+      isOwnStories,
+      isPrivateAccount,
+      isFollowing,
+      followersCount: author.followers?.length || 0
+    });
+
+    // Instagram-like account privacy check:
+    // - If own stories → always allow
+    // - If PUBLIC account → allow everyone
+    // - If PRIVATE account → only allow followers
+    if (!isOwnStories && isPrivateAccount && !isFollowing) {
+      console.log('[STORY] Private account - access denied');
+      return ApiResponse.forbidden(res, 'This account is private. Follow to see their stories.');
+    }
+
     // If viewing own stories, include expired ones
     let includeExpiredStories = includeExpired;
-    if (userId === currentUserId) {
+    if (isOwnStories) {
       includeExpiredStories = true;
     }
 
+    console.log('[STORY] Fetching stories with includeExpired:', includeExpiredStories);
+
+    // Debug: Check what stories exist for this user
+    const allStoriesForUser = await Story.find({ author: userId });
+    console.log('[STORY] DEBUG - Total stories for user (any status):', allStoriesForUser.length);
+    if (allStoriesForUser.length > 0) {
+      console.log('[STORY] DEBUG - Sample story:', {
+        status: allStoriesForUser[0].status,
+        expiresAt: allStoriesForUser[0].expiresAt,
+        now: new Date(),
+        isExpired: allStoriesForUser[0].expiresAt < new Date()
+      });
+    }
+
     const stories = await Story.getUserStories(userId, includeExpiredStories);
+
+    console.log('[STORY] Stories fetched from model:', stories.length);
 
     // Add hasViewed flag to each story
     const storiesWithViewedFlag = stories.map(story => {
@@ -156,9 +215,18 @@ async function getUserStories(req, res) {
       return storyObj;
     });
 
+    console.log('[STORY] User stories retrieved successfully:', { 
+      targetUser: author.username,
+      totalStories: storiesWithViewedFlag.length,
+      isPrivateAccount,
+      isFollowing,
+      hasAccess: true 
+    });
+
     return ApiResponse.success(res, {
       stories: storiesWithViewedFlag,
-      totalStories: storiesWithViewedFlag.length
+      totalStories: storiesWithViewedFlag.length,
+      isPrivateAccount: isPrivateAccount
     }, 'User stories retrieved successfully');
   } catch (error) {
     console.error('[STORY] Get user stories error:', error);
@@ -166,31 +234,65 @@ async function getUserStories(req, res) {
   }
 }
 
-// Get stories feed
+// Get stories feed (Instagram-like: ONLY from followed users)
 async function getStoriesFeed(req, res) {
   try {
     const { page = 1, limit = 20 } = req.query;
     const userId = req.user?.userId;
 
-    // Get user's following and close friends
-    const user = await User.findById(userId).select('following closeFriends');
-    const followingIds = user?.following || [];
-    const closeFriendsIds = user?.closeFriends || [];
+    console.log('[STORY] Get stories feed - START:', { userId });
 
+    // Get user's following list
+    const user = await User.findById(userId).select('following');
+    if (!user) {
+      console.log('[STORY] User not found');
+      return ApiResponse.notFound(res, 'User not found');
+    }
+
+    const followingIds = user.following || [];
+    console.log('[STORY] Following count:', followingIds.length);
+
+    // If not following anyone, return empty feed
+    if (followingIds.length === 0) {
+      console.log('[STORY] User is not following anyone');
+      return ApiResponse.success(res, {
+        storiesFeed: [],
+        totalAuthors: 0
+      }, 'No stories available - not following anyone');
+    }
+
+    // Debug: Check what stories exist for followed users
+    const allStoriesFromFollowedUsers = await Story.find({
+      author: { $in: followingIds }
+    });
+    console.log('[STORY] DEBUG - Total stories from followed users (any status):', allStoriesFromFollowedUsers.length);
+    if (allStoriesFromFollowedUsers.length > 0) {
+      const sampleStory = allStoriesFromFollowedUsers[0];
+      console.log('[STORY] DEBUG - Sample story from followed user:', {
+        author: sampleStory.author,
+        status: sampleStory.status,
+        expiresAt: sampleStory.expiresAt,
+        now: new Date(),
+        isExpired: sampleStory.expiresAt < new Date()
+      });
+    }
+
+    // Instagram-like behavior: Get ONLY stories from people the user is following
+    // Account privacy is checked when viewing individual stories, not in feed query
     const stories = await Story.find({
       status: 'active',
       expiresAt: { $gt: new Date() },
-      $or: [
-        { privacy: 'public' },
-        { privacy: 'followers', author: { $in: followingIds } },
-        { privacy: 'close_friends', author: { $in: closeFriendsIds } }
-      ]
+      author: { $in: followingIds }  // Simple: Only from followed users
     })
-    .populate('author', 'username fullName profilePictureUrl isVerified')
-    .populate('mentions.user', 'username fullName profilePictureUrl')
+    .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
+    .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
+    .populate('views.user', 'username fullName profilePictureUrl isVerified')
+    .populate('replies.user', 'username fullName profilePictureUrl isVerified')
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
     .limit(parseInt(limit));
+
+    console.log('[STORY] Stories found from followed users:', stories.length);
 
     // Add hasViewed flag to each story and group by author
     const groupedStories = {};
@@ -218,6 +320,11 @@ async function getStoriesFeed(req, res) {
       }
     });
 
+    console.log('[STORY] Stories feed ready:', {
+      totalAuthors: Object.keys(groupedStories).length,
+      authors: Object.keys(groupedStories).map(id => groupedStories[id].author.username)
+    });
+
     return ApiResponse.success(res, {
       storiesFeed: Object.values(groupedStories),
       totalAuthors: Object.keys(groupedStories).length
@@ -228,15 +335,19 @@ async function getStoriesFeed(req, res) {
   }
 }
 
-// Get single story
+// Get single story (Instagram-like: Account privacy only)
 async function getStory(req, res) {
   try {
     const { storyId } = req.params;
     const userId = req.user?.userId;
 
+    console.log('[STORY] Get story - START:', { storyId, userId });
+
     const story = await Story.findById(storyId)
-      .populate('author', 'username fullName profilePictureUrl isVerified')
-      .populate('mentions.user', 'username fullName profilePictureUrl');
+      .populate('author', 'username fullName profilePictureUrl isVerified privacySettings followers')
+      .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
+      .populate('views.user', 'username fullName profilePictureUrl isVerified')
+      .populate('replies.user', 'username fullName profilePictureUrl isVerified');
 
     if (!story) {
       return ApiResponse.notFound(res, 'Story not found');
@@ -247,20 +358,37 @@ async function getStory(req, res) {
       return ApiResponse.badRequest(res, 'Story has expired');
     }
 
-    // Check privacy
-    if (story.privacy === 'private' && story.author._id.toString() !== userId) {
-      return ApiResponse.forbidden(res, 'You cannot view this story');
-    }
+    const isOwnStory = story.author._id.toString() === userId;
+    const isPrivateAccount = story.author.privacySettings?.isPrivate || false;
+    const isFollowing = story.author.followers?.some(followerId => followerId.toString() === userId);
 
-    // Add view if user is not the author
-    if (story.author._id.toString() !== userId) {
-      await story.addView(userId);
+    console.log('[STORY] Privacy check:', {
+      isOwnStory,
+      isPrivateAccount,
+      isFollowing
+    });
+
+    // Instagram-like account privacy check:
+    // - If own story → always allow
+    // - If PUBLIC account → allow everyone
+    // - If PRIVATE account → only allow followers
+    if (!isOwnStory && isPrivateAccount && !isFollowing) {
+      console.log('[STORY] Private account - access denied');
+      return ApiResponse.forbidden(res, 'This account is private. Follow to see their stories.');
     }
 
     // Add hasViewed flag
     const storyObj = story.toObject();
     const hasViewed = story.views.some(view => view.user.toString() === userId);
     storyObj.hasViewed = hasViewed;
+
+    console.log('[STORY] Story retrieved successfully:', {
+      storyId: story._id,
+      author: story.author.username,
+      isPrivateAccount,
+      isFollowing,
+      hasAccess: true
+    });
 
     return ApiResponse.success(res, storyObj, 'Story retrieved successfully');
   } catch (error) {
@@ -328,10 +456,14 @@ async function replyToStory(req, res) {
 
     await story.addReply(userId, content.trim(), isDirectMessage);
 
+    // Fetch story again with populated replies
+    const updatedStory = await Story.findById(storyId)
+      .populate('replies.user', 'username fullName profilePictureUrl isVerified');
+
     console.log('[STORY] Reply added successfully');
     return ApiResponse.success(res, {
-      replies: story.replies,
-      repliesCount: story.analytics.repliesCount
+      replies: updatedStory.replies,
+      repliesCount: updatedStory.analytics.repliesCount
     }, 'Reply added successfully');
   } catch (error) {
     console.error('[STORY] Reply to story error:', error);
@@ -449,6 +581,146 @@ async function getStoriesByHashtag(req, res) {
   }
 }
 
+// Track story view (Instagram-like: Account privacy only)
+async function trackStoryView(req, res) {
+  try {
+    const { storyId } = req.params;
+    const userId = req.user?.userId;
+
+    console.log('[STORY] Track story view - START:', { storyId, userId });
+
+    const story = await Story.findById(storyId)
+      .populate('author', 'privacySettings followers username');
+      
+    if (!story) {
+      return ApiResponse.notFound(res, 'Story not found');
+    }
+
+    // Check if story is expired
+    if (story.expiresAt < new Date()) {
+      return ApiResponse.badRequest(res, 'Story has expired');
+    }
+
+    const isOwnStory = story.author._id.toString() === userId;
+    const isPrivateAccount = story.author.privacySettings?.isPrivate || false;
+    const isFollowing = story.author.followers?.some(followerId => followerId.toString() === userId);
+
+    console.log('[STORY] View tracking privacy check:', {
+      storyAuthor: story.author.username,
+      isOwnStory,
+      isPrivateAccount,
+      isFollowing
+    });
+
+    // Instagram-like account privacy check:
+    // - If own story → can't track own views
+    // - If PUBLIC account → anyone can view and track
+    // - If PRIVATE account → only followers can view and track
+    if (!isOwnStory && isPrivateAccount && !isFollowing) {
+      console.log('[STORY] Private account - cannot track view');
+      return ApiResponse.forbidden(res, 'This account is private. Follow to view their stories.');
+    }
+
+    // Check if user is the author (don't track views for author)
+    if (isOwnStory) {
+      return ApiResponse.badRequest(res, 'Cannot track view for your own story');
+    }
+
+    // Check if user already viewed this story
+    const hasAlreadyViewed = story.views.some(view => view.user.toString() === userId);
+
+    if (hasAlreadyViewed) {
+      console.log('[STORY] User already viewed this story');
+      return ApiResponse.success(res, {
+        viewsCount: story.analytics.viewsCount,
+        hasViewed: true,
+        message: 'You have already viewed this story'
+      }, 'Story view already recorded');
+    }
+
+    // Add view (this automatically checks for duplicates and updates count)
+    await story.addView(userId);
+
+    console.log('[STORY] Story view tracked successfully:', {
+      storyId: story._id,
+      storyAuthor: story.author.username,
+      viewsCount: story.analytics.viewsCount,
+      isPrivateAccount,
+      isFollowing
+    });
+
+    return ApiResponse.success(res, {
+      viewsCount: story.analytics.viewsCount,
+      hasViewed: true
+    }, 'Story view tracked successfully');
+  } catch (error) {
+    console.error('[STORY] Track story view error:', error);
+    return ApiResponse.serverError(res, 'Failed to track story view');
+  }
+}
+
+// Get story views (who viewed the story)
+async function getStoryViews(req, res) {
+  try {
+    const { storyId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const userId = req.user?.userId;
+
+    console.log('[STORY] Get story views:', { storyId, userId });
+
+    const story = await Story.findById(storyId)
+      .populate('views.user', 'username fullName profilePictureUrl isVerified')
+      .populate('author', 'username fullName');
+
+    if (!story) {
+      return ApiResponse.notFound(res, 'Story not found');
+    }
+
+    // Check if user is the author (only author can see who viewed)
+    if (story.author._id.toString() !== userId) {
+      return ApiResponse.forbidden(res, 'Only the story author can view who viewed the story');
+    }
+
+    // Paginate views
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const totalViews = story.views.length;
+    const paginatedViews = story.views.slice(skip, skip + parseInt(limit));
+
+    // Format views data
+    const viewsData = paginatedViews.map(view => ({
+      user: {
+        id: view.user._id,
+        username: view.user.username,
+        fullName: view.user.fullName,
+        profilePictureUrl: view.user.profilePictureUrl,
+        isVerified: view.user.isVerified
+      },
+      viewedAt: view.viewedAt,
+      viewDuration: view.viewDuration
+    }));
+
+    console.log('[STORY] Story views retrieved:', {
+      storyId: story._id,
+      totalViews: totalViews
+    });
+
+    return ApiResponse.success(res, {
+      views: viewsData,
+      totalViews: totalViews,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(totalViews / parseInt(limit)),
+        hasNext: (page * limit) < totalViews,
+        hasPrev: page > 1
+      }
+    }, 'Story views retrieved successfully');
+  } catch (error) {
+    console.error('[STORY] Get story views error:', error);
+    return ApiResponse.serverError(res, 'Failed to get story views');
+  }
+}
+
 module.exports = {
   // Basic CRUD
   createStory,
@@ -459,6 +731,8 @@ module.exports = {
   
   // Engagement
   replyToStory,
+  trackStoryView,
+  getStoryViews,
   
   // Discovery & Analytics
   reportStory,
