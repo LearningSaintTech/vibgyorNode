@@ -290,8 +290,9 @@ StorySchema.statics.getActiveStories = function(userId, page = 1, limit = 20) {
     ]
   })
   .populate('author', 'username fullName profilePictureUrl isVerified')
-  .populate('mentions.user', 'username fullName profilePictureUrl')
-  .populate('reactions.user', 'username fullName')
+  .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
+  .populate('views.user', 'username fullName profilePictureUrl isVerified')
+  .populate('replies.user', 'username fullName profilePictureUrl isVerified')
   .sort({ createdAt: -1 })
   .skip((page - 1) * limit)
   .limit(limit);
@@ -305,7 +306,10 @@ StorySchema.statics.getUserStories = function(userId, includeExpired = false) {
   }
   
   return this.find(query)
-    .populate('author', 'username fullName profilePictureUrl isVerified')
+    .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
+    .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
+    .populate('views.user', 'username fullName profilePictureUrl isVerified')
+    .populate('replies.user', 'username fullName profilePictureUrl isVerified')
     .sort({ createdAt: -1 });
 };
 
@@ -317,6 +321,9 @@ StorySchema.statics.getStoriesByHashtag = function(hashtag, page = 1, limit = 20
     content: { $regex: `#${hashtag}`, $options: 'i' }
   })
   .populate('author', 'username fullName profilePictureUrl isVerified')
+  .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
+  .populate('views.user', 'username fullName profilePictureUrl isVerified')
+  .populate('replies.user', 'username fullName profilePictureUrl isVerified')
   .sort({ createdAt: -1 })
   .skip((page - 1) * limit)
   .limit(limit);

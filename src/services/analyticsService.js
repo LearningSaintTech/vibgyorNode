@@ -368,7 +368,10 @@ class AnalyticsService {
       createdAt: { $gte: startDate },
       status: 'active'
     })
-    .populate('author', 'username fullName profilePictureUrl')
+    .populate('author', 'username fullName profilePictureUrl isVerified')
+    .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
+    .populate('views.user', 'username fullName profilePictureUrl isVerified')
+    .populate('replies.user', 'username fullName profilePictureUrl isVerified')
     .sort({ 'analytics.viewsCount': -1, 'analytics.reactionsCount': -1 })
     .limit(limit);
   }

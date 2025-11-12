@@ -38,6 +38,20 @@ router.get('/user/:userId', storyController.getUserStories);
 router.get('/:storyId', storyController.getStory);
 
 /**
+ * @route POST /user/stories/:storyId/view
+ * @desc Track story view (increment view count)
+ * @access Private
+ */
+router.post('/:storyId/view', storyController.trackStoryView);
+
+/**
+ * @route GET /user/stories/:storyId/views
+ * @desc Get story views (who viewed)
+ * @access Private
+ */
+router.get('/:storyId/views', storyController.getStoryViews);
+
+/**
  * @route DELETE /user/stories/:storyId
  * @desc Delete story
  * @access Private

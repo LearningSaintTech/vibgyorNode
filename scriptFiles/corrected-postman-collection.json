@@ -2452,7 +2452,7 @@
                     }
                   ]
                 },
-                "description": "Get stories from followed users grouped by author. Privacy-filtered based on relationships (public/followers/close_friends). Stories auto-expire after 24 hours."
+                "description": "Get stories from people you follow, grouped by author. **Instagram-like behavior**: ONLY shows stories from followed users. Auto-expires after 24 hours.\n\n**Instagram-like Feed Logic:**\n- ✅ Shows ONLY stories from users you're following\n- ❌ NO public stories from non-followed users\n- ✅ Simple query: `author: { $in: followingIds }`\n\n**Account Privacy (checked when viewing individual stories):**\n- 🔓 **Public Account:** Anyone can view their stories (via direct link)\n- 🔒 **Private Account:** Only followers can view their stories\n- Feed only shows followed users regardless of account privacy\n\n**Feed Structure:**\n```json\n{\n  \"storiesFeed\": [\n    {\n      \"author\": {...},\n      \"stories\": [...],\n      \"hasUnviewedStories\": true\n    }\n  ],\n  \"totalAuthors\": 5\n}\n```\n\n**Each Story Includes:**\n- hasViewed flag (whether you've seen it)\n- Author details (username, fullName, profilePicture, isVerified)\n- Story content/media\n- View count & analytics\n\n**How It Works:**\n1. Get your following list\n2. Query stories where author is in following list\n3. Group by author\n4. Return grouped feed\n\n**Empty Feed Scenarios:**\n- Not following anyone → Empty feed\n- Followed users have no active stories → Empty feed\n- All stories expired (24h) → Empty feed\n\n**Use Case:**\nThis is your main stories feed - like Instagram's stories bar showing only people you follow."
               }
             },
             {
@@ -2477,7 +2477,7 @@
                     }
                   ]
                 },
-                "description": "Get all stories from a specific user. If viewing own stories, expired stories are automatically included regardless of the includeExpired parameter."
+                "description": "Get all stories from a specific user. If viewing own stories, expired stories are automatically included regardless of the includeExpired parameter.\n\n**Account Privacy Controls:**\n- 🔓 **Public Account:** Anyone can view their stories\n- 🔒 **Private Account:** Only followers can view their stories\n- If account is private and you're not following → 403 Forbidden\n\n**Response Includes:**\n- All active (non-expired) stories from the user\n- hasViewed flag for each story\n- isPrivateAccount flag\n- Expired stories if viewing own profile\n\n**Error Codes:**\n- 403: Private account - must follow to see stories\n- 404: User not found"
               }
             },
             {
@@ -2491,7 +2491,7 @@
                   }
                 ],
                 "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}",
-                "description": "Get a specific story. Automatically tracks view if not the author (no notifications sent).\n\nBehavior:\n- Increments view count for unique users\n- Checks privacy settings (public/followers/close_friends)\n- Returns 400 if story expired\n- Returns 403 if private and user not authorized\n\nResponse includes story with mentions populated (username, fullName, profilePictureUrl)."
+                "description": "Get a specific story by ID. **Instagram-like behavior**: Account privacy only. View tracking happens via separate API.\n\n**Simplified Account Privacy:**\n- ✅ Privacy controlled by ACCOUNT settings only\n- ❌ No story-level privacy checks\n\n**Who Can View:**\n- 👤 **Own Story:** Always can view\n- 🔓 **Public Account:** Anyone can view their stories (even non-followers)\n- 🔒 **Private Account:** Only followers can view their stories\n- If private account and not following → 403 Forbidden\n\n**Behavior:**\n- ✅ Returns full story details with author info\n- ✅ Includes hasViewed flag\n- ✅ Checks if story expired\n- ❌ View tracking moved to separate POST /stories/:id/view endpoint\n\n**Response Structure:**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"_id\": \"...\",\n    \"author\": {...},\n    \"content\": \"Amazing sunset!\",\n    \"media\": {...},\n    \"mentions\": [...],\n    \"views\": [...],\n    \"hasViewed\": false,\n    \"expiresAt\": \"2024-01-16T10:30:00Z\"\n  }\n}\n```\n\n**Response Includes:**\n- Story with populated mentions (username, fullName, profilePictureUrl)\n- Author details with verification status\n- hasViewed flag for current user\n- View count and analytics\n\n**Error Codes:**\n- 400: Story has expired\n- 403: Private account - must follow to see stories\n- 404: Story not found\n\n**Use Case:**\nDirect story access via link/ID. Feed shows only followed users, but if you have a direct link to a public account's story, you can view it."
               }
             },
             {
@@ -2528,6 +2528,58 @@
                 },
                 "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}/replies",
                 "description": "Reply to a story. Max 200 characters. Can be sent as DM (default) or public.\n\nValidations:\n- Content required (cannot be empty)\n- Max 200 characters\n- Story must not be expired\n\nResponse includes updated replies array and repliesCount."
+              }
+            },
+            {
+              "name": "Track Story View",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                },
+                "url": "{{BASE_URL}}/user/stories/{{STORY_ID}}/view",
+                "description": "Track a story view - increments view count and adds user to viewers list.\n\n**Account Privacy:**\n- 🔓 **Public Account:** Anyone can view and track\n- 🔒 **Private Account:** Only followers can view and track\n- If private account and not following → 403 Forbidden\n\n**How It Works:**\n- ✅ First time viewing: Adds user to views array and increments count\n- ❌ Already viewed: Returns success but doesn't increment (prevents duplicates)\n- ❌ Own story: Cannot track views for your own story\n- ❌ Expired story: Cannot track views\n- ❌ Private account (not following): Cannot track views\n\n**First View Response:**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"viewsCount\": 15,\n    \"hasViewed\": true\n  },\n  \"message\": \"Story view tracked successfully\"\n}\n```\n\n**Already Viewed Response:**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"viewsCount\": 15,\n    \"hasViewed\": true,\n    \"message\": \"You have already viewed this story\"\n  },\n  \"message\": \"Story view already recorded\"\n}\n```\n\n**Features:**\n- 🔒 No duplicate views per user\n- 📊 Auto-updates analytics.viewsCount\n- ✅ Silent for already-viewed stories\n- 🔐 Respects account privacy settings\n\n**Use Case:**\nCall this API when a user opens/watches a story to increment the view count."
+              }
+            },
+            {
+              "name": "Get Story Views",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/user/stories/{{STORY_ID}}/views?page=1&limit=20",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["user", "stories", "{{STORY_ID}}", "views"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Items per page (default: 20)"
+                    }
+                  ]
+                },
+                "description": "Get list of users who viewed your story (only author can see).\n\n**Authorization:**\n- ✅ Only story author can view who watched\n- ❌ Others get 403 Forbidden\n\n**Response:**\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"views\": [\n      {\n        \"user\": {\n          \"id\": \"507f1f77bcf86cd799439011\",\n          \"username\": \"johndoe\",\n          \"fullName\": \"John Doe\",\n          \"profilePictureUrl\": \"https://...\",\n          \"isVerified\": true\n        },\n        \"viewedAt\": \"2024-01-15T10:30:00.000Z\",\n        \"viewDuration\": 0\n      }\n    ],\n    \"totalViews\": 150,\n    \"pagination\": {\n      \"page\": 1,\n      \"limit\": 20,\n      \"totalPages\": 8,\n      \"hasNext\": true,\n      \"hasPrev\": false\n    }\n  },\n  \"message\": \"Story views retrieved successfully\"\n}\n```\n\n**View Data Includes:**\n- 👤 User profile (username, fullName, picture, verified)\n- 🕒 When they viewed (viewedAt timestamp)\n- ⏱️ View duration (currently 0 - reserved for future)\n- 📄 Pagination support\n\n**Use Cases:**\n- See who watched your story\n- Check view timestamps\n- Track engagement metrics\n- Instagram-style story insights"
               }
             },
             {

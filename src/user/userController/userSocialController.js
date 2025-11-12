@@ -490,7 +490,7 @@ async function blockUser(req, res) {
 			return ApiResponse.badRequest(res, 'User is already blocked');
 		}
 
-		// Remove from following/followers if exists, then add to blocked
+		// Remove from following/followers if exists, add to blocked, and delete all follow requests
 		await Promise.all([
 			User.findByIdAndUpdate(currentUserId, {
 				$pull: { following: userId, followers: userId },
@@ -499,10 +499,17 @@ async function blockUser(req, res) {
 			User.findByIdAndUpdate(userId, {
 				$pull: { following: currentUserId, followers: currentUserId },
 				$addToSet: { blockedBy: currentUserId }
+			}),
+			// Delete all follow requests between these users (both directions)
+			FollowRequest.deleteMany({
+				$or: [
+					{ requester: currentUserId, recipient: userId },
+					{ requester: userId, recipient: currentUserId }
+				]
 			})
 		]);
 
-		console.log('[USER][SOCIAL] User blocked successfully');
+		console.log('[USER][SOCIAL] User blocked successfully and follow requests deleted');
 		return ApiResponse.success(res, {
 			message: `${targetUser.username || targetUser.fullName} has been blocked`
 		}, 'User blocked successfully');
