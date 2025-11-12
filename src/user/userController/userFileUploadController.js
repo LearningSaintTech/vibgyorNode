@@ -105,20 +105,46 @@ async function uploadProfilePicture(req, res) {
 	}
 }
 
-// Upload ID proof document
+// Upload ID proof document (supports multiple images like Aadhar front & back)
 async function uploadIdProof(req, res) {
 	try {
-		console.log('[USER][UPLOAD] uploadIdProof');
+		console.log('[USER][UPLOAD] uploadIdProof - Multiple files');
+		
+		// Create multer middleware for multiple files
+		const multer = require('multer');
+		const storage = multer.memoryStorage();
+		
+		const ACCEPTED_MIME = [
+			'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+			'application/pdf'
+		];
+		
+		const fileFilter = (req, file, cb) => {
+			if (!ACCEPTED_MIME.includes(file.mimetype)) {
+				return cb(new Error('Unsupported file type. Only images and PDF allowed.'));
+			}
+			cb(null, true);
+		};
+		
+		// Configure multer for multiple files with field name 'file'
+		const uploadMultipleFiles = multer({ 
+			storage, 
+			fileFilter, 
+			limits: { 
+				fileSize: 10 * 1024 * 1024, // 10MB per file
+				files: 10 // Max 10 files
+			} 
+		}).array('file', 10); // Using 'file' as field name (not 'files')
 		
 		// Use multer middleware
-		uploadSingle(req, res, async (err) => {
+		uploadMultipleFiles(req, res, async (err) => {
 			if (err) {
 				console.error('[USER][UPLOAD] Multer error:', err.message);
 				return ApiResponse.badRequest(res, err.message);
 			}
 
-			if (!req.file) {
-				return ApiResponse.badRequest(res, 'No file uploaded');
+			if (!req.files || req.files.length === 0) {
+				return ApiResponse.badRequest(res, 'No files uploaded. Please upload at least one file.');
 			}
 
 			try {
@@ -130,40 +156,60 @@ async function uploadIdProof(req, res) {
 					return ApiResponse.badRequest(res, 'Document type is required (e.g., id_proof, passport, driving_license)');
 				}
 
-				// Upload to S3
-				const { buffer, originalname, mimetype } = req.file;
-				const uploadResult = await uploadBuffer({
-					buffer,
-					contentType: mimetype,
-					userId: user._id,
-					category: 'verification',
-					type: 'documents',
-					filename: originalname,
-					metadata: {
-						uploadType: 'id-proof',
-						documentType: documentType,
-						userId: String(user._id),
-						originalName: originalname
-					}
-				});
+				console.log('[USER][UPLOAD] Uploading', req.files.length, 'file(s) to S3');
+
+				// Upload all files to S3
+				const uploadedUrls = [];
+				const uploadedKeys = [];
+				const uploadedFilenames = [];
+
+				for (const file of req.files) {
+					const { buffer, originalname, mimetype } = file;
+					
+					console.log('[USER][UPLOAD] Processing file:', originalname);
+					
+					const uploadResult = await uploadBuffer({
+						buffer,
+						contentType: mimetype,
+						userId: user._id,
+						category: 'verification',
+						type: 'documents',
+						filename: originalname,
+						metadata: {
+							uploadType: 'id-proof',
+							documentType: documentType,
+							userId: String(user._id),
+							originalName: originalname
+						}
+					});
+
+					uploadedUrls.push(uploadResult.url);
+					uploadedKeys.push(uploadResult.key);
+					uploadedFilenames.push(originalname);
+				}
 
 				// Update user verification document info
 				user.verificationDocument.documentType = documentType;
-				user.verificationDocument.documentUrl = uploadResult.url;
+				user.verificationDocument.documentUrls = uploadedUrls; // Store all URLs
+				user.verificationDocument.documentUrl = uploadedUrls[0]; // Store first URL for backward compatibility
 				user.verificationDocument.documentNumber = req.body.documentNumber || '';
 				user.verificationDocument.uploadedAt = new Date();
 				user.verificationStatus = 'pending'; // Set status to pending for review
 				await user.save();
 
-				console.log('[USER][UPLOAD] ID proof uploaded successfully:', uploadResult.url);
+				console.log('[USER][UPLOAD] ID proof uploaded successfully:', {
+					count: uploadedUrls.length,
+					firstUrl: uploadedUrls[0]
+				});
 
 				return ApiResponse.success(res, {
-					url: uploadResult.url,
-					key: uploadResult.key,
-					filename: originalname,
+					urls: uploadedUrls,
+					keys: uploadedKeys,
+					filenames: uploadedFilenames,
+					totalFiles: uploadedUrls.length,
 					documentType: documentType,
 					verificationStatus: user.verificationStatus
-				}, 'ID proof uploaded successfully');
+				}, `${uploadedUrls.length} ID proof document(s) uploaded successfully`);
 
 			} catch (uploadError) {
 				console.error('[USER][UPLOAD] Upload error:', uploadError.message);
