@@ -124,12 +124,14 @@ const StorySchema = new mongoose.Schema(
     // Story Status and Expiry
     status: {
       type: String,
-      enum: ['active', 'expired', 'archived', 'deleted'],
+      enum: ['active'],
       default: 'active'
     },
     expiresAt: {
       type: Date,
-      index: { expireAfterSeconds: 0 } // MongoDB TTL index - Auto-set by pre-save middleware
+      // MongoDB TTL index - Automatically deletes document when expiresAt is reached
+      // expireAfterSeconds: 0 means delete immediately when date passes
+      index: { expireAfterSeconds: 0 }
     },
     
     // Privacy Settings
@@ -330,6 +332,7 @@ StorySchema.statics.getStoriesByHashtag = function(hashtag, page = 1, limit = 20
 };
 
 // Pre-save middleware to set expiry time (24 hours from creation)
+// MongoDB TTL index will automatically DELETE the story from DB when expiresAt is reached
 StorySchema.pre('save', function(next) {
   if (this.isNew && !this.expiresAt) {
     this.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours

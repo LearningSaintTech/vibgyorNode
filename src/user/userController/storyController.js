@@ -191,18 +191,6 @@ async function getUserStories(req, res) {
 
     console.log('[STORY] Fetching stories with includeExpired:', includeExpiredStories);
 
-    // Debug: Check what stories exist for this user
-    const allStoriesForUser = await Story.find({ author: userId });
-    console.log('[STORY] DEBUG - Total stories for user (any status):', allStoriesForUser.length);
-    if (allStoriesForUser.length > 0) {
-      console.log('[STORY] DEBUG - Sample story:', {
-        status: allStoriesForUser[0].status,
-        expiresAt: allStoriesForUser[0].expiresAt,
-        now: new Date(),
-        isExpired: allStoriesForUser[0].expiresAt < new Date()
-      });
-    }
-
     const stories = await Story.getUserStories(userId, includeExpiredStories);
 
     console.log('[STORY] Stories fetched from model:', stories.length);
@@ -259,22 +247,6 @@ async function getStoriesFeed(req, res) {
         storiesFeed: [],
         totalAuthors: 0
       }, 'No stories available - not following anyone');
-    }
-
-    // Debug: Check what stories exist for followed users
-    const allStoriesFromFollowedUsers = await Story.find({
-      author: { $in: followingIds }
-    });
-    console.log('[STORY] DEBUG - Total stories from followed users (any status):', allStoriesFromFollowedUsers.length);
-    if (allStoriesFromFollowedUsers.length > 0) {
-      const sampleStory = allStoriesFromFollowedUsers[0];
-      console.log('[STORY] DEBUG - Sample story from followed user:', {
-        author: sampleStory.author,
-        status: sampleStory.status,
-        expiresAt: sampleStory.expiresAt,
-        now: new Date(),
-        isExpired: sampleStory.expiresAt < new Date()
-      });
     }
 
     // Instagram-like behavior: Get ONLY stories from people the user is following
@@ -419,14 +391,14 @@ async function deleteStory(req, res) {
         await deleteFromS3(story.media.s3Key);
       } catch (deleteError) {
         console.error('[STORY] Error deleting media from S3:', deleteError);
+        // Continue with DB deletion even if S3 deletion fails
       }
     }
 
-    // Soft delete the story
-    story.status = 'deleted';
-    await story.save();
+    // Hard delete from database
+    await Story.findByIdAndDelete(storyId);
 
-    console.log('[STORY] Story deleted successfully:', storyId);
+    console.log('[STORY] Story deleted from database successfully:', storyId);
     return ApiResponse.success(res, null, 'Story deleted successfully');
   } catch (error) {
     console.error('[STORY] Delete story error:', error);
