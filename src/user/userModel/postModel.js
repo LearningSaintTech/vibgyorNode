@@ -475,19 +475,26 @@ PostSchema.statics.getUserFollowing = async function(userId) {
   return user ? user.following : [];
 };
 
-PostSchema.statics.searchPosts = function(query, page = 1, limit = 20) {
-  return this.find({
+PostSchema.statics.searchPosts = function(query, page = 1, limit = 20, blockedUserIds = []) {
+  const searchQuery = {
     status: 'published',
     $or: [
       { content: { $regex: query, $options: 'i' } },
       { caption: { $regex: query, $options: 'i' } },
       { hashtags: { $in: [new RegExp(query, 'i')] } }
     ]
-  })
-  .populate('author', 'username fullName profilePictureUrl isVerified')
-  .sort({ publishedAt: -1 })
-  .skip((page - 1) * limit)
-  .limit(limit);
+  };
+
+  // Exclude blocked users if provided
+  if (blockedUserIds.length > 0) {
+    searchQuery.author = { $nin: blockedUserIds };
+  }
+
+  return this.find(searchQuery)
+    .populate('author', 'username fullName profilePictureUrl isVerified')
+    .sort({ publishedAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
 };
 
 // Pre-save middleware to update counts

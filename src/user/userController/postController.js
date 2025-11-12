@@ -6,6 +6,37 @@ const feedAlgorithmService = require('../../services/feedAlgorithmService');
 const notificationService = require('../../services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
 
+// Helper function to normalize location with all fields visible
+function normalizeLocation(location) {
+  if (!location || typeof location !== 'object') {
+    return {
+      name: "",
+      coordinates: {
+        lat: "",
+        lng: ""
+      },
+      address: "",
+      placeId: "",
+      placeType: "",
+      accuracy: "",
+      isVisible: true
+    };
+  }
+  
+  return {
+    name: location.name || "",
+    coordinates: {
+      lat: location.coordinates?.lat || "",
+      lng: location.coordinates?.lng || ""
+    },
+    address: location.address || "",
+    placeId: location.placeId || "",
+    placeType: location.placeType || "",
+    accuracy: location.accuracy || "",
+    isVisible: location.isVisible !== undefined ? location.isVisible : true
+  };
+}
+
 // Helper function to transform post media into a cleaner structure
 function transformPostMedia(post) {
   const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
@@ -41,6 +72,9 @@ function transformPostMedia(post) {
     hasImages: images.length > 0,
     hasVideos: videos.length > 0
   };
+  
+  // Normalize location to ensure all fields are visible
+  postObj.location = normalizeLocation(postObj.location);
   
   return postObj;
 }
@@ -160,9 +194,15 @@ async function createPost(req, res) {
       commentVisibility: commentVisibility || 'everyone'
     };
 
-    // Add location if provided
+    // Add location if provided (with validation)
     if (location) {
-      postData.location = location;
+      // Parse location if it's a string (from form-data)
+      const locationData = typeof location === 'string' ? JSON.parse(location) : location;
+      
+      // Validate that location has at least name or coordinates
+      if (locationData && (locationData.name || (locationData.coordinates?.lat && locationData.coordinates?.lng))) {
+        postData.location = locationData;
+      }
     }
 
     const post = new Post(postData);
@@ -284,13 +324,29 @@ async function getFeedPosts(req, res) {
     // Transform media for all feed posts
     const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post));
 
-    // Get total count for pagination
-    const user = await User.findById(userId).select('following');
+    // Get total count for pagination (excluding own posts and blocked users)
+    const user = await User.findById(userId).select('following blockedUsers blockedBy');
     const followingIds = user?.following || [];
+    const blockedUserIds = user?.blockedUsers || [];
+    const blockedByIds = user?.blockedBy || [];
+    
+    // Combine blocked users and current user
+    const excludedUserIds = [...new Set([
+      ...blockedUserIds.map(id => id.toString()), 
+      ...blockedByIds.map(id => id.toString()),
+      userId // Exclude own posts
+    ])];
 
+    // Count total posts matching feed algorithm logic:
+    // - All public posts (excluding blocked users and self)
+    // - Followers-only posts from people you follow
     const totalPosts = await Post.countDocuments({
       status: 'published',
-      author: { $in: [...followingIds, userId] }
+      author: { $nin: excludedUserIds },
+      $or: [
+        { visibility: 'public' },
+        { visibility: 'followers', author: { $in: followingIds } }
+      ]
     });
 
     return ApiResponse.success(res, {
@@ -381,7 +437,15 @@ async function updatePost(req, res) {
     // Update post fields
     if (content !== undefined) post.content = content;
     if (caption !== undefined) post.caption = caption;
-    if (location !== undefined) post.location = location;
+    if (location !== undefined) {
+      // Validate location has essential data
+      if (location && (location.name || (location.coordinates?.lat && location.coordinates?.lng))) {
+        post.location = location;
+      } else if (location === null) {
+        // Allow removal of location by passing null
+        post.location = undefined;
+      }
+    }
     if (visibility !== undefined) post.visibility = visibility;
     if (commentVisibility !== undefined) post.commentVisibility = commentVisibility;
 
@@ -660,25 +724,46 @@ async function sharePost(req, res) {
 async function searchPosts(req, res) {
   try {
     const { q, page = 1, limit = 20 } = req.query;
+    const userId = req.user?.userId;
 
     if (!q || q.trim().length === 0) {
       return ApiResponse.badRequest(res, 'Search query is required');
     }
 
     const query = q.trim();
-    const posts = await Post.searchPosts(query, parseInt(page), parseInt(limit));
+
+    // Get blocked users
+    let allBlockedIds = [];
+    if (userId) {
+      const user = await User.findById(userId).select('blockedUsers blockedBy');
+      const blockedUserIds = user?.blockedUsers || [];
+      const blockedByIds = user?.blockedBy || [];
+      allBlockedIds = [...new Set([
+        ...blockedUserIds.map(id => id.toString()), 
+        ...blockedByIds.map(id => id.toString())
+      ])];
+    }
+
+    const posts = await Post.searchPosts(query, parseInt(page), parseInt(limit), allBlockedIds);
 
     // Transform media for all search results
     const transformedPosts = posts.map(post => transformPostMedia(post));
 
-    const totalPosts = await Post.countDocuments({
+    // Count total posts excluding blocked users
+    const totalCountQuery = {
       status: 'published',
       $or: [
         { content: { $regex: query, $options: 'i' } },
         { caption: { $regex: query, $options: 'i' } },
         { hashtags: { $in: [new RegExp(query, 'i')] } }
       ]
-    });
+    };
+
+    if (allBlockedIds.length > 0) {
+      totalCountQuery.author = { $nin: allBlockedIds };
+    }
+
+    const totalPosts = await Post.countDocuments(totalCountQuery);
 
     return ApiResponse.success(res, {
       posts: transformedPosts,
@@ -768,10 +853,12 @@ async function getPostAnalytics(req, res) {
 async function getTrendingPosts(req, res) {
   try {
     const { hours = 24, limit = 20 } = req.query;
+    const userId = req.user?.userId;
 
     const trendingPosts = await feedAlgorithmService.getTrendingPosts(
       parseInt(hours), 
-      parseInt(limit)
+      parseInt(limit),
+      userId // Pass userId to exclude blocked users
     );
 
     // Transform media for all trending posts
@@ -792,6 +879,7 @@ async function getPostsByHashtag(req, res) {
   try {
     const { hashtag } = req.params;
     const { page = 1, limit = 20 } = req.query;
+    const userId = req.user?.userId;
 
     if (!hashtag) {
       return ApiResponse.badRequest(res, 'Hashtag is required');
@@ -800,16 +888,35 @@ async function getPostsByHashtag(req, res) {
     const posts = await feedAlgorithmService.getPostsByHashtag(
       hashtag, 
       parseInt(page), 
-      parseInt(limit)
+      parseInt(limit),
+      userId // Pass userId to exclude blocked users
     );
 
     // Transform media for all hashtag posts
     const transformedPosts = posts.map(post => transformPostMedia(post));
 
-    const totalPosts = await Post.countDocuments({
+    // Get total count excluding blocked users
+    let totalCountQuery = {
       status: 'published',
+      visibility: 'public',
       hashtags: { $in: [hashtag.toLowerCase()] }
-    });
+    };
+
+    // Exclude blocked users from total count as well
+    if (userId) {
+      const user = await User.findById(userId).select('blockedUsers blockedBy');
+      const blockedUserIds = user?.blockedUsers || [];
+      const blockedByIds = user?.blockedBy || [];
+      const allBlockedIds = [...new Set([
+        ...blockedUserIds.map(id => id.toString()), 
+        ...blockedByIds.map(id => id.toString())
+      ])];
+      if (allBlockedIds.length > 0) {
+        totalCountQuery.author = { $nin: allBlockedIds };
+      }
+    }
+
+    const totalPosts = await Post.countDocuments(totalCountQuery);
 
     return ApiResponse.success(res, {
       posts: transformedPosts,

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Post = require('../user/userModel/postModel');
 const User = require('../user/userModel/userAuthModel');
 
@@ -148,16 +149,28 @@ class FeedAlgorithmService {
    */
   async generatePersonalizedFeed(userId, page = 1, limit = 20) {
     try {
-      // Get user's social connections
-      const user = await User.findById(userId).select('following closeFriends');
+      // Get user's social connections and blocked users
+      const user = await User.findById(userId).select('following closeFriends blockedUsers blockedBy');
       const followingIds = user?.following || [];
       const closeFriendsIds = user?.closeFriends || [];
+      const blockedUserIds = user?.blockedUsers || [];
+      const blockedByIds = user?.blockedBy || [];
 
-      // Get posts that user can see
+      // Combine all blocked users (users you blocked + users who blocked you)
+      const allBlockedIds = [...new Set([
+        ...blockedUserIds.map(id => id.toString()), 
+        ...blockedByIds.map(id => id.toString())
+      ])].map(id => new mongoose.Types.ObjectId(id));
+
+      // Add current user to excluded list (users shouldn't see their own posts in feed)
+      const excludedUserIds = [...allBlockedIds, new mongoose.Types.ObjectId(userId)];
+
+      // Get posts that user can see (excluding blocked users and own posts)
       const posts = await Post.aggregate([
         {
           $match: {
             status: 'published',
+            author: { $nin: excludedUserIds }, // Exclude blocked users and own posts
             $or: [
               { visibility: 'public' },
               { visibility: 'followers', author: { $in: followingIds } }
@@ -343,17 +356,36 @@ class FeedAlgorithmService {
    * @param {number} limit - Number of posts to return
    * @returns {Array} Trending posts
    */
-  async getTrendingPosts(hours = 24, limit = 20) {
+  async getTrendingPosts(hours = 24, limit = 20, userId = null) {
     try {
       const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
+      // Get blocked users if userId is provided
+      let allBlockedIds = [];
+      if (userId) {
+        const user = await User.findById(userId).select('blockedUsers blockedBy');
+        const blockedUserIds = user?.blockedUsers || [];
+        const blockedByIds = user?.blockedBy || [];
+        allBlockedIds = [...new Set([
+          ...blockedUserIds.map(id => id.toString()), 
+          ...blockedByIds.map(id => id.toString())
+        ])].map(id => new mongoose.Types.ObjectId(id));
+      }
+
+      const matchQuery = {
+        status: 'published',
+        visibility: 'public',
+        publishedAt: { $gte: cutoffTime }
+      };
+
+      // Exclude blocked users if userId is provided
+      if (allBlockedIds.length > 0) {
+        matchQuery.author = { $nin: allBlockedIds };
+      }
+
       const trendingPosts = await Post.aggregate([
         {
-          $match: {
-            status: 'published',
-            privacy: 'public',
-            publishedAt: { $gte: cutoffTime }
-          }
+          $match: matchQuery
         },
         {
           $addFields: {
@@ -409,15 +441,34 @@ class FeedAlgorithmService {
    * @param {number} limit - Number of posts per page
    * @returns {Array} Posts with the hashtag
    */
-  async getPostsByHashtag(hashtag, page = 1, limit = 20) {
+  async getPostsByHashtag(hashtag, page = 1, limit = 20, userId = null) {
     try {
+      // Get blocked users if userId is provided
+      let allBlockedIds = [];
+      if (userId) {
+        const user = await User.findById(userId).select('blockedUsers blockedBy');
+        const blockedUserIds = user?.blockedUsers || [];
+        const blockedByIds = user?.blockedBy || [];
+        allBlockedIds = [...new Set([
+          ...blockedUserIds.map(id => id.toString()), 
+          ...blockedByIds.map(id => id.toString())
+        ])].map(id => new mongoose.Types.ObjectId(id));
+      }
+
+      const matchQuery = {
+        status: 'published',
+        visibility: 'public',
+        hashtags: { $in: [hashtag.toLowerCase()] }
+      };
+
+      // Exclude blocked users if userId is provided
+      if (allBlockedIds.length > 0) {
+        matchQuery.author = { $nin: allBlockedIds };
+      }
+
       const posts = await Post.aggregate([
         {
-          $match: {
-            status: 'published',
-            privacy: 'public',
-            hashtags: { $in: [hashtag.toLowerCase()] }
-          }
+          $match: matchQuery
         },
         {
           $addFields: {
