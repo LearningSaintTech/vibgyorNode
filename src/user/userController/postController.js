@@ -989,6 +989,113 @@ async function addMention(req, res) {
   }
 }
 
+// Helper function to calculate distance between two coordinates using Haversine formula
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radius of the Earth in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c; // Distance in kilometers
+  return distance;
+}
+
+// Get nearby user suggestions based on location
+async function getSuggestedUsers(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const { radius = 50, limit = 20, page = 1 } = req.query; // radius in km, default 50km
+
+    // Get current user with location data
+    const currentUser = await User.findById(userId).select('location following blockedUsers blockedBy');
+    
+    if (!currentUser) {
+      return ApiResponse.forbidden(res, 'User not found');
+    }
+
+    // Check if user has location set
+    if (!currentUser.location?.lat || !currentUser.location?.lng) {
+      return ApiResponse.badRequest(res, 'User location not set. Please update your location in profile settings.');
+    }
+
+    const userLat = currentUser.location.lat;
+    const userLng = currentUser.location.lng;
+
+    // Get list of users to exclude
+    const followingIds = currentUser.following?.map(id => id.toString()) || [];
+    const blockedUserIds = currentUser.blockedUsers?.map(id => id.toString()) || [];
+    const blockedByIds = currentUser.blockedBy?.map(id => id.toString()) || [];
+    
+    // Combine all excluded users (current user, following, blocked users)
+    const excludedUserIds = [...new Set([
+      userId,
+      ...followingIds,
+      ...blockedUserIds,
+      ...blockedByIds
+    ])];
+
+    // Find all users with valid location data (excluding current user and blocked users)
+    const potentialUsers = await User.find({
+      _id: { $nin: excludedUserIds },
+      isActive: true,
+      'location.lat': { $ne: null, $exists: true },
+      'location.lng': { $ne: null, $exists: true }
+    }).select('username fullName profilePictureUrl location isVerified');
+
+    // Calculate distance for each user and filter by radius
+    const usersWithDistance = potentialUsers
+      .map(user => {
+        const distance = calculateDistance(
+          userLat,
+          userLng,
+          user.location.lat,
+          user.location.lng
+        );
+
+        return {
+          _id: user._id,
+          username: user.username,
+          fullName: user.fullName,
+          profilePictureUrl: user.profilePictureUrl,
+          isVerified: user.isVerified || false,
+          location: {
+            city: user.location.city || '',
+            country: user.location.country || ''
+          },
+          distance: Math.round(distance * 10) / 10 // Round to 1 decimal place
+        };
+      })
+      .filter(user => user.distance <= parseFloat(radius)) // Filter by radius
+      .sort((a, b) => a.distance - b.distance); // Sort by distance (nearest first)
+
+    // Implement pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedUsers = usersWithDistance.slice(startIndex, endIndex);
+
+    const totalUsers = usersWithDistance.length;
+
+    console.log(`[USER] Found ${totalUsers} nearby users within ${radius}km`);
+    return ApiResponse.success(res, {
+      users: paginatedUsers,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalUsers / limit),
+        totalUsers,
+        hasNext: endIndex < totalUsers,
+        hasPrev: page > 1
+      },
+      searchRadius: parseFloat(radius)
+    }, 'Nearby users retrieved successfully');
+  } catch (error) {
+    console.error('[USER] Get suggested users error:', error);
+    return ApiResponse.serverError(res, 'Failed to get suggested users');
+  }
+}
+
 module.exports = {
   // Basic CRUD
   createPost,
@@ -1201,5 +1308,8 @@ module.exports = {
   
   // Advanced Features
   updateLocation,
-  addMention
+  addMention,
+  
+  // User Suggestions
+  getSuggestedUsers
 };
