@@ -42,8 +42,21 @@ const FollowRequest = require('../src/user/userModel/followRequestModel');
 const MessageRequest = require('../src/user/userModel/messageRequestModel');
 const UserReport = require('../src/user/userModel/userReportModel');
 const Post = require('../src/user/userModel/postModel');
-const PostTemplate = require('../src/user/userModel/postTemplateModel');
-const PostCollection = require('../src/user/userModel/postCollectionModel');
+// Optional models - will be handled gracefully if they don't exist
+let PostTemplate, PostCollection;
+try {
+  PostTemplate = require('../src/user/userModel/postTemplateModel');
+} catch (e) {
+  PostTemplate = null;
+}
+try {
+  PostCollection = require('../src/user/userModel/postCollectionModel');
+} catch (e) {
+  PostCollection = null;
+}
+
+// Video URL to use everywhere
+const VIDEO_URL = 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/69045c2b833fc493301cb760/posts-video/1762856646669-njkjkjh.mp4';
 
 // Demo data generators
 const { faker } = require('@faker-js/faker');
@@ -226,7 +239,7 @@ async function clearDatabase() {
   console.log('🗑️  Clearing existing data...');
   
   try {
-    await Promise.all([
+    const deletePromises = [
       Admin.deleteMany({}),
       SubAdmin.deleteMany({}),
       User.deleteMany({}),
@@ -236,10 +249,13 @@ async function clearDatabase() {
       FollowRequest.deleteMany({}),
       MessageRequest.deleteMany({}),
       UserReport.deleteMany({}),
-      Post.deleteMany({}),
-      PostTemplate.deleteMany({}),
-      PostCollection.deleteMany({})
-    ]);
+      Post.deleteMany({})
+    ];
+    
+    if (PostTemplate) deletePromises.push(PostTemplate.deleteMany({}));
+    if (PostCollection) deletePromises.push(PostCollection.deleteMany({}));
+    
+    await Promise.all(deletePromises);
     
     console.log('✅ Database cleared successfully');
   } catch (error) {
@@ -258,7 +274,7 @@ async function createAdmins() {
       countryCode: '+91',
       name: 'Super Admin',
       email: 'admin@vibgyor.com',
-      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+      avatarUrl: VIDEO_URL,
       isVerified: true
     },
     {
@@ -266,7 +282,7 @@ async function createAdmins() {
       countryCode: '+91',
       name: 'System Admin',
       email: 'system@vibgyor.com',
-      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+      avatarUrl: VIDEO_URL,
       isVerified: true
     }
   ];
@@ -291,7 +307,7 @@ async function createSubAdmins() {
       countryCode: '+91',
       name: 'Moderator One',
       email: 'mod1@vibgyor.com',
-      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+      avatarUrl: VIDEO_URL,
       isVerified: true,
       isActive: true
     },
@@ -300,7 +316,7 @@ async function createSubAdmins() {
       countryCode: '+91',
       name: 'Moderator Two',
       email: 'mod2@vibgyor.com',
-      avatarUrl: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
+      avatarUrl: VIDEO_URL,
       isVerified: true,
       isActive: true
     }
@@ -350,7 +366,7 @@ async function createUsers(count) {
         city: faker.location.city(),
         country: faker.location.country()
       } : { lat: null, lng: null, city: '', country: '' }, // 10% have location
-      profilePictureUrl: profileCompleteness > 0.3 ? 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg' : '',
+      profilePictureUrl: profileCompleteness > 0.3 ? VIDEO_URL : '',
       isActive: Math.random() > 0.1, // 90% active
       isProfileCompleted: false, // Will be calculated based on actual data
       profileCompletionStep: 'basic_info', // Will be calculated based on actual data
@@ -465,8 +481,8 @@ async function createMessages(chats, users, count) {
       senderId: sender,
       type: messageType,
       content: messageType === 'text' ? content : null,
-      media: messageType !== 'text' ? {
-        url: `https://example.com/media/${messageType}_${i}.${messageType === 'image' ? 'jpg' : messageType === 'video' ? 'mp4' : messageType === 'audio' ? 'mp3' : 'pdf'}`,
+        media: messageType !== 'text' ? {
+        url: messageType === 'video' ? VIDEO_URL : `https://example.com/media/${messageType}_${i}.${messageType === 'image' ? 'jpg' : messageType === 'video' ? 'mp4' : messageType === 'audio' ? 'mp3' : 'pdf'}`,
         fileName: `${messageType}_${i}.${messageType === 'image' ? 'jpg' : messageType === 'video' ? 'mp4' : messageType === 'audio' ? 'mp3' : 'pdf'}`,
         fileSize: Math.floor(Math.random() * 10000000) + 1000000,
         mimeType: messageType === 'image' ? 'image/jpeg' : messageType === 'video' ? 'video/mp4' : messageType === 'audio' ? 'audio/mp3' : 'application/pdf',
@@ -540,7 +556,7 @@ async function createCalls(chats, users, count) {
       },
       recording: {
         isRecording: status === 'ended' && Math.random() > 0.7,
-        recordingUrl: status === 'ended' && Math.random() > 0.7 ? `https://example.com/recordings/call_${i}.mp4` : null
+        recordingUrl: status === 'ended' && Math.random() > 0.7 ? VIDEO_URL : null
       },
       createdAt: startedAt
     };
@@ -734,21 +750,21 @@ async function createPosts(users, count) {
       const content = getRandomElement(SAMPLE_POST_CONTENT);
       const caption = getRandomElement(SAMPLE_POST_CAPTIONS);
       const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
-      const privacy = getRandomElement(['public', 'followers', 'close_friends']);
+      const visibility = getRandomElement(['public', 'followers']);
       const status = getRandomElement(['published', 'published', 'published', 'draft']); // Mostly published
       const publishedAt = getRandomDate(30);
       
       // Create some posts with media
       const hasMedia = Math.random() > 0.6; // 40% have media
       const media = hasMedia ? [{
-        type: 'image',
-        url: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
-        thumbnail: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
-        filename: `post_${posts.length}.jpg`,
-        fileSize: Math.floor(Math.random() * 2000000) + 500000,
-        mimeType: 'image/jpeg',
-        s3Key: `posts/images/post_${posts.length}.jpg`,
-        duration: null,
+        type: 'video',
+        url: VIDEO_URL,
+        thumbnail: VIDEO_URL,
+        filename: `post_${posts.length}.mp4`,
+        fileSize: Math.floor(Math.random() * 20000000) + 5000000,
+        mimeType: 'video/mp4',
+        s3Key: `posts/video/post_${posts.length}.mp4`,
+        duration: Math.floor(Math.random() * 300) + 10, // 10-310 seconds
         dimensions: {
           width: 1920,
           height: 1080
@@ -791,7 +807,7 @@ async function createPosts(users, count) {
         hashtags: hashtags,
         mentions: mentions,
         location: location,
-        privacy: privacy,
+        visibility: visibility,
         status: status,
         publishedAt: status === 'published' ? publishedAt : null,
         scheduledAt: null,
@@ -814,21 +830,21 @@ async function createPosts(users, count) {
     const content = getRandomElement(SAMPLE_POST_CONTENT);
     const caption = getRandomElement(SAMPLE_POST_CAPTIONS);
     const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
-    const privacy = getRandomElement(['public', 'followers', 'close_friends']);
+    const visibility = getRandomElement(['public', 'followers']);
     const status = getRandomElement(['published', 'published', 'published', 'draft']); // Mostly published
     const publishedAt = getRandomDate(30);
     
     // Create some posts with media
     const hasMedia = Math.random() > 0.6; // 40% have media
     const media = hasMedia ? [{
-      type: 'image',
-      url: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
-      thumbnail: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
-      filename: `post_${i}.jpg`,
-      fileSize: Math.floor(Math.random() * 2000000) + 500000,
-      mimeType: 'image/jpeg',
-      s3Key: `posts/images/post_${i}.jpg`,
-      duration: null,
+      type: 'video',
+      url: VIDEO_URL,
+      thumbnail: VIDEO_URL,
+      filename: `post_${i}.mp4`,
+      fileSize: Math.floor(Math.random() * 20000000) + 5000000,
+      mimeType: 'video/mp4',
+      s3Key: `posts/video/post_${i}.mp4`,
+      duration: Math.floor(Math.random() * 300) + 10, // 10-310 seconds
       dimensions: {
         width: 1920,
         height: 1080
@@ -871,7 +887,7 @@ async function createPosts(users, count) {
       hashtags: hashtags,
       mentions: mentions,
       location: location,
-      privacy: privacy,
+      visibility: visibility,
       status: status,
       publishedAt: status === 'published' ? publishedAt : null,
       scheduledAt: null,
@@ -898,6 +914,11 @@ async function createPosts(users, count) {
 
 // Create post templates
 async function createPostTemplates(users, count) {
+  if (!PostTemplate) {
+    console.log('⚠️  PostTemplate model not found, skipping post templates creation');
+    return [];
+  }
+  
   console.log(`📋 Creating ${count} post templates...`);
   
   const templates = [];
@@ -918,8 +939,9 @@ async function createPostTemplates(users, count) {
         content: getRandomElement(SAMPLE_POST_CONTENT),
         caption: getRandomElement(SAMPLE_POST_CAPTIONS),
         media: [{
-          type: 'image',
-          placeholder: 'Add your image here',
+          type: 'video',
+          placeholder: 'Add your video here',
+          url: VIDEO_URL,
           required: Math.random() > 0.5
         }],
         hashtags: getRandomElements(SAMPLE_HASHTAGS, 3)
@@ -964,6 +986,11 @@ async function createPostTemplates(users, count) {
 
 // Create post collections
 async function createPostCollections(users, posts, count) {
+  if (!PostCollection) {
+    console.log('⚠️  PostCollection model not found, skipping post collections creation');
+    return [];
+  }
+  
   console.log(`📚 Creating ${count} post collections...`);
   
   const collections = [];
@@ -992,7 +1019,7 @@ async function createPostCollections(users, posts, count) {
         notes: Math.random() > 0.7 ? 'Great post!' : ''
       })),
       isPublic: Math.random() > 0.4, // 60% are public
-      coverImage: collectionPosts.length > 0 && collectionPosts[0].media.length > 0 ? collectionPosts[0].media[0].url : '',
+      coverImage: collectionPosts.length > 0 && collectionPosts[0].media.length > 0 ? collectionPosts[0].media[0].url : VIDEO_URL,
       tags: getRandomElements(['collection', 'saved', 'favorites'], Math.floor(Math.random() * 2) + 1),
       stats: {
         totalPosts: collectionPosts.length,
