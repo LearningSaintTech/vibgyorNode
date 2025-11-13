@@ -614,7 +614,7 @@ async function reportUser(req, res) {
 			return ApiResponse.badRequest(res, 'Invalid user ID or cannot report yourself');
 		}
 
-		if (!reportType || !description) {
+		if (!description) {
 			return ApiResponse.badRequest(res, 'Report type and description are required');
 		}
 
@@ -642,10 +642,10 @@ async function reportUser(req, res) {
 		const report = await Report.create({
 			reporter: currentUserId,
 			reportedUser: userId,
-			reportType,
+			reportType:"spam",
 			description: description.trim(),
 			reportedContent: {
-				contentType,
+				contentType:"profile",
 				contentId,
 				contentUrl
 			}
