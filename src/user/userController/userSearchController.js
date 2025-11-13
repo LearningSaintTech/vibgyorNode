@@ -3,17 +3,21 @@ const Post = require('../userModel/postModel');
 const ApiResponse = require('../../utils/apiResponse');
 
 // Helper function to process search input
+// Extracts hashtags (with #) and separates them from keywords
+// Used by hashtag search to determine if # is present or not
 function processSearchInput(input) {
 	const searchTerm = input?.trim() || '';
+	// Extract hashtags that start with # (e.g., #travel, #adventure)
 	const hashtags = searchTerm.match(/#\w+/g) || [];
+	// Remove hashtags from search term to get remaining keywords
 	const keywords = searchTerm.replace(/#\w+/g, '').trim();
 	
 	return {
 		originalInput: input,
-		keywords: keywords,
-		hashtags: hashtags,
-		hasHashtags: hashtags.length > 0,
-		hasKeywords: keywords.length > 0
+		keywords: keywords, // Text without hashtags (used when # is not present)
+		hashtags: hashtags, // Array of hashtags with # symbol (e.g., ["#travel", "#adventure"])
+		hasHashtags: hashtags.length > 0, // True if # symbols found
+		hasKeywords: keywords.length > 0 // True if text remains after removing hashtags
 	};
 }
 
@@ -152,7 +156,7 @@ async function searchPosts(req, res) {
 			searchQuery = {
 				$and: [
 					{ status: 'published' },
-					{ privacy: 'public' },
+					{ visibility: 'public' },
 					{ author: { $nin: [...blockedUsers, ...blockedBy] } }
 				]
 			};
@@ -164,7 +168,7 @@ async function searchPosts(req, res) {
 			searchQuery = {
 				$and: [
 					{ status: 'published' },
-					{ privacy: 'public' },
+					{ visibility: 'public' },
 					{ author: { $nin: [...blockedUsers, ...blockedBy] } },
 					{
 						$or: [
@@ -233,10 +237,10 @@ async function searchHashtags(req, res) {
 		
 		console.log('[USER][SEARCH] Extracted data:', { keyword, page, limit, currentUserId });
 
-		const processed = processSearchInput(keyword);
+		const trimmedKeyword = keyword.trim();
 		
-		if (!processed.hasHashtags && !processed.hasKeywords) {
-			console.log('[USER][SEARCH] No hashtags or keywords provided');
+		if (!trimmedKeyword) {
+			console.log('[USER][SEARCH] No search keyword provided');
 			return ApiResponse.success(res, {
 				results: [],
 				count: 0,
@@ -246,9 +250,11 @@ async function searchHashtags(req, res) {
 					total: 0,
 					pages: 0
 				}
-			}, 'No hashtags or keywords provided');
+			}, 'No search keyword provided');
 		}
 
+		const processed = processSearchInput(keyword);
+		
 		// Get user's blocked users
 		const user = await User.findById(currentUserId);
 		if (!user) {
@@ -257,23 +263,97 @@ async function searchHashtags(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		
-		// Use hashtags if available, otherwise use keywords as hashtag search
-		const hashtagNames = processed.hasHashtags 
-			? processed.hashtags.map(tag => tag.replace('#', '').toLowerCase())
-			: [processed.keywords.toLowerCase()];
+		// Process hashtag search terms
+		// IMPORTANT: When filter=hashtags, we ALWAYS search the hashtags column,
+		// regardless of whether # symbol is present in the query. We search both
+		// the normalized form (without #) and the # prefixed form to support data
+		// stored in either format.
+		const hashtagNamesSet = new Set();
 		
+		if (processed.hasHashtags) {
+			// If # symbols are present: extract hashtags and add both variants
+			processed.hashtags.forEach(tag => {
+				const cleanTag = tag.replace('#', '').toLowerCase();
+				if (cleanTag) {
+					hashtagNamesSet.add(cleanTag);
+					hashtagNamesSet.add(`#${cleanTag}`);
+				}
+			});
+			console.log('[USER][SEARCH] Extracted hashtags from query:', Array.from(hashtagNamesSet));
+		} else {
+			// If # symbol is NOT present: use the original trimmed keyword
+			const cleanTag = trimmedKeyword.toLowerCase();
+			if (cleanTag) {
+				hashtagNamesSet.add(cleanTag);
+				hashtagNamesSet.add(`#${cleanTag}`);
+			}
+			console.log('[USER][SEARCH] No # found, using original keyword variants for hashtag search:', Array.from(hashtagNamesSet));
+		}
+
+		const hashtagNames = Array.from(hashtagNamesSet);
+		
+		// Ensure we have hashtag names to search
+		if (hashtagNames.length === 0 || hashtagNames.some(tag => !tag || tag.trim() === '')) {
+			console.log('[USER][SEARCH] No valid hashtag names to search');
+			return ApiResponse.success(res, {
+				results: [],
+				count: 0,
+				pagination: {
+					page: parseInt(page),
+					limit: parseInt(limit),
+					total: 0,
+					pages: 0
+				}
+			}, 'No valid hashtag names to search');
+		}
+		
+		// Always search the hashtags column in posts
 		const searchQuery = {
 			$and: [
 				{ status: 'published' }, // Only published posts
-				{ privacy: 'public' }, // Only public posts
+				{ visibility: 'public' }, // Only public posts
 				{ author: { $nin: blockedUsers } }, // Exclude blocked users' posts
-				{ hashtags: { $in: hashtagNames } }
+				{ hashtags: { $in: hashtagNames } } // Search hashtags column (always, regardless of # presence)
 			]
 		};
 		
 		const skip = (parseInt(page) - 1) * parseInt(limit);
 		
-		console.log('[USER][SEARCH] Hashtags search query:', searchQuery);
+		console.log('[USER][SEARCH] Hashtags search query:', JSON.stringify(searchQuery, null, 2));
+		console.log('[USER][SEARCH] Searching for hashtags:', hashtagNames);
+		console.log('[USER][SEARCH] Query details:', {
+			hashtagNames: hashtagNames,
+			hashtagNamesLength: hashtagNames.length,
+			blockedUsersCount: blockedUsers.length
+		});
+		
+		// Debug: Check if any posts have hashtags at all
+		const postsWithHashtagsCount = await Post.countDocuments({
+			status: 'published',
+			visibility: 'public',
+			hashtags: { $exists: true, $ne: [] }
+		});
+		console.log('[USER][SEARCH] Total posts with hashtags:', postsWithHashtagsCount);
+		
+		// Debug: Check for the specific hashtag
+		const exactHashtagCount = await Post.countDocuments({
+			status: 'published',
+			visibility: 'public',
+			hashtags: { $in: hashtagNames }
+		});
+		console.log('[USER][SEARCH] Posts with exact hashtag match:', exactHashtagCount);
+		const sampleHashtagPost = await Post.findOne({
+			status: 'published',
+			visibility: 'public',
+			hashtags: { $exists: true, $ne: [] }
+		})
+			.sort({ createdAt: -1 })
+			.select('hashtags');
+		if (sampleHashtagPost) {
+			console.log('[USER][SEARCH] Sample post hashtags:', sampleHashtagPost.hashtags);
+		} else {
+			console.log('[USER][SEARCH] No sample posts with hashtags found');
+		}
 		
 		const [results, total] = await Promise.all([
 			Post.find(searchQuery)
@@ -289,6 +369,11 @@ async function searchHashtags(req, res) {
 			count: results.length,
 			total: total
 		});
+		
+		// Debug: Show sample hashtags from results (if any)
+		if (results.length > 0) {
+			console.log('[USER][SEARCH] Sample hashtags from results:', results[0].hashtags);
+		}
 
 		const responseData = {
 			type: 'hashtags',
@@ -347,7 +432,7 @@ async function searchLocation(req, res) {
 		const searchQuery = {
 			$and: [
 				{ status: 'published' }, // Only published posts
-				{ privacy: 'public' }, // Only public posts
+				{ visibility: 'public' }, // Only public posts
 				{ author: { $nin: blockedUsers } }, // Exclude blocked users' posts
 				{
 					$or: [
@@ -437,7 +522,7 @@ async function searchAll(req, res) {
 			const defaultPostsQuery = {
 				$and: [
 					{ status: 'published' },
-					{ privacy: 'public' },
+					{ visibility: 'public' },
 					{ author: { $nin: [...blockedUsers, ...blockedBy] } }
 				]
 			};
@@ -520,7 +605,7 @@ async function searchAll(req, res) {
 		const postsQuery = {
 			$and: [
 				{ status: 'published' },
-				{ privacy: 'public' },
+				{ visibility: 'public' },
 				{ author: { $nin: blockedUsers } },
 				{
 					$or: [
@@ -537,15 +622,29 @@ async function searchAll(req, res) {
 		
 		// Search Hashtags
 		console.log('[USER][SEARCH] Searching hashtags...');
-		const hashtagNames = processed.hasHashtags 
-			? processed.hashtags.map(tag => tag.replace('#', '').toLowerCase())
-			: [processed.keywords.toLowerCase()];
-		console.log('[USER][SEARCH] Hashtag names:', hashtagNames);
+		// IMPORTANT: When searching hashtags, we ALWAYS search the hashtags column,
+		// regardless of whether # symbol is present in the query
+		const hashtagNamesSet = new Set();
+		if (processed.hasHashtags) {
+			processed.hashtags.forEach(tag => {
+				const cleanTag = tag.replace('#', '').toLowerCase();
+				if (cleanTag) {
+					hashtagNamesSet.add(cleanTag);
+					hashtagNamesSet.add(`#${cleanTag}`);
+				}
+			});
+		} else if (keyword.trim()) {
+			const cleanTag = keyword.trim().toLowerCase();
+			hashtagNamesSet.add(cleanTag);
+			hashtagNamesSet.add(`#${cleanTag}`);
+		}
+		const hashtagNames = Array.from(hashtagNamesSet);
+		console.log('[USER][SEARCH] Hashtag names (always searches hashtags column):', hashtagNames);
 		
 		const hashtagsQuery = {
 			$and: [
 				{ status: 'published' },
-				{ privacy: 'public' },
+				{ visibility: 'public' },
 				{ author: { $nin: blockedUsers } },
 				{ hashtags: { $in: hashtagNames } }
 			]
@@ -557,7 +656,7 @@ async function searchAll(req, res) {
 		const locationQuery = {
 			$and: [
 				{ status: 'published' },
-				{ privacy: 'public' },
+				{ visibility: 'public' },
 				{ author: { $nin: blockedUsers } },
 				{
 					$or: [
