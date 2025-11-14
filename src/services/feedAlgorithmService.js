@@ -299,7 +299,8 @@ class FeedAlgorithmService {
                   username: 1,
                   fullName: 1,
                   profilePictureUrl: 1,
-                  isVerified: 1
+                  isVerified: 1,
+                  privacySettings: 1
                 }
               }
             ]
@@ -416,7 +417,8 @@ class FeedAlgorithmService {
                   username: 1,
                   fullName: 1,
                   profilePictureUrl: 1,
-                  isVerified: 1
+                  isVerified: 1,
+                  privacySettings: 1
                 }
               }
             ]
@@ -502,7 +504,8 @@ class FeedAlgorithmService {
                   username: 1,
                   fullName: 1,
                   profilePictureUrl: 1,
-                  isVerified: 1
+                  isVerified: 1,
+                  privacySettings: 1
                 }
               }
             ]

@@ -653,6 +653,107 @@ async function refreshToken(req, res) {
 	}
   }
 
+// Get Privacy Settings
+async function getPrivacySettings(req, res) {
+	try {
+		console.log('[USER][AUTH] getPrivacySettings');
+		const userId = req.user?.userId;
+
+		const user = await User.findById(userId).select('privacySettings');
+		if (!user) {
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		const privacySettings = {
+			isPrivate: user.privacySettings?.isPrivate || false,
+			allowFollowRequests: user.privacySettings?.allowFollowRequests !== undefined ? user.privacySettings.allowFollowRequests : true,
+			showOnlineStatus: user.privacySettings?.showOnlineStatus !== undefined ? user.privacySettings.showOnlineStatus : true,
+			allowMessages: user.privacySettings?.allowMessages || 'followers',
+			allowCommenting: user.privacySettings?.allowCommenting !== undefined ? user.privacySettings.allowCommenting : true,
+			allowTagging: user.privacySettings?.allowTagging !== undefined ? user.privacySettings.allowTagging : true,
+			allowStoriesSharing: user.privacySettings?.allowStoriesSharing !== undefined ? user.privacySettings.allowStoriesSharing : true
+		};
+
+		console.log('[USER][AUTH] Privacy settings retrieved successfully');
+		return ApiResponse.success(res, privacySettings, 'Privacy settings retrieved successfully');
+	} catch (e) {
+		console.error('[USER][AUTH] getPrivacySettings error', e?.message || e);
+		return ApiResponse.serverError(res, 'Failed to get privacy settings');
+	}
+}
+
+// Update Privacy Settings
+async function updatePrivacySettings(req, res) {
+	try {
+		console.log('[USER][AUTH] updatePrivacySettings');
+		const userId = req.user?.userId;
+		const { 
+			isPrivate, 
+			allowFollowRequests, 
+			showOnlineStatus, 
+			allowMessages,
+			allowCommenting,
+			allowTagging,
+			allowStoriesSharing
+		} = req.body || {};
+
+		const user = await User.findById(userId);
+		if (!user) {
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		// Initialize privacySettings if it doesn't exist
+		if (!user.privacySettings) {
+			user.privacySettings = {};
+		}
+
+		// Update only provided fields
+		if (isPrivate !== undefined) {
+			user.privacySettings.isPrivate = isPrivate;
+		}
+		if (allowFollowRequests !== undefined) {
+			user.privacySettings.allowFollowRequests = allowFollowRequests;
+		}
+		if (showOnlineStatus !== undefined) {
+			user.privacySettings.showOnlineStatus = showOnlineStatus;
+		}
+		if (allowMessages !== undefined) {
+			// Validate allowMessages value
+			if (!['everyone', 'followers', 'none'].includes(allowMessages)) {
+				return ApiResponse.badRequest(res, 'allowMessages must be one of: everyone, followers, none');
+			}
+			user.privacySettings.allowMessages = allowMessages;
+		}
+		if (allowCommenting !== undefined) {
+			user.privacySettings.allowCommenting = allowCommenting;
+		}
+		if (allowTagging !== undefined) {
+			user.privacySettings.allowTagging = allowTagging;
+		}
+		if (allowStoriesSharing !== undefined) {
+			user.privacySettings.allowStoriesSharing = allowStoriesSharing;
+		}
+
+		await user.save();
+
+		const updatedSettings = {
+			isPrivate: user.privacySettings.isPrivate,
+			allowFollowRequests: user.privacySettings.allowFollowRequests,
+			showOnlineStatus: user.privacySettings.showOnlineStatus,
+			allowMessages: user.privacySettings.allowMessages,
+			allowCommenting: user.privacySettings.allowCommenting,
+			allowTagging: user.privacySettings.allowTagging,
+			allowStoriesSharing: user.privacySettings.allowStoriesSharing
+		};
+
+		console.log('[USER][AUTH] Privacy settings updated successfully');
+		return ApiResponse.success(res, updatedSettings, 'Privacy settings updated successfully');
+	} catch (e) {
+		console.error('[USER][AUTH] updatePrivacySettings error', e?.message || e);
+		return ApiResponse.serverError(res, 'Failed to update privacy settings');
+	}
+}
+
 module.exports = {
 	sendPhoneOtp,
 	verifyPhoneOtp,
@@ -666,7 +767,9 @@ module.exports = {
 	updateProfile,
 	getProfileStep,
 	getEmailVerificationStatus,
-	refreshToken
+	refreshToken,
+	getPrivacySettings,
+	updatePrivacySettings
 };
 
 
