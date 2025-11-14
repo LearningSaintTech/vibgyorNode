@@ -1,5 +1,6 @@
 const Post = require('../userModel/postModel');
 const User = require('../../auth/model/userAuthModel');
+const FollowRequest = require('../userModel/followRequestModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const feedAlgorithmService = require('../../../services/feedAlgorithmService');
@@ -599,6 +600,178 @@ async function toggleLike(req, res) {
   }
 }
 
+// Helper function to format time ago
+function formatTimeAgo(date) {
+  if (!date) return 'just now';
+  
+  const now = new Date();
+  const likeDate = new Date(date);
+  
+  // Check if date is valid
+  if (isNaN(likeDate.getTime())) {
+    return 'just now';
+  }
+  
+  const diffInSeconds = Math.floor((now - likeDate) / 1000);
+  
+  // Handle negative time differences (clock skew)
+  if (diffInSeconds < 0) {
+    return 'just now';
+  }
+  
+  if (diffInSeconds < 60) {
+    return `${diffInSeconds}s`;
+  }
+  
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes}m`;
+  }
+  
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return `${diffInHours}h`;
+  }
+  
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) {
+    return `${diffInDays}d`;
+  }
+  
+  const diffInWeeks = Math.floor(diffInDays / 7);
+  if (diffInWeeks < 4) {
+    return `${diffInWeeks}w`;
+  }
+  
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths < 12) {
+    return `${diffInMonths}mo`;
+  }
+  
+  const diffInYears = Math.floor(diffInDays / 365);
+  return `${diffInYears}y`;
+}
+
+// Get users who liked a post
+async function getPostLikes(req, res) {
+  try {
+    const { postId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const currentUserId = req.user?.userId;
+
+    // Find the post
+    const post = await Post.findById(postId).select('likes');
+    if (!post) {
+      return ApiResponse.notFound(res, 'Post not found');
+    }
+
+    // Get current user's following list for follow status
+    const currentUser = await User.findById(currentUserId).select('following followers');
+    const currentUserFollowing = currentUser?.following?.map(id => id.toString()) || [];
+    const currentUserFollowers = currentUser?.followers?.map(id => id.toString()) || [];
+
+    // Sort likes by createdAt (most recent first) and paginate
+    const sortedLikes = post.likes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedLikes = sortedLikes.slice(startIndex, endIndex);
+
+    // Get user details for paginated likes
+    const userIds = paginatedLikes.map(like => like.user);
+    const users = await User.find({ _id: { $in: userIds } })
+      .select('username fullName profilePictureUrl isVerified');
+
+    // Get follow requests for these users
+    const followRequests = await FollowRequest.find({
+      $or: [
+        { requester: currentUserId, recipient: { $in: userIds } },
+        { requester: { $in: userIds }, recipient: currentUserId }
+      ]
+    }).lean();
+
+    // Create maps for quick lookup
+    const userMap = new Map();
+    users.forEach(user => {
+      userMap.set(user._id.toString(), user);
+    });
+
+    const followRequestMap = new Map();
+    followRequests.forEach(request => {
+      const key = `${request.requester.toString()}_${request.recipient.toString()}`;
+      followRequestMap.set(key, request);
+    });
+
+    // Build response with user details, time ago, and follow status
+    const likesWithDetails = paginatedLikes.map(like => {
+      const user = userMap.get(like.user.toString());
+      if (!user) return null;
+
+      const isCurrentUser = like.user.toString() === currentUserId;
+      const isFollowing = currentUserFollowing.includes(like.user.toString());
+      const isFollower = currentUserFollowers.includes(like.user.toString());
+      
+      // Check follow request status
+      const outgoingRequestKey = `${currentUserId}_${like.user.toString()}`;
+      const incomingRequestKey = `${like.user.toString()}_${currentUserId}`;
+      
+      const outgoingRequest = followRequestMap.get(outgoingRequestKey);
+      const incomingRequest = followRequestMap.get(incomingRequestKey);
+      
+      let followRequestStatus = null;
+      if (outgoingRequest) {
+        followRequestStatus = outgoingRequest.status; // 'pending', 'accepted', 'rejected'
+      } else if (incomingRequest) {
+        followRequestStatus = `incoming_${incomingRequest.status}`; // 'incoming_pending', etc.
+      }
+      
+      // Determine follow status
+      let followStatus = 'not_following';
+      if (isCurrentUser) {
+        followStatus = 'self';
+      } else if (isFollowing && isFollower) {
+        followStatus = 'mutual';
+      } else if (isFollowing) {
+        followStatus = 'following';
+      } else if (isFollower) {
+        followStatus = 'follower';
+      } else if (followRequestStatus === 'pending') {
+        followStatus = 'requested';
+      }
+
+      return {
+        userId: user._id,
+        username: user.username,
+        fullName: user.fullName,
+        profilePictureUrl: user.profilePictureUrl,
+        isVerified: user.isVerified || false,
+        likedAt: like.createdAt,
+        likedAgo: formatTimeAgo(like.createdAt),
+        followStatus: followStatus,
+        followRequestStatus: followRequestStatus,
+        isFollowing: isFollowing,
+        isFollower: isFollower
+      };
+    }).filter(item => item !== null);
+
+    const totalLikes = post.likes.length;
+
+    console.log('[POST] Post likes retrieved successfully');
+    return ApiResponse.success(res, {
+      likes: likesWithDetails,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalLikes / limit),
+        totalLikes,
+        hasNext: endIndex < totalLikes,
+        hasPrev: page > 1
+      }
+    }, 'Post likes retrieved successfully');
+  } catch (error) {
+    console.error('[POST] Get post likes error:', error);
+    return ApiResponse.serverError(res, 'Failed to get post likes');
+  }
+}
+
 // Add comment to post
 async function addComment(req, res) {
   try {
@@ -656,43 +829,162 @@ async function addComment(req, res) {
   }
 }
 
-// Get post comments
+// Get post comments with enhanced details
 async function getPostComments(req, res) {
   try {
     const { postId } = req.params;
     const { page = 1, limit = 20 } = req.query;
+    const currentUserId = req.user?.userId;
 
     const post = await Post.findById(postId)
       .populate({
-        path: 'comments',
-        populate: {
-          path: 'user',
-          select: 'username fullName profilePictureUrl'
-        },
-        options: {
-          sort: { createdAt: -1 },
-          skip: (page - 1) * limit,
-          limit: parseInt(limit)
-        }
+        path: 'comments.user',
+        select: 'username fullName profilePictureUrl isVerified'
       });
 
     if (!post) {
       return ApiResponse.notFound(res, 'Post not found');
     }
 
+    // Sort comments by createdAt (most recent first) and paginate
+    const sortedComments = post.comments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedComments = sortedComments.slice(startIndex, endIndex);
+
+    // Enhance comments with additional info
+    const enhancedComments = paginatedComments.map(comment => {
+      const commentObj = comment.toObject ? comment.toObject() : comment;
+      
+      // Check if current user liked this comment
+      const userLike = commentObj.likes?.find(like => like.user.toString() === currentUserId);
+      const isLiked = !!userLike;
+      
+      return {
+        _id: commentObj._id,
+        user: commentObj.user,
+        content: commentObj.content,
+        parentComment: commentObj.parentComment,
+        likes: commentObj.likes || [],
+        likesCount: commentObj.likes?.length || 0,
+        isLiked: isLiked,
+        createdAt: commentObj.createdAt,
+        commentedAgo: formatTimeAgo(commentObj.createdAt),
+        updatedAt: commentObj.updatedAt
+      };
+    });
+
+    const totalComments = post.comments.length;
+
+    console.log('[POST] Comments retrieved successfully');
     return ApiResponse.success(res, {
-      comments: post.comments,
+      comments: enhancedComments,
       pagination: {
         currentPage: parseInt(page),
-        totalPages: Math.ceil(post.commentsCount / limit),
-        totalComments: post.commentsCount,
-        hasNext: page * limit < post.commentsCount,
+        totalPages: Math.ceil(totalComments / limit),
+        totalComments,
+        hasNext: endIndex < totalComments,
         hasPrev: page > 1
       }
     }, 'Comments retrieved successfully');
   } catch (error) {
     console.error('[POST] Get comments error:', error);
     return ApiResponse.serverError(res, 'Failed to get comments');
+  }
+}
+
+// Like/Unlike a comment
+async function toggleCommentLike(req, res) {
+  try {
+    const { postId, commentId } = req.params;
+    const userId = req.user?.userId;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return ApiResponse.notFound(res, 'Post not found');
+    }
+
+    // Check if user is the post owner (ONLY post owner can like comments)
+    const isPostOwner = post.author.toString() === userId;
+
+    if (!isPostOwner) {
+      return ApiResponse.forbidden(res, 'Only the post owner can like comments');
+    }
+
+    // Find the comment
+    const comment = post.comments.id(commentId);
+    if (!comment) {
+      return ApiResponse.notFound(res, 'Comment not found');
+    }
+
+    // Check if user already liked this comment
+    const existingLike = comment.likes.find(like => like.user.toString() === userId);
+
+    if (existingLike) {
+      // Unlike: Remove the like
+      comment.likes = comment.likes.filter(like => like.user.toString() !== userId);
+      await post.save();
+
+      console.log('[POST] Comment unliked successfully by post owner');
+      return ApiResponse.success(res, {
+        liked: false,
+        likesCount: comment.likes.length
+      }, 'Comment unliked');
+    } else {
+      // Like: Add the like
+      comment.likes.push({
+        user: userId,
+        likedAt: new Date()
+      });
+      await post.save();
+
+      console.log('[POST] Comment liked successfully by post owner');
+      return ApiResponse.success(res, {
+        liked: true,
+        likesCount: comment.likes.length
+      }, 'Comment liked');
+    }
+  } catch (error) {
+    console.error('[POST] Toggle comment like error:', error);
+    return ApiResponse.serverError(res, 'Failed to toggle comment like');
+  }
+}
+
+// Delete a comment
+async function deleteComment(req, res) {
+  try {
+    const { postId, commentId } = req.params;
+    const userId = req.user?.userId;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return ApiResponse.notFound(res, 'Post not found');
+    }
+
+    // Find the comment
+    const comment = post.comments.id(commentId);
+    if (!comment) {
+      return ApiResponse.notFound(res, 'Comment not found');
+    }
+
+    // Check if user is the post owner (ONLY post owner can delete comments)
+    const isPostOwner = post.author.toString() === userId;
+
+    if (!isPostOwner) {
+      return ApiResponse.forbidden(res, 'Only the post owner can delete comments');
+    }
+
+    // Remove the comment
+    comment.deleteOne();
+    await post.save();
+
+    console.log('[POST] Comment deleted successfully by post owner');
+    return ApiResponse.success(res, {
+      commentsCount: post.comments.length
+    }, 'Comment deleted successfully');
+  } catch (error) {
+    console.error('[POST] Delete comment error:', error);
+    return ApiResponse.serverError(res, 'Failed to delete comment');
   }
 }
 
@@ -1293,8 +1585,11 @@ module.exports = {
   
   // Engagement
   toggleLike,
+  getPostLikes,
   addComment,
   getPostComments,
+  toggleCommentLike,
+  deleteComment,
   sharePost,
   
   // Discovery
