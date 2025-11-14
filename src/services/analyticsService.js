@@ -1,10 +1,10 @@
-const Post = require('../user/userModel/postModel');
-const Story = require('../user/userModel/storyModel');
-const User = require('../user/userModel/userAuthModel');
-const Message = require('../user/userModel/messageModel');
-const Call = require('../user/userModel/callModel');
-const ContentModeration = require('../user/userModel/contentModerationModel');
-const Notification = require('../user/userModel/notificationModel');
+const Post = require('../user/social/userModel/postModel');
+const Story = require('../user/social/userModel/storyModel');
+const User = require('../user/auth/model/userAuthModel');
+const Message = require('../user/social/userModel/messageModel');
+const Call = require('../user/social/userModel/callModel');
+const ContentModeration = require('../user/social/userModel/contentModerationModel');
+const Notification = require('../user/social/userModel/notificationModel');
 
 /**
  * Analytics Service

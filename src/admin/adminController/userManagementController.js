@@ -1,6 +1,6 @@
-const User = require('../../user/userModel/userAuthModel');
+const User = require('../../user/auth/model/userAuthModel');
 const SubAdmin = require('../../subAdmin/subAdminModel/subAdminAuthModel');
-const Report = require('../../user/userModel/userReportModel');
+const Report = require('../../user/social/userModel/userReportModel');
 const ApiResponse = require('../../utils/apiResponse');
 
 // Get all users with pagination and filters

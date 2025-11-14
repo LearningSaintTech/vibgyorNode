@@ -19,21 +19,21 @@ const adminContentModerationRoutes = require('./admin/adminRoutes/contentModerat
 const adminAnalyticsRoutes = require('./admin/adminRoutes/analyticsRoutes');
 const subAdminRoutes = require('./subAdmin/subAdminRoutes/subAdminAuthRoutes');
 const subAdminUserManagementRoutes = require('./subAdmin/subAdminRoutes/userManagementRoutes');
-const userAuthRoutes = require('./user/userRoutes/userAuthRoutes');
-const userCatalogRoutes = require('./user/userRoutes/userCatalogRoutes');
-const userUsernameRoutes = require('./user/userRoutes/userUsernameRoutes');
-const userSocialRoutes = require('./user/userRoutes/userSocialRoutes');
-const userMessageRequestRoutes = require('./user/userRoutes/userMessageRequestRoutes');
-const userStatusRoutes = require('./user/userRoutes/userStatusRoutes');
-const userFileUploadRoutes = require('./user/userRoutes/userFileUploadRoutes');
-const postRoutes = require('./user/userRoutes/postRoutes');
-const storyRoutes = require('./user/userRoutes/storyRoutes');
-const notificationRoutes = require('./user/userRoutes/notificationRoutes');
-const notificationPreferencesRoutes = require('./user/userRoutes/notificationPreferencesRoutes');
+const userAuthRoutes = require('./user/auth/routes/userAuthRoutes');
+const userCatalogRoutes = require('./user/auth/routes/userCatalogRoutes');
+const userUsernameRoutes = require('./user/auth/routes/userUsernameRoutes');
+const userSocialRoutes = require('./user/social/userRoutes/userSocialRoutes');
+const userMessageRequestRoutes = require('./user/social/userRoutes/userMessageRequestRoutes');
+const userStatusRoutes = require('./user/social/userRoutes/userStatusRoutes');
+const userFileUploadRoutes = require('./user/auth/routes/userFileUploadRoutes');
+const postRoutes = require('./user/social/userRoutes/postRoutes');
+const storyRoutes = require('./user/social/userRoutes/storyRoutes');
+const notificationRoutes = require('./user/social/userRoutes/notificationRoutes');
+const notificationPreferencesRoutes = require('./user/social/userRoutes/notificationPreferencesRoutes');
 const cookieParser = require('cookie-parser');
 
 // Enhanced routes
-const enhancedUserRoutes = require('./user/userRoutes/index');
+const enhancedUserRoutes = require('./user/social/userRoutes/index');
 
 const app = express();
 
