@@ -1,4 +1,4 @@
-const ContentModeration = require('../../user/userModel/contentModerationModel');
+const ContentModeration = require('../../user/social/userModel/contentModerationModel');
 const ApiResponse = require('../../utils/apiResponse');
 
 // Get flagged content for review

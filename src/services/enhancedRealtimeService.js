@@ -1,10 +1,10 @@
 const { Server } = require('socket.io');
 const { verifyAccessToken } = require('../utils/Jwt');
-const Chat = require('../user/userModel/chatModel');
-const Message = require('../user/userModel/messageModel');
-const Call = require('../user/userModel/callModel');
-const User = require('../user/userModel/userAuthModel');
-const UserStatus = require('../user/userModel/userStatusModel');
+const Chat = require('../user/social/userModel/chatModel');
+const Message = require('../user/social/userModel/messageModel');
+const Call = require('../user/social/userModel/callModel');
+const User = require('../user/auth/model/userAuthModel');
+const UserStatus = require('../user/social/userModel/userStatusModel');
 
 /**
  * Enhanced Real-time Service with comprehensive WebRTC and chat features

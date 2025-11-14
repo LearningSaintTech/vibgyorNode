@@ -1,8 +1,8 @@
-const Notification = require('../user/userModel/notificationModel');
-const User = require('../user/userModel/userAuthModel');
-const Post = require('../user/userModel/postModel');
-const Story = require('../user/userModel/storyModel');
-const Message = require('../user/userModel/messageModel');
+const Notification = require('../user/social/userModel/notificationModel');
+const User = require('../user/auth/model/userAuthModel');
+const Post = require('../user/social/userModel/postModel');
+const Story = require('../user/social/userModel/storyModel');
+const Message = require('../user/social/userModel/messageModel');
 
 /**
  * Enhanced Notification Service

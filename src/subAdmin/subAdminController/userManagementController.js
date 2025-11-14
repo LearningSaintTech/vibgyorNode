@@ -1,5 +1,5 @@
-const User = require('../../user/userModel/userAuthModel');
-const Report = require('../../user/userModel/userReportModel');
+const User = require('../../user/auth/model/userAuthModel');
+const Report = require('../../user/social/userModel/userReportModel');
 const ApiResponse = require('../../utils/apiResponse');
 
 // Get all users with pagination and filters (SubAdmin can only manage users)

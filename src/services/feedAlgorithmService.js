@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
-const Post = require('../user/userModel/postModel');
-const User = require('../user/userModel/userAuthModel');
+const Post = require('../user/social/userModel/postModel');
+const User = require('../user/auth/model/userAuthModel');
 
 /**
  * Smart Feed Algorithm Service
