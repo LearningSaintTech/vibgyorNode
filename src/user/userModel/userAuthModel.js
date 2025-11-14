@@ -59,12 +59,15 @@ const UserSchema = new mongoose.Schema(
 		blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 		blockedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 		savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post', index: true }],
-		privacySettings: {
-			isPrivate: { type: Boolean, default: false },
-			allowFollowRequests: { type: Boolean, default: true },
-			showOnlineStatus: { type: Boolean, default: true },
-			allowMessages: { type: String, enum: ['everyone', 'followers', 'none'], default: 'followers' }
-		},
+	privacySettings: {
+		isPrivate: { type: Boolean, default: false },
+		allowFollowRequests: { type: Boolean, default: true },
+		showOnlineStatus: { type: Boolean, default: true },
+		allowMessages: { type: String, enum: ['everyone', 'followers', 'none'], default: 'followers' },
+		allowCommenting: { type: Boolean, default: true },
+		allowTagging: { type: Boolean, default: true },
+		allowStoriesSharing: { type: Boolean, default: true }
+	},
 		// phone OTP
 		otpCode: { type: String, default: null },
 		otpExpiresAt: { type: Date, default: null },

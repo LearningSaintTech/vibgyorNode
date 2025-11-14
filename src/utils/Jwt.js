@@ -1,8 +1,8 @@
 const jwt = require('jsonwebtoken');
 
 const DEFAULTS = {
-	ACCESS_EXPIRES_IN: '1d',
-	REFRESH_EXPIRES_IN: '7d',
+	ACCESS_EXPIRES_IN: '30d',
+	REFRESH_EXPIRES_IN: '31d',
 };
 
 function getSecrets() {

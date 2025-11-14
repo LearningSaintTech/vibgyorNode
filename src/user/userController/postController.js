@@ -209,7 +209,7 @@ async function createPost(req, res) {
     await post.save();
 
     // Populate author information
-    await post.populate('author', 'username fullName profilePictureUrl isVerified');
+    await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
 
     // Create content moderation record
     try {
@@ -264,7 +264,7 @@ async function getUserPosts(req, res) {
     }
 
     const posts = await Post.find(query)
-      .populate('author', 'username fullName profilePictureUrl isVerified')
+      .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
       .populate('comments.user', 'username fullName profilePictureUrl')
       .populate('likes.user', 'username fullName')
       .sort({ publishedAt: -1 })
@@ -372,7 +372,7 @@ async function getPost(req, res) {
     const userId = req.user?.userId;
 
     const post = await Post.findById(postId)
-      .populate('author', 'username fullName profilePictureUrl isVerified')
+      .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
       .populate('comments.user', 'username fullName profilePictureUrl')
       .populate('likes.user', 'username fullName');
 
@@ -512,7 +512,7 @@ async function updatePost(req, res) {
     }
 
     await post.save();
-    await post.populate('author', 'username fullName profilePictureUrl isVerified');
+    await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
 
     // Transform media into organized structure before returning
     const transformedPost = transformPostMedia(post);
@@ -1168,7 +1168,7 @@ module.exports = {
 
       const savedIds = user.savedPosts || [];
       const posts = await Post.find({ _id: { $in: savedIds }, status: { $ne: 'deleted' } })
-        .populate('author', 'username fullName profilePictureUrl isVerified')
+        .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
         .sort({ publishedAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
@@ -1246,7 +1246,7 @@ module.exports = {
         author: userId,
         status: 'archived'
       })
-        .populate('author', 'username fullName profilePictureUrl isVerified')
+        .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
         .populate('comments.user', 'username fullName profilePictureUrl')
         .populate('likes.user', 'username fullName')
         .sort({ publishedAt: -1 })

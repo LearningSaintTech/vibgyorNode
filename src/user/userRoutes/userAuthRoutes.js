@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authorize, Roles } = require('../../middleware/authMiddleware');
-const { sendPhoneOtp, verifyPhoneOtp, resendPhoneOtp, sendEmailOtp, verifyEmailOtp, resendEmailOtp, getMe, getProfile, getUserProfile, updateProfile, getProfileStep, getEmailVerificationStatus,refreshToken } = require('../userController/userAuthController');
+const { sendPhoneOtp, verifyPhoneOtp, resendPhoneOtp, sendEmailOtp, verifyEmailOtp, resendEmailOtp, getMe, getProfile, getUserProfile, updateProfile, getProfileStep, getEmailVerificationStatus, refreshToken, getPrivacySettings, updatePrivacySettings } = require('../userController/userAuthController');
 
 // Phone OTP auth
 router.post('/send-otp', sendPhoneOtp);
@@ -30,6 +30,10 @@ router.put('/profile', authorize([Roles.USER]), updateProfile);
 
 // Get email verification status
 router.get('/email/status', authorize([Roles.USER]), getEmailVerificationStatus);
+
+// Privacy Settings
+router.get('/privacy-settings', authorize([Roles.USER]), getPrivacySettings);
+router.put('/privacy-settings', authorize([Roles.USER]), updatePrivacySettings);
 
 router.post('/update-access-token',refreshToken)
 
