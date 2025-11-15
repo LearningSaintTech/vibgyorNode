@@ -41,16 +41,24 @@ app.use((cookieParser()));
 
 // Enhanced Middleware
 app.use(helmet());
-app.use(cors({ 
-  origin: [
-    'http://localhost:5173',
-    'https://localhost:5173',
-    'http://127.0.0.1:5173',
-    'https://127.0.0.1:5173',
-    process.env.CORS_ORIGIN
-  ].filter(Boolean), 
-  credentials: true 
+// app.use(cors({ 
+//   origin: [
+//     'http://localhost:5173',
+//     'https://localhost:5173',
+//     'http://127.0.0.1:5173',
+//     'https://127.0.0.1:5173',
+//     process.env.CORS_ORIGIN
+//   ].filter(Boolean), 
+//   credentials: true 
+// }));
+
+app.use(cors({
+  origin: (origin, callback) => {
+    callback(null, true); // allow all origins
+  },
+  credentials: true
 }));
+
 app.use(compressionMiddleware); // Add compression
 app.use(express.json({ limit: '10mb' })); // Increase JSON limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

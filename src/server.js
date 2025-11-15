@@ -71,7 +71,8 @@ process.on('unhandledRejection', (reason, promise) => {
 		
 		// Start server with error handling
 		// Use localhost for development, 0.0.0.0 for production (Render)
-		const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+		// const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+		const host = "0.0.0.0";
 		
 		server.listen(PORT, host, () => {
 			console.log('🚀 VibgyorNode v2.0 Server Started!');
