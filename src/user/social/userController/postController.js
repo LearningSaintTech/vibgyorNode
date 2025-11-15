@@ -584,13 +584,13 @@ async function toggleLike(req, res) {
     } else {
       await post.addLike(userId);
       
-      // Send notification for like
-      try {
-        await notificationService.notifyPostEngagement(postId, userId, 'like');
-      } catch (notificationError) {
-        console.error('[POST] Like notification error:', notificationError);
-        // Don't fail the like action if notification fails
-      }
+      // // Send notification for like
+      // try {
+      //   await notificationService.notifyPostEngagement(postId, userId, 'like');
+      // } catch (notificationError) {
+      //   console.error('[POST] Like notification error:', notificationError);
+      //   // Don't fail the like action if notification fails
+      // }
       
       return ApiResponse.success(res, { liked: true, likesCount: post.likesCount }, 'Post liked');
     }
