@@ -808,15 +808,15 @@ async function addComment(req, res) {
     await post.populate(`comments.${commentIndex}.user`, 'username fullName profilePictureUrl');
     const newComment = post.comments[commentIndex];
 
-    // Send notification for comment
-    try {
-      await notificationService.notifyPostEngagement(postId, userId, 'comment', {
-        commentContent: content.trim()
-      });
-    } catch (notificationError) {
-      console.error('[POST] Comment notification error:', notificationError);
-      // Don't fail the comment action if notification fails
-    }
+    // // Send notification for comment
+    // try {
+    //   await notificationService.notifyPostEngagement(postId, userId, 'comment', {
+    //     commentContent: content.trim()
+    //   });
+    // } catch (notificationError) {
+    //   console.error('[POST] Comment notification error:', notificationError);
+    //   // Don't fail the comment action if notification fails
+    // }
 
     console.log('[POST] Comment added successfully');
     return ApiResponse.success(res, {
