@@ -16,8 +16,9 @@ const Report = require('./user/userModel/userReportModel');
 const Post = require('./user/userModel/postModel');
 const Story = require('./user/userModel/storyModel');
 const StoryHighlight = require('./user/userModel/storyHighlightModel');
-const Notification = require('./user/userModel/notificationModel');
-const NotificationPreferences = require('./user/userModel/notificationPreferencesModel');
+// TODO: Notification models will be updated with new architecture
+// const Notification = require('./user/social/userModel/notificationModel');
+// const NotificationPreferences = require('./user/social/userModel/notificationPreferencesModel');
 const ContentModeration = require('./user/userModel/contentModerationModel');
 
 // Database connection
@@ -987,103 +988,18 @@ const seedStoryHighlights = async (users, stories) => {
   return createdHighlights;
 };
 
+// TODO: Notification seeding will be implemented with new architecture
 const seedNotifications = async (users, posts, stories) => {
-  console.log('🌱 Seeding Notifications...');
-  
-  const notifications = [];
-  const notificationCount = Math.floor(users.length * 5); // 5 notifications per user on average
-  
-  for (let i = 0; i < notificationCount; i++) {
-    const recipient = getRandomElement(users);
-    const sender = getRandomElement(users.filter(u => u._id.toString() !== recipient._id.toString()));
-    const type = getRandomElement(['post_like', 'post_comment', 'follow', 'story_view', 'story_reaction', 'message_received', 'call_missed', 'system_announcement']);
-    const title = getRandomElement(demoData.notificationTitles);
-    const message = getRandomElement(demoData.notificationMessages);
-    
-    const notification = {
-      recipient: recipient._id,
-      sender: sender._id,
-      type: type,
-      title: title,
-      message: `${sender.username} ${message}`,
-      status: getRandomElement(['unread', 'read', 'archived']),
-      deliveryStatus: getRandomElement(['pending', 'sent', 'delivered']),
-      priority: getRandomElement(['low', 'normal', 'high', 'urgent']),
-      relatedContent: {
-        contentType: Math.random() > 0.5 ? getRandomElement(['post', 'story', 'user']) : null,
-        contentId: Math.random() > 0.5 ? (posts.length > 0 ? getRandomElement(posts)._id : null) : null,
-        metadata: {}
-      },
-      analytics: {
-        openCount: Math.random() > 0.5 ? Math.floor(Math.random() * 3) : 0,
-        clickCount: Math.random() > 0.7 ? Math.floor(Math.random() * 2) : 0,
-        lastOpenedAt: Math.random() > 0.5 ? getRandomDate(7) : null,
-        lastClickedAt: Math.random() > 0.8 ? getRandomDate(7) : null
-      },
-      readAt: Math.random() > 0.3 ? getRandomDate(7) : null,
-      expiresAt: new Date(Date.now() + (Math.random() * 30 * 24 * 60 * 60 * 1000)) // Random expiry within 30 days
-    };
-    
-    notifications.push(notification);
-  }
-  
-  const createdNotifications = await Notification.insertMany(notifications);
-  console.log(`✅ Created ${createdNotifications.length} notifications`);
-  return createdNotifications;
+  console.log('🌱 Seeding Notifications... (Skipped - will be implemented with new architecture)');
+  // Notification seeding disabled - will be re-implemented with new architecture
+  return [];
 };
 
+// TODO: Notification preferences seeding will be implemented with new architecture
 const seedNotificationPreferences = async (users) => {
-  console.log('🌱 Seeding Notification Preferences...');
-  
-  const preferences = [];
-  
-  for (const user of users) {
-    const preference = {
-      user: user._id,
-      globalSettings: {
-        enableNotifications: Math.random() > 0.1,
-        quietHours: {
-          enabled: Math.random() > 0.7,
-          startTime: '22:00',
-          endTime: '08:00',
-          timezone: 'UTC'
-        },
-        frequency: getRandomElement(['immediate', 'hourly', 'daily', 'weekly'])
-      },
-      channels: {
-        inApp: {
-          enabled: Math.random() > 0.2,
-          sound: Math.random() > 0.3,
-          vibration: Math.random() > 0.4
-        },
-        push: {
-          enabled: Math.random() > 0.3,
-          sound: Math.random() > 0.4,
-          badge: Math.random() > 0.5
-        },
-        email: {
-          enabled: Math.random() > 0.6,
-          frequency: getRandomElement(['immediate', 'daily', 'weekly'])
-        },
-        sms: {
-          enabled: Math.random() > 0.9,
-          emergencyOnly: true
-        }
-      },
-      advanced: {
-        groupSimilar: Math.random() > 0.3,
-        maxNotificationsPerHour: Math.floor(Math.random() * 20) + 5,
-        digestNotifications: Math.random() > 0.7,
-        digestFrequency: getRandomElement(['hourly', 'daily', 'weekly'])
-      }
-    };
-    
-    preferences.push(preference);
-  }
-  
-  const createdPreferences = await NotificationPreferences.insertMany(preferences);
-  console.log(`✅ Created ${createdPreferences.length} notification preferences`);
-  return createdPreferences;
+  console.log('🌱 Seeding Notification Preferences... (Skipped - will be implemented with new architecture)');
+  // Notification preferences seeding disabled - will be re-implemented with new architecture
+  return [];
 };
 
 const seedContentModeration = async (posts, stories) => {
@@ -1201,8 +1117,9 @@ const seedDatabase = async (clearFirst = false) => {
         Post.deleteMany({}),
         Story.deleteMany({}),
         StoryHighlight.deleteMany({}),
-        Notification.deleteMany({}),
-        NotificationPreferences.deleteMany({}),
+        // TODO: Notification cleanup will be implemented with new architecture
+        // Notification.deleteMany({}),
+        // NotificationPreferences.deleteMany({}),
         ContentModeration.deleteMany({})
       ]);
       console.log('✅ Database cleared successfully');

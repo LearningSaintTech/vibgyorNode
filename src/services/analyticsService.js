@@ -4,7 +4,8 @@ const User = require('../user/auth/model/userAuthModel');
 const Message = require('../user/social/userModel/messageModel');
 const Call = require('../user/social/userModel/callModel');
 const ContentModeration = require('../user/social/userModel/contentModerationModel');
-const Notification = require('../user/social/userModel/notificationModel');
+// TODO: Notification model will be used with new architecture
+// const Notification = require('../user/social/userModel/notificationModel');
 
 /**
  * Analytics Service

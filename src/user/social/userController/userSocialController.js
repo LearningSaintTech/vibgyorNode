@@ -2,6 +2,7 @@ const User = require('../../auth/model/userAuthModel');
 const Report = require('../userModel/userReportModel');
 const FollowRequest = require('../userModel/followRequestModel');
 const ApiResponse = require('../../../utils/apiResponse');
+const notificationService = require('../../../notification/services/notificationService');
 
 // Send follow request to a user (or directly follow if public account)
 async function sendFollowRequest(req, res) {
@@ -106,6 +107,23 @@ async function sendFollowRequest(req, res) {
 				});
 			}
 
+			// Create notification for new follower
+			try {
+				await notificationService.create({
+					context: 'social',
+					type: 'follow',
+					recipientId: userId,
+					senderId: currentUserId,
+					data: {
+						userId: currentUserId,
+						contentType: 'user'
+					}
+				});
+			} catch (notificationError) {
+				console.error('[USER][SOCIAL] Error creating notification for follow:', notificationError);
+				// Don't fail the request if notification fails
+			}
+
 			console.log('[USER][SOCIAL] User followed successfully (public account)');
 			return ApiResponse.success(res, {
 				userId: targetUser._id,
@@ -180,6 +198,24 @@ async function sendFollowRequest(req, res) {
 				status: followRequest.status,
 				expiresAt: followRequest.expiresAt
 			});
+		}
+
+		// Create notification for follow request
+		try {
+			await notificationService.create({
+				context: 'social',
+				type: 'follow_request',
+				recipientId: userId,
+				senderId: currentUserId,
+				data: {
+					requestId: followRequest._id.toString(),
+					userId: currentUserId,
+					contentType: 'user'
+				}
+			});
+		} catch (notificationError) {
+			console.error('[USER][SOCIAL] Error creating notification for follow request:', notificationError);
+			// Don't fail the request if notification fails
 		}
 
 		console.log('[USER][SOCIAL] Populating follow request data...');
@@ -813,6 +849,24 @@ async function acceptFollowRequest(req, res) {
 			User.findByIdAndUpdate(requester._id, { $addToSet: { following: recipient._id } }),
 			User.findByIdAndUpdate(recipient._id, { $addToSet: { followers: requester._id } })
 		]);
+
+		// Create notification for follow request accepted
+		try {
+			await notificationService.create({
+				context: 'social',
+				type: 'follow_accepted',
+				recipientId: followRequest.requester.toString(),
+				senderId: currentUserId,
+				data: {
+					requestId: followRequest._id.toString(),
+					userId: currentUserId,
+					contentType: 'user'
+				}
+			});
+		} catch (notificationError) {
+			console.error('[USER][SOCIAL] Error creating notification for follow request accepted:', notificationError);
+			// Don't fail the request if notification fails
+		}
 
 		const responseData = {
 			requestId: followRequest._id,

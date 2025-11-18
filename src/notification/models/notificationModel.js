@@ -2,6 +2,15 @@ const mongoose = require('mongoose');
 
 const NotificationSchema = new mongoose.Schema(
   {
+    // Context: social or dating
+    context: {
+      type: String,
+      enum: ['social', 'dating'],
+      default: 'social',
+      required: true,
+      index: true
+    },
+    
     // Basic Information
     recipient: {
       type: mongoose.Schema.Types.ObjectId,
@@ -12,32 +21,12 @@ const NotificationSchema = new mongoose.Schema(
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: false // System notifications may not have a sender
     },
     
     // Notification Content
     type: {
       type: String,
-      enum: [
-        // Post notifications
-        'post_like', 'post_comment', 'post_share', 'post_mention',
-        // Story notifications
-        'story_view', 'story_reaction', 'story_reply', 'story_mention',
-        // Follow notifications
-        'follow_request', 'follow_accepted', 'follow',
-        // Message notifications
-        'message_received', 'message_request',
-        // Call notifications
-        'call_incoming', 'call_missed', 'call_ended',
-        // System notifications
-        'system_announcement', 'content_moderation', 'account_update',
-        // Highlight notifications
-        'highlight_added', 'highlight_view',
-        // Poll notifications
-        'poll_vote', 'poll_ended',
-        // Question notifications
-        'question_answer'
-      ],
       required: true,
       index: true
     },
@@ -69,7 +58,7 @@ const NotificationSchema = new mongoose.Schema(
     relatedContent: {
       contentType: {
         type: String,
-        enum: ['post', 'story', 'message', 'call', 'user', 'highlight', 'poll', 'question'],
+        enum: ['post', 'story', 'message', 'call', 'user', 'highlight', 'poll', 'question', 'match', 'like', 'date'],
         default: null
       },
       contentId: {
@@ -81,6 +70,13 @@ const NotificationSchema = new mongoose.Schema(
         of: mongoose.Schema.Types.Mixed,
         default: {}
       }
+    },
+    
+    // Context-specific data
+    data: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {}
     },
     
     // Notification Status
@@ -238,7 +234,8 @@ const NotificationSchema = new mongoose.Schema(
 
 // Indexes for performance
 NotificationSchema.index({ recipient: 1, status: 1, createdAt: -1 });
-NotificationSchema.index({ type: 1, createdAt: -1 });
+NotificationSchema.index({ context: 1, type: 1, createdAt: -1 });
+NotificationSchema.index({ recipient: 1, context: 1, status: 1, createdAt: -1 });
 NotificationSchema.index({ deliveryStatus: 1, scheduledFor: 1 });
 NotificationSchema.index({ 'relatedContent.contentType': 1, 'relatedContent.contentId': 1 });
 
@@ -326,6 +323,7 @@ NotificationSchema.statics.getUserNotifications = function(userId, options = {})
     limit = 20,
     status = 'all', // 'all', 'unread', 'read', 'archived'
     type = 'all',
+    context = 'all', // 'all', 'social', 'dating'
     priority = 'all'
   } = options;
 
@@ -341,6 +339,11 @@ NotificationSchema.statics.getUserNotifications = function(userId, options = {})
     query.type = type;
   }
   
+  // Filter by context
+  if (context !== 'all') {
+    query.context = context;
+  }
+  
   // Filter by priority
   if (priority !== 'all') {
     query.priority = priority;
@@ -354,16 +357,31 @@ NotificationSchema.statics.getUserNotifications = function(userId, options = {})
     .limit(limit);
 };
 
-NotificationSchema.statics.getUnreadCount = function(userId) {
-  return this.countDocuments({
+NotificationSchema.statics.getUnreadCount = function(userId, context = 'all') {
+  const query = {
     recipient: userId,
     status: 'unread'
-  });
+  };
+  
+  if (context !== 'all') {
+    query.context = context;
+  }
+  
+  return this.countDocuments(query);
 };
 
-NotificationSchema.statics.markAllAsRead = function(userId) {
+NotificationSchema.statics.markAllAsRead = function(userId, context = 'all') {
+  const query = {
+    recipient: userId,
+    status: 'unread'
+  };
+  
+  if (context !== 'all') {
+    query.context = context;
+  }
+  
   return this.updateMany(
-    { recipient: userId, status: 'unread' },
+    query,
     { 
       status: 'read', 
       readAt: new Date(),
@@ -400,6 +418,7 @@ NotificationSchema.pre('save', function(next) {
       'story_view': 24 * 60 * 60 * 1000, // 1 day
       'follow_request': 30 * 24 * 60 * 60 * 1000, // 30 days
       'system_announcement': 30 * 24 * 60 * 60 * 1000, // 30 days
+      'match': 30 * 24 * 60 * 60 * 1000, // 30 days
       'default': 7 * 24 * 60 * 60 * 1000 // 7 days default
     };
     
@@ -412,3 +431,4 @@ NotificationSchema.pre('save', function(next) {
 const Notification = mongoose.models.Notification || mongoose.model('Notification', NotificationSchema);
 
 module.exports = Notification;
+
