@@ -11,8 +11,11 @@ const {
   updatePost,
   deletePost,
   toggleLike,
+  getPostLikes,
   addComment,
   getPostComments,
+  toggleCommentLike,
+  deleteComment,
   sharePost,
   searchPosts,
   reportPost,
@@ -166,38 +169,15 @@ router.get('/user/:userId',
   getUserPosts
 );
 
-// Single Post Routes - MUST come AFTER specific routes like /me, /saved
-router.get('/:postId',
-  authorize([Roles.USER]),
-  getPost
-);
-
-router.put('/:postId',
-  authorize([Roles.USER]),
-  // validateCreatePost, 
-  updatePost
-);
-
-router.delete('/:postId',
-  authorize([Roles.USER]),
-  deletePost
-);
-
-// Archive / Unarchive
-router.put('/:postId/archive',
-  authorize([Roles.USER]),
-  archivePost
-);
-
-router.put('/:postId/unarchive',
-  authorize([Roles.USER]),
-  unarchivePost
-);
-
-// Engagement Routes
+// Engagement Routes - MUST come BEFORE /:postId to avoid route conflicts
 router.post('/:postId/like',
   authorize([Roles.USER]),
   toggleLike
+);
+
+router.get('/:postId/likes',
+  authorize([Roles.USER]),
+  getPostLikes
 );
 
 router.post('/:postId/comment',
@@ -209,6 +189,16 @@ router.post('/:postId/comment',
 router.get('/:postId/comments',
   authorize([Roles.USER]),
   getPostComments
+);
+
+router.post('/:postId/comments/:commentId/like',
+  authorize([Roles.USER]),
+  toggleCommentLike
+);
+
+router.delete('/:postId/comments/:commentId',
+  authorize([Roles.USER]),
+  deleteComment
 );
 
 router.post('/:postId/share',
@@ -225,6 +215,34 @@ router.post('/:postId/save',
 router.delete('/:postId/save',
   authorize([Roles.USER]),
   unsavePost
+);
+
+// Archive / Unarchive
+router.put('/:postId/archive',
+  authorize([Roles.USER]),
+  archivePost
+);
+
+router.put('/:postId/unarchive',
+  authorize([Roles.USER]),
+  unarchivePost
+);
+
+// Single Post Routes - MUST come AFTER specific routes like /comments, /likes, /save
+router.get('/:postId',
+  authorize([Roles.USER]),
+  getPost
+);
+
+router.put('/:postId',
+  authorize([Roles.USER]),
+  // validateCreatePost, 
+  updatePost
+);
+
+router.delete('/:postId',
+  authorize([Roles.USER]),
+  deletePost
 );
 
 // Analytics and Reporting Routes
