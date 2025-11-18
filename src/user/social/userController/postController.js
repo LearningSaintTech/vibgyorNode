@@ -3,7 +3,7 @@ const User = require('../../auth/model/userAuthModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const feedAlgorithmService = require('../../../services/feedAlgorithmService');
-const notificationService = require('../../../services/notificationService');
+const notificationService = require('../../../notification/services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
 
 // Helper function to normalize location with all fields visible
@@ -583,12 +583,24 @@ async function toggleLike(req, res) {
     } else {
       await post.addLike(userId);
       
-      // Send notification for like
+      // Create notification for post like
       try {
-        await notificationService.notifyPostEngagement(postId, userId, 'like');
+        const postAuthor = await User.findById(post.author);
+        if (postAuthor && postAuthor._id.toString() !== userId) {
+          await notificationService.create({
+            context: 'social',
+            type: 'post_like',
+            recipientId: post.author.toString(),
+            senderId: userId,
+            data: {
+              postId: post._id.toString(),
+              contentType: 'post'
+            }
+          });
+        }
       } catch (notificationError) {
-        console.error('[POST] Like notification error:', notificationError);
-        // Don't fail the like action if notification fails
+        console.error('[POST] Error creating notification for post like:', notificationError);
+        // Don't fail the request if notification fails
       }
       
       return ApiResponse.success(res, { liked: true, likesCount: post.likesCount }, 'Post liked');
@@ -635,14 +647,25 @@ async function addComment(req, res) {
     await post.populate(`comments.${commentIndex}.user`, 'username fullName profilePictureUrl');
     const newComment = post.comments[commentIndex];
 
-    // Send notification for comment
+    // Create notification for post comment
     try {
-      await notificationService.notifyPostEngagement(postId, userId, 'comment', {
-        commentContent: content.trim()
-      });
+      const postAuthor = await User.findById(post.author);
+      if (postAuthor && postAuthor._id.toString() !== userId) {
+        await notificationService.create({
+          context: 'social',
+          type: 'post_comment',
+          recipientId: post.author.toString(),
+          senderId: userId,
+          data: {
+            postId: post._id.toString(),
+            commentId: newComment._id.toString(),
+            contentType: 'post'
+          }
+        });
+      }
     } catch (notificationError) {
-      console.error('[POST] Comment notification error:', notificationError);
-      // Don't fail the comment action if notification fails
+      console.error('[POST] Error creating notification for post comment:', notificationError);
+      // Don't fail the request if notification fails
     }
 
     console.log('[POST] Comment added successfully');

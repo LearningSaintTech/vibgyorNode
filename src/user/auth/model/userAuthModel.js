@@ -77,6 +77,43 @@ const UserSchema = new mongoose.Schema(
 		emailOtpExpiresAt: { type: Date, default: null },
 		lastEmailOtpSentAt: { type: Date, default: null },
 		lastLoginAt: { type: Date, default: null },
+		// Device tokens for push notifications
+		deviceTokens: [{
+			token: {
+				type: String,
+				required: true,
+				index: true
+			},
+			platform: {
+				type: String,
+				enum: ['ios', 'android', 'web'],
+				required: true
+			},
+			deviceId: {
+				type: String,
+				default: ''
+			},
+			deviceName: {
+				type: String,
+				default: ''
+			},
+			appVersion: {
+				type: String,
+				default: ''
+			},
+			isActive: {
+				type: Boolean,
+				default: true
+			},
+			lastUsedAt: {
+				type: Date,
+				default: Date.now
+			},
+			createdAt: {
+				type: Date,
+				default: Date.now
+			}
+		}],
 	},
 	{ timestamps: true }
 );
@@ -146,6 +183,48 @@ UserSchema.methods.updateProfileStep = function updateProfileStep() {
 	}
 	console.log("9999999999999999999999999999999");
 	return nextStep;
+};
+
+// Device token methods for push notifications
+UserSchema.methods.addDeviceToken = async function addDeviceToken(token, platform, deviceInfo = {}) {
+	// Remove existing token if present
+	this.deviceTokens = this.deviceTokens.filter(
+		dt => dt.token !== token
+	);
+	
+	// Add new token
+	this.deviceTokens.push({
+		token,
+		platform,
+		deviceId: deviceInfo.deviceId || '',
+		deviceName: deviceInfo.deviceName || '',
+		appVersion: deviceInfo.appVersion || '',
+		isActive: true,
+		lastUsedAt: new Date(),
+		createdAt: new Date()
+	});
+	
+	return this.save();
+};
+
+UserSchema.methods.removeDeviceToken = async function removeDeviceToken(token) {
+	this.deviceTokens = this.deviceTokens.filter(
+		dt => dt.token !== token
+	);
+	return this.save();
+};
+
+UserSchema.methods.getActiveDeviceTokens = function getActiveDeviceTokens(platform = null) {
+	let tokens = this.deviceTokens.filter(dt => dt.isActive);
+	
+	if (platform) {
+		tokens = tokens.filter(dt => dt.platform === platform);
+	}
+	
+	return tokens.map(dt => ({
+		token: dt.token,
+		platform: dt.platform
+	}));
 };
 
 const User = mongoose.models.User || mongoose.model('User', UserSchema);

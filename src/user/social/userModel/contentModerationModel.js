@@ -502,16 +502,9 @@ ContentModerationSchema.methods.getContentModel = function() {
 };
 
 ContentModerationSchema.methods.sendWarningToUser = async function() {
+  // TODO: Notification will be implemented in new notification system
   // Send warning notification to user
-  const notificationService = require('../../../services/notificationService');
-  await notificationService.createNotification({
-    recipientId: this.contentAuthor,
-    senderId: null, // System notification
-    type: 'system_announcement',
-    title: 'Content Policy Warning',
-    message: 'Your content has been flagged for review. Please review our community guidelines.',
-    priority: 'normal'
-  });
+  console.log('[MODERATION] Warning notification will be sent via new notification system');
 };
 
 ContentModerationSchema.methods.applyRateLimit = async function() {

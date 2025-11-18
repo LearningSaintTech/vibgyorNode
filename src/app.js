@@ -28,8 +28,6 @@ const userStatusRoutes = require('./user/social/userRoutes/userStatusRoutes');
 const userFileUploadRoutes = require('./user/auth/routes/userFileUploadRoutes');
 const postRoutes = require('./user/social/userRoutes/postRoutes');
 const storyRoutes = require('./user/social/userRoutes/storyRoutes');
-const notificationRoutes = require('./user/social/userRoutes/notificationRoutes');
-const notificationPreferencesRoutes = require('./user/social/userRoutes/notificationPreferencesRoutes');
 const cookieParser = require('cookie-parser');
 
 // Enhanced routes
@@ -85,8 +83,16 @@ app.use('/user/status', userStatusRoutes);
 app.use('/user/upload', userFileUploadRoutes);
 app.use('/user/posts', postRoutes);
 app.use('/user/stories', storyRoutes);
-app.use('/user/notifications', notificationRoutes);
-app.use('/user/notification-preferences', notificationPreferencesRoutes);
+
+// Notification routes (new architecture)
+const notificationRoutes = require('./notification/routes/notificationRoutes');
+const notificationPreferencesRoutes = require('./notification/routes/notificationPreferencesRoutes');
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/notification-preferences', notificationPreferencesRoutes);
+
+// Device token routes for push notifications
+const deviceTokenRoutes = require('./user/auth/routes/deviceTokenRoutes');
+app.use('/api/v1/user/device-token', deviceTokenRoutes);
 
 // Enhanced API Routes (new optimized routes)
 app.use('/api/v1/user', enhancedUserRoutes);
