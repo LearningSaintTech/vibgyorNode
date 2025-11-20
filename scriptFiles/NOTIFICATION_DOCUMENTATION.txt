@@ -1,0 +1,1143 @@
+# VibgyorNode Notification System Documentation
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Notification Architecture](#notification-architecture)
+3. [Notification Types](#notification-types)
+4. [Delivery Channels](#delivery-channels)
+5. [API Endpoints](#api-endpoints)
+6. [Real-time Notifications](#real-time-notifications)
+7. [Push Notifications](#push-notifications)
+8. [Notification Preferences](#notification-preferences)
+9. [Device Token Management](#device-token-management)
+10. [WebSocket Events](#websocket-events)
+11. [Examples](#examples)
+
+---
+
+## Overview
+
+The VibgyorNode notification system is a comprehensive multi-channel notification platform that supports:
+- **In-App Notifications**: Real-time notifications via Socket.IO
+- **Push Notifications**: Firebase Cloud Messaging (FCM) for iOS, Android, and Web
+- **Email Notifications**: Email delivery via Nodemailer
+- **SMS Notifications**: SMS delivery (planned, urgent notifications only)
+
+### Key Features
+- ✅ Multi-channel delivery (In-App, Push, Email, SMS)
+- ✅ User preference management
+- ✅ Context-based routing (Social, Dating)
+- ✅ Type-specific controls
+- ✅ Priority-based delivery
+- ✅ Quiet hours support
+- ✅ Real-time delivery via WebSocket
+- ✅ Delivery status tracking
+- ✅ Notification scheduling
+- ✅ Auto-expiry support
+
+---
+
+## Notification Architecture
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Notification System                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────┐      ┌──────────────┐                    │
+│  │ Notification │      │ Notification │                    │
+│  │   Service    │──────│   Factory    │                    │
+│  └──────┬───────┘      └──────────────┘                    │
+│         │                                                     │
+│         │                                                     │
+│  ┌──────▼──────────────────────────────────────┐            │
+│  │         Delivery Manager                     │            │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐ │            │
+│  │  │  In-App  │  │   Push    │  │  Email   │ │            │
+│  │  │ (Socket) │  │   (FCM)   │  │(Nodemail)│ │            │
+│  │  └──────────┘  └──────────┘  └──────────┘ │            │
+│  └─────────────────────────────────────────────┘            │
+│                                                              │
+│  ┌──────────────┐      ┌──────────────┐                    │
+│  │ Notification │      │ Preferences  │                    │
+│  │   Handler    │      │   Manager    │                    │
+│  └──────────────┘      └──────────────┘                    │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Flow Diagram
+
+```
+1. Event Occurs (e.g., post liked, message received)
+   ↓
+2. Controller calls notificationService.create()
+   ↓
+3. NotificationService routes to appropriate handler
+   ↓
+4. Handler creates notification using factory
+   ↓
+5. Notification saved to database
+   ↓
+6. DeliveryManager.deliver() called
+   ↓
+7. Checks user preferences for each channel
+   ↓
+8. Delivers through enabled channels:
+   - In-App: Socket.IO emit to user:{userId}
+   - Push: PushNotificationService.sendToDevice/Multiple
+   - Email: EmailService.sendEmail (if enabled)
+   - SMS: SMS service (if enabled, urgent only)
+   ↓
+9. Updates delivery status in notification document
+   ↓
+10. Emits real-time event for immediate UI update
+```
+
+---
+
+## Notification Types
+
+### Social Context Notifications
+
+| Type | Description | Default Priority | Channels |
+|------|-------------|------------------|----------|
+| `post_like` | Someone liked your post | normal | inApp, push |
+| `post_comment` | Someone commented on your post | normal | inApp, push |
+| `post_share` | Someone shared your post | normal | inApp |
+| `post_mention` | You were mentioned in a post | high | inApp, push |
+| `story_view` | Someone viewed your story | low | inApp |
+| `story_reaction` | Someone reacted to your story | normal | inApp |
+| `story_reply` | Someone replied to your story | normal | inApp, push |
+| `story_mention` | You were mentioned in a story | high | inApp, push |
+| `follow_request` | New follow request | normal | inApp, push |
+| `follow_accepted` | Follow request accepted | normal | inApp |
+| `follow` | New follower | normal | inApp |
+| `message_received` | New message received | high | inApp, push |
+| `message_request` | New message request | high | inApp, push |
+| `call_incoming` | Incoming call | urgent | inApp, push |
+| `call_missed` | Missed call | high | inApp, push |
+| `call_ended` | Call ended | low | inApp |
+| `system_announcement` | System announcement | high | inApp, push, email |
+| `content_moderation` | Content moderation action | high | inApp, email |
+
+### Dating Context Notifications (Planned)
+
+| Type | Description | Default Priority | Channels |
+|------|-------------|------------------|----------|
+| `match` | New match | urgent | inApp, push |
+| `like` | Someone liked you | high | inApp, push |
+| `super_like` | Someone super liked you | urgent | inApp, push |
+| `message` | New message in dating | high | inApp, push |
+
+---
+
+## Delivery Channels
+
+### 1. In-App Notifications
+
+**Technology**: Socket.IO WebSocket  
+**Delivery**: Real-time via `user:{userId}` room  
+**Features**:
+- Instant delivery when user is online
+- No storage required (handled by Socket.IO)
+- Supports rich data payload
+- Auto-updates UI
+
+**Event Name**: `notification`  
+**Payload Structure**:
+```json
+{
+  "id": "notification_id",
+  "context": "social",
+  "type": "post_like",
+  "title": "John Doe liked your post",
+  "message": "John Doe liked your post",
+  "data": {
+    "postId": "post_id",
+    "userId": "user_id"
+  },
+  "relatedContent": {
+    "post": {...}
+  },
+  "priority": "normal",
+  "createdAt": "2025-01-15T10:30:00.000Z"
+}
+```
+
+### 2. Push Notifications
+
+**Technology**: Firebase Cloud Messaging (FCM)  
+**Platforms**: iOS, Android, Web  
+**Features**:
+- Cross-platform support
+- Rich notifications (images, actions)
+- Deep linking
+- Badge count management
+- Sound and vibration control
+
+**Platform-Specific Configuration**:
+
+#### Android
+- Priority: `high` (urgent/high) or `normal` (normal/low)
+- Notification channels: `calls`, `messages`, `social`, `dating`, `general`
+- Custom sound, icon, color
+- Click action: `FLUTTER_NOTIFICATION_CLICK`
+
+#### iOS (via FCM)
+- Priority: `10` (urgent/high) or `5` (normal/low)
+- Badge count: Auto-incremented
+- Sound: Default or custom
+- Mutable content: For images
+
+#### Web
+- Icon and badge support
+- Require interaction for urgent
+- Image support
+
+### 3. Email Notifications
+
+**Technology**: Nodemailer  
+**Features**:
+- HTML email templates
+- Frequency control (immediate, daily, weekly)
+- Digest support
+- Rich formatting
+
+**Frequency Options**:
+- `immediate`: Send immediately
+- `daily`: Daily digest
+- `weekly`: Weekly digest
+
+### 4. SMS Notifications
+
+**Technology**: Planned (Twilio/AWS SNS)  
+**Features**:
+- Emergency-only by default
+- Urgent notifications only
+- Phone number validation
+
+---
+
+## API Endpoints
+
+### Base URLs
+- **Notifications**: `/api/v1/notifications`
+- **Preferences**: `/api/v1/notification-preferences`
+- **Device Tokens**: `/api/v1/user/device-token`
+
+### Notification Endpoints
+
+#### Get Notifications
+```http
+GET /api/v1/notifications?page=1&limit=20&status=all&type=all&context=all&priority=all
+Authorization: Bearer <user_token>
+```
+
+**Query Parameters**:
+- `page` (number): Page number (default: 1)
+- `limit` (number): Items per page (default: 20, max: 100)
+- `status` (string): `all`, `unread`, `read`, `archived` (default: `all`)
+- `type` (string): Notification type filter (default: `all`)
+- `context` (string): `all`, `social`, `dating` (default: `all`)
+- `priority` (string): `all`, `low`, `normal`, `high`, `urgent` (default: `all`)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "_id": "notification_id",
+        "context": "social",
+        "type": "post_like",
+        "title": "John Doe liked your post",
+        "message": "John Doe liked your post",
+        "recipient": "user_id",
+        "sender": {
+          "_id": "sender_id",
+          "username": "johndoe",
+          "fullName": "John Doe",
+          "profilePictureUrl": "https://..."
+        },
+        "status": "unread",
+        "priority": "normal",
+        "data": {
+          "postId": "post_id"
+        },
+        "relatedContent": {
+          "post": {...}
+        },
+        "deliveryChannels": {
+          "inApp": {
+            "delivered": true,
+            "deliveredAt": "2025-01-15T10:30:00.000Z"
+          },
+          "push": {
+            "delivered": true,
+            "deliveredAt": "2025-01-15T10:30:00.000Z"
+          }
+        },
+        "createdAt": "2025-01-15T10:30:00.000Z",
+        "updatedAt": "2025-01-15T10:30:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 50,
+      "pages": 3
+    }
+  },
+  "message": "Notifications retrieved successfully"
+}
+```
+
+#### Get Unread Count
+```http
+GET /api/v1/notifications/unread-count?context=all
+Authorization: Bearer <user_token>
+```
+
+**Query Parameters**:
+- `context` (string): `all`, `social`, `dating` (default: `all`)
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "count": 5
+  },
+  "message": "Unread count retrieved successfully"
+}
+```
+
+#### Mark Notification as Read
+```http
+PUT /api/v1/notifications/:id/read
+Authorization: Bearer <user_token>
+```
+
+**Path Parameters**:
+- `id` (string): Notification ID
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "_id": "notification_id",
+      "status": "read",
+      "readAt": "2025-01-15T10:35:00.000Z"
+    }
+  },
+  "message": "Notification marked as read"
+}
+```
+
+#### Mark All as Read
+```http
+PUT /api/v1/notifications/read-all
+Authorization: Bearer <user_token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "context": "all"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "modifiedCount": 10
+  },
+  "message": "All notifications marked as read"
+}
+```
+
+#### Archive Notification
+```http
+PUT /api/v1/notifications/:id/archive
+Authorization: Bearer <user_token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "_id": "notification_id",
+      "status": "archived"
+    }
+  },
+  "message": "Notification archived"
+}
+```
+
+#### Delete Notification
+```http
+DELETE /api/v1/notifications/:id
+Authorization: Bearer <user_token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "_id": "notification_id"
+    }
+  },
+  "message": "Notification deleted"
+}
+```
+
+---
+
+## Notification Preferences
+
+### Get Preferences
+```http
+GET /api/v1/notification-preferences
+Authorization: Bearer <user_token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "preferences": {
+      "_id": "preferences_id",
+      "user": "user_id",
+      "globalSettings": {
+        "enableNotifications": true,
+        "quietHours": {
+          "enabled": false,
+          "startTime": "22:00",
+          "endTime": "08:00",
+          "timezone": "UTC"
+        },
+        "frequency": "immediate"
+      },
+      "channels": {
+        "inApp": {
+          "enabled": true,
+          "sound": true,
+          "vibration": true
+        },
+        "push": {
+          "enabled": true,
+          "sound": true,
+          "badge": true
+        },
+        "email": {
+          "enabled": false,
+          "frequency": "daily"
+        },
+        "sms": {
+          "enabled": false,
+          "emergencyOnly": true
+        }
+      },
+      "contexts": {
+        "social": {
+          "enabled": true,
+          "types": {
+            "post_like": {
+              "enabled": true,
+              "channels": {
+                "inApp": true,
+                "push": true,
+                "email": false,
+                "sms": false
+              }
+            },
+            "message_received": {
+              "enabled": true,
+              "channels": {
+                "inApp": true,
+                "push": true,
+                "email": false,
+                "sms": false
+              }
+            }
+          }
+        },
+        "dating": {
+          "enabled": true,
+          "types": {}
+        }
+      },
+      "advanced": {
+        "groupSimilar": true,
+        "maxNotificationsPerHour": 10,
+        "digestNotifications": false,
+        "digestFrequency": "daily"
+      }
+    }
+  },
+  "message": "Preferences retrieved successfully"
+}
+```
+
+### Update Preferences
+```http
+PUT /api/v1/notification-preferences
+Authorization: Bearer <user_token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "globalSettings": {
+    "enableNotifications": true,
+    "quietHours": {
+      "enabled": true,
+      "startTime": "22:00",
+      "endTime": "08:00",
+      "timezone": "UTC"
+    },
+    "frequency": "immediate"
+  },
+  "channels": {
+    "inApp": {
+      "enabled": true,
+      "sound": true,
+      "vibration": true
+    },
+    "push": {
+      "enabled": true,
+      "sound": true,
+      "badge": true
+    },
+    "email": {
+      "enabled": false,
+      "frequency": "daily"
+    },
+    "sms": {
+      "enabled": false,
+      "emergencyOnly": true
+    }
+  },
+  "contexts": {
+    "social": {
+      "enabled": true,
+      "types": {
+        "post_like": {
+          "enabled": true,
+          "channels": {
+            "inApp": true,
+            "push": false,
+            "email": false,
+            "sms": false
+          }
+        },
+        "message_received": {
+          "enabled": true,
+          "channels": {
+            "inApp": true,
+            "push": true,
+            "email": false,
+            "sms": false
+          }
+        }
+      }
+    }
+  },
+  "advanced": {
+    "groupSimilar": true,
+    "maxNotificationsPerHour": 10,
+    "digestNotifications": false,
+    "digestFrequency": "daily"
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "preferences": {...}
+  },
+  "message": "Preferences updated successfully"
+}
+```
+
+### Reset Preferences
+```http
+PUT /api/v1/notification-preferences/reset
+Authorization: Bearer <user_token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "preferences": {...}
+  },
+  "message": "Preferences reset to defaults"
+}
+```
+
+---
+
+## Device Token Management
+
+### Register Device Token
+```http
+POST /api/v1/user/device-token
+Authorization: Bearer <user_token>
+Content-Type: application/json
+```
+
+**Request Body**:
+```json
+{
+  "token": "fcm_device_token_here",
+  "platform": "android",
+  "deviceId": "device_unique_id",
+  "deviceName": "Samsung Galaxy S21",
+  "appVersion": "1.0.0"
+}
+```
+
+**Platform Values**:
+- `ios`: iOS devices
+- `android`: Android devices
+- `web`: Web browsers
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Device token registered successfully"
+  },
+  "message": "Device token registered"
+}
+```
+
+### Get Device Tokens
+```http
+GET /api/v1/user/device-token
+Authorization: Bearer <user_token>
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "tokens": [
+      {
+        "token": "fcm_token_1",
+        "platform": "android",
+        "deviceId": "device_id_1",
+        "deviceName": "Samsung Galaxy S21",
+        "appVersion": "1.0.0",
+        "isActive": true,
+        "lastUsedAt": "2025-01-15T10:30:00.000Z",
+        "createdAt": "2025-01-10T08:00:00.000Z"
+      },
+      {
+        "token": "fcm_token_2",
+        "platform": "ios",
+        "deviceId": "device_id_2",
+        "deviceName": "iPhone 13",
+        "appVersion": "1.0.0",
+        "isActive": true,
+        "lastUsedAt": "2025-01-15T09:00:00.000Z",
+        "createdAt": "2025-01-12T10:00:00.000Z"
+      }
+    ]
+  },
+  "message": "Device tokens retrieved"
+}
+```
+
+### Remove Device Token
+```http
+DELETE /api/v1/user/device-token/:token
+Authorization: Bearer <user_token>
+```
+
+**Path Parameters**:
+- `token` (string): Device token to remove
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Device token removed successfully"
+  },
+  "message": "Device token removed"
+}
+```
+
+---
+
+## Real-time Notifications
+
+### WebSocket Connection
+
+Connect to Socket.IO server with authentication:
+
+```javascript
+const socket = io('ws://localhost:3000', {
+  auth: {
+    token: 'your_jwt_token'
+  }
+});
+```
+
+### Client Events
+
+#### Mark Notification as Read
+```javascript
+socket.emit('notification:read', {
+  notificationId: 'notification_id'
+});
+```
+
+#### Notification Preferences Updated
+```javascript
+socket.emit('notification:preferences_updated', {
+  preferences: {...}
+});
+```
+
+#### Notification Clicked
+```javascript
+socket.emit('notification:clicked', {
+  notificationId: 'notification_id'
+});
+```
+
+### Server Events
+
+#### New Notification
+```javascript
+socket.on('notification', (data) => {
+  console.log('New notification:', data);
+  // Update UI with notification
+  // data structure:
+  // {
+  //   id: "notification_id",
+  //   context: "social",
+  //   type: "post_like",
+  //   title: "John Doe liked your post",
+  //   message: "John Doe liked your post",
+  //   data: {...},
+  //   relatedContent: {...},
+  //   priority: "normal",
+  //   createdAt: "2025-01-15T10:30:00.000Z"
+  // }
+});
+```
+
+#### Social Notification (Context-Specific)
+```javascript
+socket.on('social:notification', (data) => {
+  console.log('Social notification:', data);
+});
+
+// Type-specific events
+socket.on('social:post_liked', (data) => {
+  console.log('Post liked:', data);
+});
+
+socket.on('social:message_received', (data) => {
+  console.log('Message received:', data);
+});
+
+socket.on('social:call_incoming', (data) => {
+  console.log('Incoming call:', data);
+});
+```
+
+#### Notification Read Confirmed
+```javascript
+socket.on('notification:read_confirmed', (data) => {
+  console.log('Notification read confirmed:', data);
+  // data: { notificationId, timestamp }
+});
+```
+
+#### Preferences Changed
+```javascript
+socket.on('notification:preferences_changed', (data) => {
+  console.log('Preferences changed:', data);
+  // Update UI with new preferences
+});
+```
+
+---
+
+## Push Notifications
+
+### Firebase Cloud Messaging Setup
+
+1. **Get Firebase Service Account**:
+   - Go to Firebase Console
+   - Project Settings → Service Accounts
+   - Generate new private key
+   - Save JSON file
+
+2. **Configure Environment**:
+   ```env
+   FCM_SERVICE_ACCOUNT_PATH=/path/to/firebase-service-account.json
+   ```
+
+3. **Initialize in Code**:
+   The PushNotificationService automatically initializes on server start.
+
+### Push Notification Payload Structure
+
+```json
+{
+  "notification": {
+    "title": "John Doe liked your post",
+    "body": "John Doe liked your post",
+    "imageUrl": "https://example.com/image.jpg"
+  },
+  "data": {
+    "notificationId": "notification_id",
+    "type": "post_like",
+    "context": "social",
+    "priority": "normal",
+    "relatedContent": "{\"postId\":\"post_id\"}",
+    "actionUrl": "/posts/post_id",
+    "senderId": "user_id"
+  },
+  "android": {
+    "priority": "normal",
+    "notification": {
+      "sound": "default",
+      "channelId": "social",
+      "icon": "notification_icon",
+      "color": "#FF5722"
+    }
+  },
+  "apns": {
+    "payload": {
+      "aps": {
+        "alert": {
+          "title": "John Doe liked your post",
+          "body": "John Doe liked your post"
+        },
+        "sound": "default",
+        "badge": 1
+      }
+    }
+  },
+  "webpush": {
+    "notification": {
+      "title": "John Doe liked your post",
+      "body": "John Doe liked your post",
+      "icon": "/icon-192x192.png",
+      "badge": "/badge-72x72.png"
+    }
+  }
+}
+```
+
+### Android Notification Channels
+
+| Channel ID | Notification Types |
+|------------|-------------------|
+| `calls` | call_incoming, call_missed |
+| `messages` | message_received, message_request |
+| `social` | post_like, post_comment, follow_request, etc. |
+| `dating` | match, like, super_like |
+| `general` | system_announcement, content_moderation |
+
+---
+
+## Examples
+
+### Example 1: Creating a Post Like Notification
+
+**Backend Code**:
+```javascript
+const notificationService = require('./notification/services/notificationService');
+
+// In postController.js after post is liked
+await notificationService.create({
+  context: 'social',
+  type: 'post_like',
+  recipientId: postAuthorId,
+  senderId: currentUserId,
+  data: {
+    postId: post._id,
+    postContent: post.content.substring(0, 100)
+  },
+  priority: 'normal'
+});
+```
+
+**Flow**:
+1. Notification created in database
+2. DeliveryManager checks user preferences
+3. If inApp enabled → Emits Socket.IO event
+4. If push enabled → Sends FCM notification
+5. If email enabled → Sends email (based on frequency)
+6. Delivery status updated
+
+### Example 2: Handling Incoming Call Notification
+
+**Backend Code**:
+```javascript
+await notificationService.create({
+  context: 'social',
+  type: 'call_incoming',
+  recipientId: targetUserId,
+  senderId: callerId,
+  data: {
+    callId: call.callId,
+    chatId: call.chatId,
+    type: call.type // 'audio' or 'video'
+  },
+  priority: 'urgent' // Urgent priority bypasses quiet hours
+});
+```
+
+**Client Handling**:
+```javascript
+socket.on('social:call_incoming', (data) => {
+  // Show call UI immediately
+  showCallUI(data);
+  
+  // Play ringtone
+  playRingtone();
+  
+  // Update notification badge
+  updateBadgeCount();
+});
+```
+
+### Example 3: User Preference Update
+
+**Client Code**:
+```javascript
+// Disable push notifications for post likes
+const response = await fetch('/api/v1/notification-preferences', {
+  method: 'PUT',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    contexts: {
+      social: {
+        types: {
+          post_like: {
+            enabled: true,
+            channels: {
+              inApp: true,
+              push: false, // Disabled
+              email: false,
+              sms: false
+            }
+          }
+        }
+      }
+    }
+  })
+});
+```
+
+### Example 4: Registering Device Token (React Native)
+
+```javascript
+import messaging from '@react-native-firebase/messaging';
+
+async function registerDeviceToken() {
+  try {
+    // Request permission
+    const authStatus = await messaging().requestPermission();
+    
+    if (authStatus === messaging.AuthorizationStatus.AUTHORIZED) {
+      // Get FCM token
+      const token = await messaging().getToken();
+      
+      // Register with backend
+      await fetch('http://your-api.com/api/v1/user/device-token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          token: token,
+          platform: Platform.OS === 'ios' ? 'ios' : 'android',
+          deviceId: DeviceInfo.getUniqueId(),
+          deviceName: DeviceInfo.getDeviceName(),
+          appVersion: DeviceInfo.getVersion()
+        })
+      });
+    }
+  } catch (error) {
+    console.error('Error registering device token:', error);
+  }
+}
+```
+
+### Example 5: Handling Push Notification (React Native)
+
+```javascript
+import messaging from '@react-native-firebase/messaging';
+
+// Background message handler
+messaging().setBackgroundMessageHandler(async remoteMessage => {
+  console.log('Background message:', remoteMessage);
+  
+  // Handle notification data
+  const { notificationId, type, context } = remoteMessage.data;
+  
+  // Navigate to appropriate screen
+  if (type === 'post_like') {
+    NavigationService.navigate('Post', { postId: remoteMessage.data.relatedContent.postId });
+  } else if (type === 'message_received') {
+    NavigationService.navigate('Chat', { chatId: remoteMessage.data.relatedContent.chatId });
+  }
+});
+
+// Foreground message handler
+messaging().onMessage(async remoteMessage => {
+  console.log('Foreground message:', remoteMessage);
+  
+  // Show local notification
+  Alert.alert(
+    remoteMessage.notification.title,
+    remoteMessage.notification.body,
+    [
+      {
+        text: 'View',
+        onPress: () => handleNotificationPress(remoteMessage.data)
+      },
+      { text: 'Dismiss', style: 'cancel' }
+    ]
+  );
+});
+```
+
+---
+
+## Best Practices
+
+### 1. Device Token Management
+- Register token on app launch
+- Re-register token when it changes
+- Remove token on logout
+- Handle token refresh automatically
+
+### 2. Notification Preferences
+- Show preference UI during onboarding
+- Allow granular control per notification type
+- Respect quiet hours
+- Provide easy reset option
+
+### 3. Real-time Notifications
+- Connect to Socket.IO on app launch
+- Handle reconnection automatically
+- Buffer notifications when offline
+- Update UI immediately on receipt
+
+### 4. Push Notifications
+- Request permission at appropriate time
+- Handle permission denied gracefully
+- Test on both iOS and Android
+- Handle deep linking correctly
+
+### 5. Error Handling
+- Handle invalid device tokens
+- Retry failed deliveries
+- Log delivery failures
+- Monitor notification delivery rates
+
+---
+
+## Troubleshooting
+
+### Push Notifications Not Working
+
+1. **Check FCM Configuration**:
+   - Verify `FCM_SERVICE_ACCOUNT_PATH` is set correctly
+   - Ensure service account JSON file exists
+   - Check Firebase project settings
+
+2. **Check Device Token**:
+   - Verify token is registered
+   - Check token is active
+   - Ensure platform is correct
+
+3. **Check User Preferences**:
+   - Verify push notifications are enabled
+   - Check notification type is enabled
+   - Verify channel preferences
+
+4. **Check Delivery Status**:
+   - Review notification delivery status in database
+   - Check error logs
+   - Verify FCM response
+
+### Real-time Notifications Not Working
+
+1. **Check Socket.IO Connection**:
+   - Verify connection is established
+   - Check authentication token
+   - Ensure user is online
+
+2. **Check Event Listeners**:
+   - Verify event listeners are registered
+   - Check event names match
+   - Ensure room is joined
+
+3. **Check Server Logs**:
+   - Review Socket.IO connection logs
+   - Check for authentication errors
+   - Verify event emission
+
+---
+
+## Security Considerations
+
+1. **Authentication**: All endpoints require valid JWT token
+2. **Authorization**: Users can only access their own notifications
+3. **Token Validation**: Device tokens are validated before sending
+4. **Rate Limiting**: Notification creation is rate-limited
+5. **Data Privacy**: Sensitive data is not included in push payloads
+6. **Token Storage**: Device tokens are stored securely in database
+
+---
+
+## Performance Optimization
+
+1. **Batch Delivery**: Multiple notifications can be batched
+2. **Lazy Loading**: Notifications are paginated
+3. **Caching**: User preferences are cached
+4. **Indexing**: Database indexes on recipient, status, type
+5. **Cleanup**: Expired notifications are auto-deleted
+
+---
+
+*Last Updated: January 2025*  
+*API Version: 2.0.0*
+

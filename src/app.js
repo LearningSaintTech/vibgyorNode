@@ -28,6 +28,9 @@ const userStatusRoutes = require('./user/social/userRoutes/userStatusRoutes');
 const userFileUploadRoutes = require('./user/auth/routes/userFileUploadRoutes');
 const postRoutes = require('./user/social/userRoutes/postRoutes');
 const storyRoutes = require('./user/social/userRoutes/storyRoutes');
+const datingMediaRoutes = require('./user/auth/controller/datingMediaRoutes');
+const datingProfileRoutes = require('./user/dating/routes/datingProfileRoutes');
+const datingInteractionRoutes = require('./user/dating/routes/datingInteractionRoutes');
 const cookieParser = require('cookie-parser');
 
 // Enhanced routes
@@ -91,6 +94,9 @@ app.use('/user/status', userStatusRoutes);
 app.use('/user/upload', userFileUploadRoutes);
 app.use('/user/posts', postRoutes);
 app.use('/user/stories', storyRoutes);
+app.use('/user/dating', datingMediaRoutes);
+app.use('/user/dating', datingProfileRoutes);
+app.use('/user/dating', datingInteractionRoutes);
 
 // Notification routes (new architecture)
 const notificationRoutes = require('./notification/routes/notificationRoutes');

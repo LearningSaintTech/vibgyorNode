@@ -1,7 +1,7 @@
 const Notification = require('../models/notificationModel');
 const notificationFactory = require('../services/notificationFactory');
 const deliveryManager = require('../services/deliveryManager');
-const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
+const enhancedRealtimeService = require('../../services/enhancedRealtimeService');
 
 /**
  * Social Notification Handler

@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { authorize } = require('../../../middleware/authMiddleware');
+const { authorize } = require('../../middleware/authMiddleware');
 const notificationService = require('../services/notificationService');
-const ApiResponse = require('../../../utils/apiResponse');
+const ApiResponse = require('../../utils/apiResponse');
 
 /**
  * @route   GET /api/v1/notification-preferences
