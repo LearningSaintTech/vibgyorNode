@@ -2663,8 +2663,59 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notifications?page=1&limit=20&status=all&type=all&priority=all"
-              }
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notifications?page=1&limit=20&status=all&type=all&context=all&priority=all",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notifications"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Items per page (default: 20, max: 100)"
+                    },
+                    {
+                      "key": "status",
+                      "value": "all",
+                      "description": "all, unread, read, archived (default: all)"
+                    },
+                    {
+                      "key": "type",
+                      "value": "all",
+                      "description": "Notification type filter (default: all)"
+                    },
+                    {
+                      "key": "context",
+                      "value": "all",
+                      "description": "all, social, dating (default: all)"
+                    },
+                    {
+                      "key": "priority",
+                      "value": "all",
+                      "description": "all, low, normal, high, urgent (default: all)"
+                    }
+                  ]
+                },
+                "description": "Get user notifications with filtering and pagination.\n\n**Query Parameters:**\n- page: Page number (default: 1)\n- limit: Items per page (default: 20, max: 100)\n- status: all, unread, read, archived (default: all)\n- type: Notification type filter (default: all)\n- context: all, social, dating (default: all)\n- priority: all, low, normal, high, urgent (default: all)"
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const json = pm.response.json();",
+                      "if (json.data && json.data.notifications && json.data.notifications.length > 0) {",
+                      "  pm.environment.set('NOTIFICATION_ID', json.data.notifications[0]._id);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
             },
             {
               "name": "Get Unread Count",
@@ -2676,7 +2727,19 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notifications/unread-count"
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notifications/unread-count?context=all",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notifications", "unread-count"],
+                  "query": [
+                    {
+                      "key": "context",
+                      "value": "all",
+                      "description": "all, social, dating (default: all)"
+                    }
+                  ]
+                },
+                "description": "Get unread notification count. Optionally filter by context."
               }
             },
             {
@@ -2689,7 +2752,12 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notifications/{{NOTIFICATION_ID}}/read"
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notifications/{{NOTIFICATION_ID}}/read",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notifications", "{{NOTIFICATION_ID}}", "read"]
+                },
+                "description": "Mark a specific notification as read."
               }
             },
             {
@@ -2698,11 +2766,60 @@
                 "method": "PUT",
                 "header": [
                   {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
                     "key": "Authorization",
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notifications/read-all"
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"context\": \"all\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notifications/read-all",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notifications", "read-all"]
+                },
+                "description": "Mark all notifications as read. Optionally filter by context (all, social, dating)."
+              }
+            },
+            {
+              "name": "Archive Notification",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notifications/{{NOTIFICATION_ID}}/archive",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notifications", "{{NOTIFICATION_ID}}", "archive"]
+                },
+                "description": "Archive a notification."
+              }
+            },
+            {
+              "name": "Delete Notification",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notifications/{{NOTIFICATION_ID}}",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notifications", "{{NOTIFICATION_ID}}"]
+                },
+                "description": "Delete a notification permanently."
               }
             }
           ]
@@ -2720,7 +2837,12 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notification-preferences"
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notification-preferences",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notification-preferences"]
+                },
+                "description": "Get user notification preferences including global settings, channels, contexts, and advanced settings."
               }
             },
             {
@@ -2739,26 +2861,67 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"globalSettings\": {\n    \"enableNotifications\": true,\n    \"quietHours\": {\n      \"enabled\": true,\n      \"start\": \"22:00\",\n      \"end\": \"08:00\"\n    }\n  },\n  \"channels\": {\n    \"inApp\": { \"enabled\": true },\n    \"push\": { \"enabled\": true },\n    \"email\": { \"enabled\": false }\n  }\n}"
+                  "raw": "{\n  \"globalSettings\": {\n    \"enableNotifications\": true,\n    \"quietHours\": {\n      \"enabled\": true,\n      \"startTime\": \"22:00\",\n      \"endTime\": \"08:00\",\n      \"timezone\": \"UTC\"\n    },\n    \"frequency\": \"immediate\"\n  },\n  \"channels\": {\n    \"inApp\": { \"enabled\": true, \"sound\": true, \"vibration\": true },\n    \"push\": { \"enabled\": true, \"sound\": true, \"badge\": true },\n    \"email\": { \"enabled\": false, \"frequency\": \"daily\" },\n    \"sms\": { \"enabled\": false, \"emergencyOnly\": true }\n  },\n  \"contexts\": {\n    \"social\": {\n      \"enabled\": true,\n      \"types\": {\n        \"post_like\": {\n          \"enabled\": true,\n          \"channels\": {\n            \"inApp\": true,\n            \"push\": false,\n            \"email\": false,\n            \"sms\": false\n          }\n        },\n        \"message_received\": {\n          \"enabled\": true,\n          \"channels\": {\n            \"inApp\": true,\n            \"push\": true,\n            \"email\": false,\n            \"sms\": false\n          }\n        }\n      }\n    }\n  },\n  \"advanced\": {\n    \"groupSimilar\": true,\n    \"maxNotificationsPerHour\": 10,\n    \"digestNotifications\": false,\n    \"digestFrequency\": \"daily\"\n  }\n}"
                 },
-                "url": "{{BASE_URL}}/user/notification-preferences"
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notification-preferences",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notification-preferences"]
+                },
+                "description": "Update user notification preferences. Supports partial updates - only include fields you want to change."
               }
             },
             {
-              "name": "Reset to Defaults",
+              "name": "Reset Preferences to Defaults",
               "request": {
-                "method": "POST",
+                "method": "PUT",
                 "header": [
                   {
                     "key": "Authorization",
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notification-preferences/reset"
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/notification-preferences/reset",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "notification-preferences", "reset"]
+                },
+                "description": "Reset all notification preferences to default values."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Device Token Management",
+          "item": [
+            {
+              "name": "Register Device Token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"fcm_device_token_here\",\n  \"platform\": \"android\",\n  \"deviceId\": \"device_unique_id\",\n  \"deviceName\": \"Samsung Galaxy S21\",\n  \"appVersion\": \"1.0.0\"\n}"
+                },
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/user/device-token",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "user", "device-token"]
+                },
+                "description": "Register a device token for push notifications.\n\n**Platform Values:**\n- ios: iOS devices\n- android: Android devices\n- web: Web browsers\n\n**Required Fields:**\n- token: FCM device token\n- platform: ios, android, or web\n\n**Optional Fields:**\n- deviceId: Unique device identifier\n- deviceName: Device name/model\n- appVersion: App version number"
               }
             },
             {
-              "name": "Get Preferences Summary",
+              "name": "Get Device Tokens",
               "request": {
                 "method": "GET",
                 "header": [
@@ -2767,7 +2930,37 @@
                     "value": "Bearer {{USER_ACCESS_TOKEN}}"
                   }
                 ],
-                "url": "{{BASE_URL}}/user/notification-preferences/summary"
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/user/device-token",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "user", "device-token"]
+                },
+                "description": "Get all active device tokens for the current user."
+              }
+            },
+            {
+              "name": "Remove Device Token",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{USER_ACCESS_TOKEN}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{BASE_URL}}/api/v1/user/device-token/:token",
+                  "host": ["{{BASE_URL}}"],
+                  "path": ["api", "v1", "user", "device-token", ":token"],
+                  "variable": [
+                    {
+                      "key": "token",
+                      "value": "fcm_device_token_here",
+                      "description": "Device token to remove"
+                    }
+                  ]
+                },
+                "description": "Remove a device token. Use this when user logs out or uninstalls the app."
               }
             }
           ]

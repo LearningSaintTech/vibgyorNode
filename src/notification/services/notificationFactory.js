@@ -1,5 +1,5 @@
 const notificationRegistry = require('./notificationRegistry');
-const User = require('../../../user/auth/model/userAuthModel');
+const User = require('../../user/auth/model/userAuthModel');
 
 /**
  * Notification Factory

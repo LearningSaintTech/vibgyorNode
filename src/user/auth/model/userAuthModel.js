@@ -68,6 +68,24 @@ const UserSchema = new mongoose.Schema(
 		allowTagging: { type: Boolean, default: true },
 		allowStoriesSharing: { type: Boolean, default: true }
 	},
+		// Dating Profile Features
+		dating: {
+			photos: [{
+				url: { type: String, default: '' },
+				thumbnailUrl: { type: String, default: '' },
+				order: { type: Number, default: 0 },
+				uploadedAt: { type: Date, default: Date.now }
+			}],
+			videos: [{
+				url: { type: String, default: '' },
+				thumbnailUrl: { type: String, default: '' },
+				duration: { type: Number, default: 0 }, // in seconds
+				order: { type: Number, default: 0 },
+				uploadedAt: { type: Date, default: Date.now }
+			}],
+			isDatingProfileActive: { type: Boolean, default: false },
+			lastUpdatedAt: { type: Date, default: null }
+		},
 		// phone OTP
 		otpCode: { type: String, default: null },
 		otpExpiresAt: { type: Date, default: null },
@@ -123,6 +141,20 @@ UserSchema.methods.maskedPhone = function maskedPhone() {
 	if (pn.length < 4) return pn;
 	return `${'*'.repeat(Math.max(0, pn.length - 4))}${pn.slice(-4)}`;
 };
+
+// Pre-save validation for dating profile
+UserSchema.pre('save', function(next) {
+	// Validate dating photos and videos limits
+	if (this.dating) {
+		if (this.dating.photos && this.dating.photos.length > 5) {
+			return next(new Error('Maximum 5 photos allowed for dating profile'));
+		}
+		if (this.dating.videos && this.dating.videos.length > 5) {
+			return next(new Error('Maximum 5 videos allowed for dating profile'));
+		}
+	}
+	next();
+});
 
 // Profile completion step validation
 UserSchema.methods.getNextProfileStep = function getNextProfileStep() {
@@ -225,6 +257,143 @@ UserSchema.methods.getActiveDeviceTokens = function getActiveDeviceTokens(platfo
 		token: dt.token,
 		platform: dt.platform
 	}));
+};
+
+// Dating profile methods
+UserSchema.methods.addDatingPhoto = async function addDatingPhoto(photoData) {
+	if (!this.dating) {
+		this.dating = {
+			photos: [],
+			videos: [],
+			isDatingProfileActive: false,
+			lastUpdatedAt: null
+		};
+	}
+	
+	// Validate max 5 photos
+	if (this.dating.photos.length >= 5) {
+		throw new Error('Maximum 5 photos allowed for dating profile');
+	}
+	
+	// Add order if not provided
+	const order = photoData.order !== undefined ? photoData.order : this.dating.photos.length;
+	
+	this.dating.photos.push({
+		url: photoData.url || '',
+		thumbnailUrl: photoData.thumbnailUrl || '',
+		order: order,
+		uploadedAt: new Date()
+	});
+	
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.removeDatingPhoto = async function removeDatingPhoto(photoIndex) {
+	if (!this.dating || !this.dating.photos || photoIndex < 0 || photoIndex >= this.dating.photos.length) {
+		throw new Error('Invalid photo index');
+	}
+	
+	this.dating.photos.splice(photoIndex, 1);
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.updateDatingPhotoOrder = async function updateDatingPhotoOrder(photoIndex, newOrder) {
+	if (!this.dating || !this.dating.photos || photoIndex < 0 || photoIndex >= this.dating.photos.length) {
+		throw new Error('Invalid photo index');
+	}
+	
+	this.dating.photos[photoIndex].order = newOrder;
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.addDatingVideo = async function addDatingVideo(videoData) {
+	if (!this.dating) {
+		this.dating = {
+			photos: [],
+			videos: [],
+			isDatingProfileActive: false,
+			lastUpdatedAt: null
+		};
+	}
+	
+	// Validate max 5 videos
+	if (this.dating.videos.length >= 5) {
+		throw new Error('Maximum 5 videos allowed for dating profile');
+	}
+	
+	// Add order if not provided
+	const order = videoData.order !== undefined ? videoData.order : this.dating.videos.length;
+	
+	this.dating.videos.push({
+		url: videoData.url || '',
+		thumbnailUrl: videoData.thumbnailUrl || '',
+		duration: videoData.duration || 0,
+		order: order,
+		uploadedAt: new Date()
+	});
+	
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.removeDatingVideo = async function removeDatingVideo(videoIndex) {
+	if (!this.dating || !this.dating.videos || videoIndex < 0 || videoIndex >= this.dating.videos.length) {
+		throw new Error('Invalid video index');
+	}
+	
+	this.dating.videos.splice(videoIndex, 1);
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.updateDatingVideoOrder = async function updateDatingVideoOrder(videoIndex, newOrder) {
+	if (!this.dating || !this.dating.videos || videoIndex < 0 || videoIndex >= this.dating.videos.length) {
+		throw new Error('Invalid video index');
+	}
+	
+	this.dating.videos[videoIndex].order = newOrder;
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.toggleDatingProfile = async function toggleDatingProfile(isActive) {
+	if (!this.dating) {
+		this.dating = {
+			photos: [],
+			videos: [],
+			isDatingProfileActive: false,
+			lastUpdatedAt: null
+		};
+	}
+	
+	this.dating.isDatingProfileActive = isActive !== undefined ? isActive : !this.dating.isDatingProfileActive;
+	this.dating.lastUpdatedAt = new Date();
+	return this.save();
+};
+
+UserSchema.methods.getDatingProfile = function getDatingProfile() {
+	if (!this.dating) {
+		return {
+			photos: [],
+			videos: [],
+			isDatingProfileActive: false,
+			lastUpdatedAt: null
+		};
+	}
+	
+	// Sort photos and videos by order
+	const sortedPhotos = [...this.dating.photos].sort((a, b) => a.order - b.order);
+	const sortedVideos = [...this.dating.videos].sort((a, b) => a.order - b.order);
+	
+	return {
+		photos: sortedPhotos,
+		videos: sortedVideos,
+		isDatingProfileActive: this.dating.isDatingProfileActive || false,
+		lastUpdatedAt: this.dating.lastUpdatedAt
+	};
 };
 
 const User = mongoose.models.User || mongoose.model('User', UserSchema);

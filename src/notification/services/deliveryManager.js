@@ -1,8 +1,8 @@
 const NotificationPreferences = require('../models/notificationPreferencesModel');
-const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
-const emailService = require('../../../services/emailService');
-const pushNotificationService = require('../../../services/pushNotificationService');
-const User = require('../../../user/auth/model/userAuthModel');
+const enhancedRealtimeService = require('../../services/enhancedRealtimeService');
+const emailService = require('../../services/emailService');
+const pushNotificationService = require('../../services/pushNotificationService');
+const User = require('../../user/auth/model/userAuthModel');
 
 /**
  * Delivery Manager

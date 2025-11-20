@@ -1,0 +1,494 @@
+{
+  "info": {
+    "name": "Vibgyor Dating API",
+    "_postman_id": "d97ed1c4-1f4a-43b5-b9d4-a2519db1dd00",
+    "description": "Postman collection for Vibgyor dating endpoints. Base URL stored in {{baseUrl}}. Auth header uses {{token}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth Headers",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Dating Media",
+      "item": [
+        {
+          "name": "Upload Photos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "photos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload Videos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "videos",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/videos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "videos"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Toggle Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"isActive\": true }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/toggle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "toggle"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Preferences & Discovery",
+      "item": [
+        {
+          "name": "Get Preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "preferences"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hereTo\": \"Make New Friends\",\n  \"wantToMeet\": \"Woman\",\n  \"ageMin\": 20,\n  \"ageMax\": 35,\n  \"languages\": [\"English\", \"French\"],\n  \"location\": {\n    \"city\": \"Berlin\",\n    \"country\": \"Germany\",\n    \"lat\": 52.52,\n    \"lng\": 13.405\n  },\n  \"distanceMin\": 0,\n  \"distanceMax\": 25\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "preferences"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?search=anna&hereTo=Make%20New%20Friends&city=Berlin&distanceMax=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles"
+              ],
+              "query": [
+                { "key": "search", "value": "anna" },
+                { "key": "hereTo", "value": "Make New Friends" },
+                { "key": "city", "value": "Berlin" },
+                { "key": "distanceMax", "value": "25" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interactions",
+      "item": [
+        {
+          "name": "Like Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"comment\": \"Great profile!\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "like"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Dislike Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/dislike",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "dislike"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Add Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"text\": \"Loved your travel photos!\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "comments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/comments?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "comments"
+              ],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Matches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/matches?status=active&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "matches"
+              ],
+              "query": [
+                { "key": "status", "value": "active" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Safety",
+      "item": [
+        {
+          "name": "Report Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"description\": \"Fake profile\" }"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "report"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Block Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "block"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unblock Profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "dating",
+                "profiles",
+                "{{profileId}}",
+                "block"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": []
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const res = pm.response.json();",
+          "if (res?.data?.matchId) {",
+          "  pm.environment.set('matchId', res.data.matchId);",
+          "}"
+        ]
+      }
+    }
+  ]
+}
+

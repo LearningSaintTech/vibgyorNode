@@ -2,24 +2,26 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 // Import all models
-const User = require('./user/userModel/userAuthModel');
+const User = require('./user/auth/model/userAuthModel');
 const Admin = require('./admin/adminModel/adminModel');
 const SubAdmin = require('./subAdmin/subAdminModel/subAdminAuthModel');
-const Chat = require('./user/userModel/chatModel');
-const Message = require('./user/userModel/messageModel');
-const Call = require('./user/userModel/callModel');
-const UserStatus = require('./user/userModel/userStatusModel');
-const MessageRequest = require('./user/userModel/messageRequestModel');
-const FollowRequest = require('./user/userModel/followRequestModel');
-const UserCatalog = require('./user/userModel/userCatalogModel');
-const Report = require('./user/userModel/userReportModel');
-const Post = require('./user/userModel/postModel');
-const Story = require('./user/userModel/storyModel');
-const StoryHighlight = require('./user/userModel/storyHighlightModel');
+const Chat = require('./user/social/userModel/chatModel');
+const Message = require('./user/social/userModel/messageModel');
+const Call = require('./user/social/userModel/callModel');
+const UserStatus = require('./user/social/userModel/userStatusModel');
+const MessageRequest = require('./user/social/userModel/messageRequestModel');
+const FollowRequest = require('./user/social/userModel/followRequestModel');
+const UserCatalog = require('./user/auth/model/userCatalogModel');
+const Report = require('./user/social/userModel/userReportModel');
+const Post = require('./user/social/userModel/postModel');
+const Story = require('./user/social/userModel/storyModel');
+const DatingInteraction = require('./user/dating/models/datingInteractionModel');
+const DatingMatch = require('./user/dating/models/datingMatchModel');
+const DatingProfileComment = require('./user/dating/models/datingProfileCommentModel');
 // TODO: Notification models will be updated with new architecture
 // const Notification = require('./user/social/userModel/notificationModel');
 // const NotificationPreferences = require('./user/social/userModel/notificationPreferencesModel');
-const ContentModeration = require('./user/userModel/contentModerationModel');
+const ContentModeration = require('./user/social/userModel/contentModerationModel');
 
 // Database connection
 const connectDB = async () => {
@@ -52,6 +54,10 @@ const getRandomDate = (daysAgo = 30) => {
   const pastDate = new Date(now.getTime() - (Math.random() * daysAgo * 24 * 60 * 60 * 1000));
   return pastDate;
 };
+
+const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const randomBool = (probability = 0.5) => Math.random() < probability;
 
 // Demo data arrays
 const demoData = {
@@ -129,6 +135,21 @@ const demoData = {
   
   genders: ['Male', 'Female', 'Non-binary', 'Prefer not to say'],
   pronouns: ['He/Him', 'She/Her', 'They/Them', 'He/They', 'She/They'],
+  languages: ['English', 'French', 'Spanish', 'German', 'Hindi', 'Mandarin', 'Arabic', 'Portuguese', 'Italian', 'Japanese', 'Korean'],
+  datingHereTo: ['Make New Friends', 'Dating', 'Serious Relationship', 'Networking', 'Travel Buddy'],
+  datingWantToMeet: ['Woman', 'Man', 'Everyone', 'Non-binary'],
+  datingComments: [
+    'Great smile!',
+    'Love your travel photos.',
+    'You seem really interesting!',
+    'Would love to grab coffee sometime.',
+    'Nice profile! 😊',
+    'Your hobbies sound fun!',
+    'Big fan of your vibe.',
+    'Totally into the same music!',
+    'Your adventures look amazing.',
+    'Love the positivity here!'
+  ],
   
   cities: [
     'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio',
@@ -443,6 +464,93 @@ const seedUsers = async () => {
   return createdUsers;
 };
 
+const seedDatingProfiles = async (users) => {
+  console.log('🌱 Configuring Dating Profiles...');
+
+  const mediaSamples = [
+    'https://images.unsplash.com/photo-1504593811423-6dd665756598',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d',
+    'https://images.unsplash.com/photo-1524504388940-b1c1722653e1',
+    'https://images.unsplash.com/photo-1463453091185-61582044d556'
+  ];
+
+  const operations = [];
+  let activeCount = 0;
+
+  for (const user of users) {
+    const isActive = randomBool(0.6);
+    if (isActive) activeCount += 1;
+
+    const photoCount = getRandomInt(1, 3);
+    const videoCount = randomBool(0.4) ? 1 : 0;
+
+    const photos = Array.from({ length: photoCount }).map((_, idx) => {
+      const url = getRandomElement(mediaSamples);
+      return {
+        url,
+        thumbnailUrl: url,
+        order: idx,
+        uploadedAt: getRandomDate(10)
+      };
+    });
+
+    const videos = Array.from({ length: videoCount }).map((_, idx) => {
+      const url = `${getRandomElement(mediaSamples)}?video=${idx}`;
+      return {
+        url,
+        thumbnailUrl: url,
+        duration: getRandomInt(5, 60),
+        order: idx,
+        uploadedAt: getRandomDate(10)
+      };
+    });
+
+    const preferences = {
+      hereTo: getRandomElement(demoData.datingHereTo),
+      wantToMeet: getRandomElement(demoData.datingWantToMeet),
+      ageRange: {
+        min: getRandomInt(18, 28),
+        max: getRandomInt(30, 45)
+      },
+      languages: getRandomElements(demoData.languages, getRandomInt(1, 3)),
+      location: {
+        city: user.location?.city || getRandomElement(demoData.cities),
+        country: user.location?.country || getRandomElement(demoData.countries),
+        coordinates: {
+          lat: user.location?.lat || 0,
+          lng: user.location?.lng || 0
+        }
+      },
+      distanceRange: {
+        min: 0,
+        max: getRandomElement([5, 10, 25, 50, 100])
+      }
+    };
+
+    operations.push({
+      updateOne: {
+        filter: { _id: user._id },
+        update: {
+          $set: {
+            'dating.photos': photos,
+            'dating.videos': videos,
+            'dating.isDatingProfileActive': isActive,
+            'dating.lastUpdatedAt': new Date(),
+            'dating.preferences': preferences
+          }
+        }
+      }
+    });
+  }
+
+  if (operations.length > 0) {
+    await User.bulkWrite(operations);
+  }
+
+  console.log(`✅ Configured dating profiles for ${users.length} users (${activeCount} active)`);
+  return { activeProfiles: activeCount };
+};
+
 const seedUserStatuses = async (users) => {
   console.log('🌱 Seeding User Statuses...');
   
@@ -726,6 +834,118 @@ const seedReports = async (users, admins) => {
   return createdReports;
 };
 
+const seedDatingInteractions = async (users) => {
+  console.log('🌱 Seeding Dating Interactions...');
+
+  const interactions = [];
+  const matches = [];
+  const usedPairs = new Set();
+
+  const interactionCount = Math.floor(users.length * 1.5);
+
+  const getKey = (a, b) => `${a}_${b}`;
+  const sortPair = (a, b) => (a.toString() < b.toString() ? [a, b] : [b, a]);
+
+  for (let i = 0; i < interactionCount; i++) {
+    const liker = getRandomElement(users);
+    const potentialTargets = users.filter(u => u._id.toString() !== liker._id.toString());
+    if (potentialTargets.length === 0) continue;
+    const target = getRandomElement(potentialTargets);
+
+    const key = getKey(liker._id.toString(), target._id.toString());
+    if (usedPairs.has(key)) continue;
+    usedPairs.add(key);
+
+    const action = randomBool(0.75) ? 'like' : 'dislike';
+    const baseInteraction = {
+      user: liker._id,
+      targetUser: target._id,
+      action,
+      status: action === 'like' ? 'pending' : 'dismissed',
+      matchedAt: null
+    };
+
+    if (action === 'like' && randomBool(0.35)) {
+      const timestamp = getRandomDate(5);
+      baseInteraction.status = 'matched';
+      baseInteraction.matchedAt = timestamp;
+      interactions.push(baseInteraction);
+
+      interactions.push({
+        user: target._id,
+        targetUser: liker._id,
+        action: 'like',
+        status: 'matched',
+        matchedAt: timestamp
+      });
+
+      const [userA, userB] = sortPair(liker._id, target._id);
+      matches.push({
+        userA,
+        userB,
+        status: 'active',
+        matchedBy: 'mutual_like',
+        lastInteractionAt: timestamp
+      });
+    } else {
+      interactions.push(baseInteraction);
+    }
+  }
+
+  let interactionsCount = 0;
+  let matchesCount = 0;
+
+  if (interactions.length > 0) {
+    await DatingInteraction.insertMany(interactions, { ordered: false });
+    interactionsCount = interactions.length;
+  }
+
+  if (matches.length > 0) {
+    try {
+      await DatingMatch.insertMany(matches, { ordered: false });
+      matchesCount = matches.length;
+    } catch (error) {
+      console.warn('[SEED] Some dating matches already existed (ignored).');
+    }
+  }
+
+  console.log(`✅ Created ${interactionsCount} dating interactions and ${matchesCount} matches`);
+  return { interactionsCount, matchesCount };
+};
+
+const seedDatingComments = async (users) => {
+  console.log('🌱 Seeding Dating Profile Comments...');
+
+  const comments = [];
+  const commentCount = Math.floor(users.length * 1.2);
+
+  for (let i = 0; i < commentCount; i++) {
+    const author = getRandomElement(users);
+    const potentialTargets = users.filter(u => u._id.toString() !== author._id.toString());
+    if (potentialTargets.length === 0) continue;
+    const target = getRandomElement(potentialTargets);
+
+    comments.push({
+      user: author._id,
+      targetUser: target._id,
+      text: getRandomElement(demoData.datingComments),
+      likes: [],
+      likesCount: 0,
+      isPinned: false,
+      isDeleted: false,
+      createdAt: getRandomDate(7),
+      updatedAt: getRandomDate(3)
+    });
+  }
+
+  if (comments.length > 0) {
+    await DatingProfileComment.insertMany(comments, { ordered: false });
+  }
+
+  console.log(`✅ Created ${comments.length} dating profile comments`);
+  return { commentsCount: comments.length };
+};
+
 // Update relationships
 const updateUserRelationships = async (users, followRequests) => {
   console.log('🌱 Updating User Relationships...');
@@ -931,63 +1151,6 @@ const seedStories = async (users) => {
   return createdStories;
 };
 
-const seedStoryHighlights = async (users, stories) => {
-  console.log('🌱 Seeding Story Highlights...');
-  
-  const highlights = [];
-  const highlightCount = Math.floor(users.length * 0.4); // 0.4 highlights per user on average
-  
-  for (let i = 0; i < highlightCount; i++) {
-    const owner = getRandomElement(users);
-    const name = getRandomElement(demoData.highlightNames);
-    
-    // Select random stories for this highlight (filter by owner)
-    const userStories = stories.filter(story => story.author.toString() === owner._id.toString());
-    const highlightStories = getRandomElements(userStories, Math.min(Math.floor(Math.random() * 5) + 1, userStories.length));
-    
-    const highlight = {
-      name: name,
-      description: `Highlights from ${name.toLowerCase()}`,
-      owner: owner._id,
-      coverImage: {
-        type: 'image',
-        url: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
-        filename: `highlight_${i}.jpg`,
-        s3Key: `highlights/cover_${i}.jpg`,
-        dimensions: {
-          width: 1080,
-          height: 1920
-        }
-      },
-      stories: highlightStories.map((story, index) => ({
-        story: story._id,
-        addedAt: getRandomDate(30),
-        order: index
-      })),
-      privacy: getRandomElement(['public', 'followers', 'close_friends']),
-      status: 'active',
-      analytics: {
-        viewsCount: Math.floor(Math.random() * 500),
-        totalStories: highlightStories.length
-      },
-      settings: {
-        allowStoryAddition: true,
-        maxStories: 100,
-        autoArchive: Math.random() > 0.8,
-        archiveAfterDays: 30
-      },
-      createdAt: getRandomDate(30),
-      lastUpdatedAt: getRandomDate(7)
-    };
-    
-    highlights.push(highlight);
-  }
-  
-  const createdHighlights = await StoryHighlight.insertMany(highlights);
-  console.log(`✅ Created ${createdHighlights.length} story highlights`);
-  return createdHighlights;
-};
-
 // TODO: Notification seeding will be implemented with new architecture
 const seedNotifications = async (users, posts, stories) => {
   console.log('🌱 Seeding Notifications... (Skipped - will be implemented with new architecture)');
@@ -1114,9 +1277,11 @@ const seedDatabase = async (clearFirst = false) => {
         Call.deleteMany({}),
         MessageRequest.deleteMany({}),
         Report.deleteMany({}),
+        DatingInteraction.deleteMany({}),
+        DatingMatch.deleteMany({}),
+        DatingProfileComment.deleteMany({}),
         Post.deleteMany({}),
         Story.deleteMany({}),
-        StoryHighlight.deleteMany({}),
         // TODO: Notification cleanup will be implemented with new architecture
         // Notification.deleteMany({}),
         // NotificationPreferences.deleteMany({}),
@@ -1129,6 +1294,7 @@ const seedDatabase = async (clearFirst = false) => {
     const admins = await seedAdmins();
     const subAdmins = await seedSubAdmins(admins);
     const users = await seedUsers();
+    const datingProfiles = await seedDatingProfiles(users);
     const userStatuses = await seedUserStatuses(users);
     const userCatalog = await seedUserCatalog();
     const followRequests = await seedFollowRequests(users);
@@ -1137,11 +1303,12 @@ const seedDatabase = async (clearFirst = false) => {
     const calls = await seedCalls(chats, users);
     const messageRequests = await seedMessageRequests(users);
     const reports = await seedReports(users, admins);
+    const datingInteractions = await seedDatingInteractions(users);
+    const datingComments = await seedDatingComments(users);
     
     // Seed new models
     const posts = await seedPosts(users);
     const stories = await seedStories(users);
-    const storyHighlights = await seedStoryHighlights(users, stories);
     const notifications = await seedNotifications(users, posts, stories);
     const notificationPreferences = await seedNotificationPreferences(users);
     const contentModeration = await seedContentModeration(posts, stories);
@@ -1155,6 +1322,10 @@ const seedDatabase = async (clearFirst = false) => {
     console.log(`   👑 Admins: ${admins.length}`);
     console.log(`   🛡️  SubAdmins: ${subAdmins.length}`);
     console.log(`   👥 Users: ${users.length}`);
+    console.log(`   ❤️ Dating Profiles Active: ${datingProfiles.activeProfiles}`);
+    console.log(`   💌 Dating Interactions: ${datingInteractions.interactionsCount}`);
+    console.log(`   🔗 Dating Matches: ${datingInteractions.matchesCount}`);
+    console.log(`   💬 Dating Comments: ${datingComments.commentsCount}`);
     console.log(`   📱 User Statuses: ${userStatuses.length}`);
     console.log(`   📋 User Catalog: 1`);
     console.log(`   👥 Follow Requests: ${followRequests.length}`);
@@ -1165,7 +1336,6 @@ const seedDatabase = async (clearFirst = false) => {
     console.log(`   🚨 Reports: ${reports.length}`);
     console.log(`   📝 Posts: ${posts.length}`);
     console.log(`   📖 Stories: ${stories.length}`);
-    console.log(`   ⭐ Story Highlights: ${storyHighlights.length}`);
     console.log(`   🔔 Notifications: ${notifications.length}`);
     console.log(`   ⚙️  Notification Preferences: ${notificationPreferences.length}`);
     console.log(`   🛡️  Content Moderation: ${contentModeration.length}`);

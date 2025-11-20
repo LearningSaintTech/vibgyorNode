@@ -1842,79 +1842,218 @@ Authorization: Bearer <user_token>
 
 ### Notifications
 
+**Base URL**: `/api/v1/notifications`
+
 #### Get Notifications
 ```http
-GET /user/notifications?page=1&limit=20&status=all&type=all&priority=all
+GET /api/v1/notifications?page=1&limit=20&status=all&type=all&context=all&priority=all
 Authorization: Bearer <user_token>
 ```
 
 **Query Parameters:**
-- `page` (number): Page number
-- `limit` (number): Items per page
-- `status` (string): all, read, unread
-- `type` (string): all, message, follow, like, comment
-- `priority` (string): all, high, medium, low
+- `page` (number): Page number (default: 1)
+- `limit` (number): Items per page (default: 20, max: 100)
+- `status` (string): all, unread, read, archived (default: all)
+- `type` (string): Notification type filter (default: all)
+- `context` (string): all, social, dating (default: all)
+- `priority` (string): all, low, normal, high, urgent (default: all)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [...],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 50,
+      "pages": 3
+    }
+  },
+  "message": "Notifications retrieved successfully"
+}
+```
 
 #### Get Unread Count
 ```http
-GET /user/notifications/unread-count
+GET /api/v1/notifications/unread-count?context=all
 Authorization: Bearer <user_token>
 ```
 
-#### Get Single Notification
-```http
-GET /user/notifications/{notificationId}
-Authorization: Bearer <user_token>
+**Query Parameters:**
+- `context` (string): all, social, dating (default: all)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "count": 5
+  },
+  "message": "Unread count retrieved successfully"
+}
 ```
 
 #### Mark Notification as Read
 ```http
-PUT /user/notifications/{notificationId}/read
+PUT /api/v1/notifications/:id/read
 Authorization: Bearer <user_token>
 ```
 
-#### Mark Notification as Unread
-```http
-PUT /user/notifications/{notificationId}/unread
-Authorization: Bearer <user_token>
-```
+**Path Parameters:**
+- `id` (string): Notification ID
 
-#### Archive Notification
-```http
-PUT /user/notifications/{notificationId}/archive
-Authorization: Bearer <user_token>
-```
-
-#### Delete Notification
-```http
-DELETE /user/notifications/{notificationId}
-Authorization: Bearer <user_token>
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "_id": "notification_id",
+      "status": "read",
+      "readAt": "2025-01-15T10:35:00.000Z"
+    }
+  },
+  "message": "Notification marked as read"
+}
 ```
 
 #### Mark All as Read
 ```http
-PUT /user/notifications/read-all
+PUT /api/v1/notifications/read-all
+Authorization: Bearer <user_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "context": "all"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "modifiedCount": 10
+  },
+  "message": "All notifications marked as read"
+}
+```
+
+#### Archive Notification
+```http
+PUT /api/v1/notifications/:id/archive
 Authorization: Bearer <user_token>
 ```
 
-#### Record Notification Click
+**Path Parameters:**
+- `id` (string): Notification ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "_id": "notification_id",
+      "status": "archived"
+    }
+  },
+  "message": "Notification archived"
+}
+```
+
+#### Delete Notification
 ```http
-POST /user/notifications/{notificationId}/click
+DELETE /api/v1/notifications/:id
 Authorization: Bearer <user_token>
+```
+
+**Path Parameters:**
+- `id` (string): Notification ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "_id": "notification_id"
+    }
+  },
+  "message": "Notification deleted"
+}
 ```
 
 ### Notification Preferences
 
+**Base URL**: `/api/v1/notification-preferences`
+
 #### Get Notification Preferences
 ```http
-GET /user/notification-preferences
+GET /api/v1/notification-preferences
 Authorization: Bearer <user_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "preferences": {
+      "globalSettings": {
+        "enableNotifications": true,
+        "quietHours": {
+          "enabled": false,
+          "startTime": "22:00",
+          "endTime": "08:00",
+          "timezone": "UTC"
+        },
+        "frequency": "immediate"
+      },
+      "channels": {
+        "inApp": { "enabled": true, "sound": true, "vibration": true },
+        "push": { "enabled": true, "sound": true, "badge": true },
+        "email": { "enabled": false, "frequency": "daily" },
+        "sms": { "enabled": false, "emergencyOnly": true }
+      },
+      "contexts": {
+        "social": {
+          "enabled": true,
+          "types": {
+            "post_like": {
+              "enabled": true,
+              "channels": {
+                "inApp": true,
+                "push": true,
+                "email": false,
+                "sms": false
+              }
+            }
+          }
+        }
+      },
+      "advanced": {
+        "groupSimilar": true,
+        "maxNotificationsPerHour": 10,
+        "digestNotifications": false,
+        "digestFrequency": "daily"
+      }
+    }
+  },
+  "message": "Preferences retrieved successfully"
+}
 ```
 
 #### Update Notification Preferences
 ```http
-PUT /user/notification-preferences
+PUT /api/v1/notification-preferences
 Authorization: Bearer <user_token>
+Content-Type: application/json
 ```
 
 **Request Body:**
@@ -1924,72 +2063,167 @@ Authorization: Bearer <user_token>
     "enableNotifications": true,
     "quietHours": {
       "enabled": true,
-      "start": "22:00",
-      "end": "08:00"
-    }
+      "startTime": "22:00",
+      "endTime": "08:00",
+      "timezone": "UTC"
+    },
+    "frequency": "immediate"
   },
   "channels": {
-    "inApp": { "enabled": true },
-    "push": { "enabled": true },
-    "email": { "enabled": false },
-    "sms": { "enabled": false }
+    "inApp": { "enabled": true, "sound": true, "vibration": true },
+    "push": { "enabled": true, "sound": true, "badge": true },
+    "email": { "enabled": false, "frequency": "daily" },
+    "sms": { "enabled": false, "emergencyOnly": true }
   },
-  "notificationTypes": {
-    "message": { "enabled": true, "channels": ["inApp", "push"] },
-    "follow": { "enabled": true, "channels": ["inApp"] },
-    "like": { "enabled": false }
+  "contexts": {
+    "social": {
+      "enabled": true,
+      "types": {
+        "post_like": {
+          "enabled": true,
+          "channels": {
+            "inApp": true,
+            "push": false,
+            "email": false,
+            "sms": false
+          }
+        },
+        "message_received": {
+          "enabled": true,
+          "channels": {
+            "inApp": true,
+            "push": true,
+            "email": false,
+            "sms": false
+          }
+        }
+      }
+    }
   },
   "advanced": {
-    "groupSimilarNotifications": true,
-    "showPreview": true
+    "groupSimilar": true,
+    "maxNotificationsPerHour": 10,
+    "digestNotifications": false,
+    "digestFrequency": "daily"
   }
 }
 ```
 
-#### Update Global Settings
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "preferences": {...}
+  },
+  "message": "Preferences updated successfully"
+}
+```
+
+#### Reset Preferences to Defaults
 ```http
-PUT /user/notification-preferences/global
+PUT /api/v1/notification-preferences/reset
 Authorization: Bearer <user_token>
 ```
 
-#### Update Channel Preferences
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "preferences": {...}
+  },
+  "message": "Preferences reset to defaults"
+}
+```
+
+### Device Token Management
+
+**Base URL**: `/api/v1/user/device-token`
+
+#### Register Device Token
 ```http
-PUT /user/notification-preferences/channels/{channel}
+POST /api/v1/user/device-token
+Authorization: Bearer <user_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "token": "fcm_device_token_here",
+  "platform": "android",
+  "deviceId": "device_unique_id",
+  "deviceName": "Samsung Galaxy S21",
+  "appVersion": "1.0.0"
+}
+```
+
+**Platform Values:**
+- `ios`: iOS devices
+- `android`: Android devices
+- `web`: Web browsers
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Device token registered successfully"
+  },
+  "message": "Device token registered"
+}
+```
+
+#### Get Device Tokens
+```http
+GET /api/v1/user/device-token
+Authorization: Bearer <user_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "tokens": [
+      {
+        "token": "fcm_token_1",
+        "platform": "android",
+        "deviceId": "device_id_1",
+        "deviceName": "Samsung Galaxy S21",
+        "appVersion": "1.0.0",
+        "isActive": true,
+        "lastUsedAt": "2025-01-15T10:30:00.000Z",
+        "createdAt": "2025-01-10T08:00:00.000Z"
+      }
+    ]
+  },
+  "message": "Device tokens retrieved"
+}
+```
+
+#### Remove Device Token
+```http
+DELETE /api/v1/user/device-token/:token
 Authorization: Bearer <user_token>
 ```
 
 **Path Parameters:**
-- `channel`: inApp, push, email, sms
+- `token` (string): Device token to remove
 
-#### Update Notification Type Preferences
-```http
-PUT /user/notification-preferences/types/{type}
-Authorization: Bearer <user_token>
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Device token removed successfully"
+  },
+  "message": "Device token removed"
+}
 ```
 
-#### Update Advanced Settings
-```http
-PUT /user/notification-preferences/advanced
-Authorization: Bearer <user_token>
-```
-
-#### Reset to Defaults
-```http
-POST /user/notification-preferences/reset
-Authorization: Bearer <user_token>
-```
-
-#### Test Notification
-```http
-GET /user/notification-preferences/test/{type}?channel=inApp
-Authorization: Bearer <user_token>
-```
-
-#### Get Preferences Summary
-```http
-GET /user/notification-preferences/summary
-Authorization: Bearer <user_token>
-```
+**Note**: For detailed notification system documentation, see `NOTIFICATION_DOCUMENTATION.txt`
 
 ## Search APIs
 
@@ -2712,33 +2946,54 @@ const socket = io('ws://localhost:3000', {
 
 | Event | Description | Data |
 |-------|-------------|------|
-| `join_chat` | Join a chat room | `{ chatId }` |
-| `leave_chat` | Leave a chat room | `{ chatId }` |
+| `join_chat` | Join a chat room | `chatId` (string) |
+| `leave_chat` | Leave a chat room | `chatId` (string) |
+| `new_message` | Send a new message | `{ chatId, content, type, replyTo, forwardedFrom }` |
 | `typing_start` | Start typing indicator | `{ chatId }` |
 | `typing_stop` | Stop typing indicator | `{ chatId }` |
-| `call_initiate` | Initiate a call | `{ chatId, type, callId }` |
-| `call_accept` | Accept a call | `{ callId }` |
-| `call_reject` | Reject a call | `{ callId, reason }` |
-| `call_end` | End a call | `{ callId, reason }` |
-| `webrtc_signal` | WebRTC signaling | `{ callId, type, data }` |
+| `update_status` | Update user status | `{ status }` |
+| `ping` | Heartbeat ping | `{}` |
+| `call:initiate` | Initiate a call | `{ chatId, type, targetUserId }` |
+| `call:accept` | Accept a call | `{ callId }` |
+| `call:reject` | Reject a call | `{ callId, reason }` |
+| `call:end` | End a call | `{ callId, reason }` |
+| `notification:read` | Mark notification as read | `{ notificationId }` |
+| `notification:preferences_updated` | Preferences updated | `{ preferences }` |
+| `notification:clicked` | Notification clicked | `{ notificationId }` |
 
 #### Server to Client Events
 
 | Event | Description | Data |
 |-------|-------------|------|
+| `connection_success` | Connection established | `{ userId, socketId, timestamp }` |
 | `message_received` | New message received | `{ message, chatId }` |
 | `message_updated` | Message was updated | `{ messageId, content }` |
 | `message_deleted` | Message was deleted | `{ messageId }` |
-| `typing_start` | User started typing | `{ userId, chatId }` |
-| `typing_stop` | User stopped typing | `{ userId, chatId }` |
-| `user_online` | User came online | `{ userId, user }` |
-| `user_offline` | User went offline | `{ userId }` |
-| `call_incoming` | Incoming call | `{ callId, caller, type }` |
-| `call_accepted` | Call was accepted | `{ callId, participant }` |
-| `call_rejected` | Call was rejected | `{ callId, reason }` |
-| `call_ended` | Call ended | `{ callId, duration, reason }` |
+| `new_message_notification` | New message notification | `{ chatId, messageId, sender, content, type, timestamp }` |
+| `typing_start` | User started typing | `{ userId, chatId, isTyping }` |
+| `typing_stop` | User stopped typing | `{ userId, chatId, isTyping }` |
+| `user_online` | User came online | `{ userId, username, fullName, profilePictureUrl, timestamp }` |
+| `user_offline` | User went offline | `{ userId, username, fullName, profilePictureUrl, timestamp }` |
+| `user_status_update` | User status changed | `{ userId, status, timestamp }` |
+| `call:incoming` | Incoming call | `{ callId, chatId, type, from, timestamp }` |
+| `call:initiated` | Call initiated | `{ callId, chatId, type, status, timestamp }` |
+| `call:accepted` | Call was accepted | `{ callId, status, timestamp }` |
+| `call:rejected` | Call was rejected | `{ callId, reason, timestamp }` |
+| `call:ended` | Call ended | `{ callId, reason, duration, timestamp }` |
+| `call:error` | Call error | `{ message }` |
 | `webrtc_signal` | WebRTC signaling data | `{ callId, type, data }` |
-| `notification` | New notification | `{ notification }` |
+| `notification` | New notification (general) | `{ id, context, type, title, message, data, relatedContent, priority, createdAt }` |
+| `social:notification` | Social notification | `{ id, type, title, message, data, relatedContent, priority, createdAt }` |
+| `social:post_liked` | Post liked event | `{ notification, data, relatedContent }` |
+| `social:message_received` | Message received event | `{ notification, data, relatedContent }` |
+| `social:call_incoming` | Incoming call event | `{ notification, data, relatedContent }` |
+| `notification:read_confirmed` | Notification read confirmed | `{ notificationId, timestamp }` |
+| `notification:preferences_changed` | Preferences changed | `{ preferences }` |
+| `user_joined_chat` | User joined chat room | `{ userId, username, chatId, timestamp }` |
+| `user_left_chat` | User left chat room | `{ userId, username, chatId, timestamp }` |
+| `chat_joined` | Chat room joined | `{ chatId, timestamp }` |
+| `error` | Error occurred | `{ message }` |
+| `pong` | Heartbeat response | `{}` |
 
 ### WebSocket Event Examples
 
@@ -2766,18 +3021,44 @@ socket.on('message_received', (data) => {
 
 #### Initiate Call
 ```javascript
-socket.emit('call_initiate', {
+socket.emit('call:initiate', {
   chatId: 'chat_123',
   type: 'video',
-  callId: 'call_456'
+  targetUserId: 'user_id'
 });
 ```
 
 #### Handle Incoming Call
 ```javascript
-socket.on('call_incoming', (data) => {
-  console.log('Incoming call from:', data.caller);
+socket.on('call:incoming', (data) => {
+  console.log('Incoming call from:', data.from);
+  console.log('Call ID:', data.callId);
+  console.log('Call type:', data.type);
   // Show call UI
+  showCallUI(data);
+});
+```
+
+#### Accept Call
+```javascript
+socket.emit('call:accept', {
+  callId: 'call_456'
+});
+```
+
+#### Reject Call
+```javascript
+socket.emit('call:reject', {
+  callId: 'call_456',
+  reason: 'Busy right now'
+});
+```
+
+#### End Call
+```javascript
+socket.emit('call:end', {
+  callId: 'call_456',
+  reason: 'user_ended'
 });
 ```
 
@@ -2796,6 +3077,65 @@ socket.on('webrtc_signal', (data) => {
     // Handle WebRTC answer
     peerConnection.setRemoteDescription(data.data);
   }
+});
+```
+
+#### Handle Notifications
+```javascript
+// Listen for general notifications
+socket.on('notification', (data) => {
+  console.log('New notification:', data);
+  // Update notification badge
+  updateNotificationBadge();
+  // Show notification toast
+  showNotificationToast(data);
+  // Navigate if needed
+  if (data.type === 'post_like') {
+    navigateToPost(data.data.postId);
+  }
+});
+
+// Listen for social notifications
+socket.on('social:notification', (data) => {
+  console.log('Social notification:', data);
+});
+
+// Listen for specific notification types
+socket.on('social:post_liked', (data) => {
+  console.log('Post liked:', data);
+  // Update post like count
+  updatePostLikes(data.relatedContent.postId);
+});
+
+socket.on('social:message_received', (data) => {
+  console.log('Message received:', data);
+  // Show message notification
+  showMessageNotification(data);
+});
+
+socket.on('social:call_incoming', (data) => {
+  console.log('Incoming call:', data);
+  // Show call UI
+  showCallUI(data);
+});
+
+// Mark notification as read
+socket.emit('notification:read', {
+  notificationId: 'notification_id'
+});
+
+// Listen for read confirmation
+socket.on('notification:read_confirmed', (data) => {
+  console.log('Notification read confirmed:', data);
+  // Update UI
+  markNotificationAsRead(data.notificationId);
+});
+
+// Listen for preferences changes
+socket.on('notification:preferences_changed', (data) => {
+  console.log('Preferences changed:', data);
+  // Update preferences UI
+  updatePreferencesUI(data.preferences);
 });
 ```
 
@@ -2929,3 +3269,4 @@ For API support and questions:
 
 *Last Updated: January 2025*  
 *API Version: 2.0.0*
+
