@@ -1,0 +1,250 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                    🎯 DATING API TEST PROFILES                       ║
+║                     Quick Reference Card                             ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+📱 LOCAL DATABASE: mongodb://localhost:27017/vibgyorNode
+
+🚀 TO START TESTING:
+   1. node datingSeed.js (adds to existing data, safe)
+      OR node datingSeed.js --clear (removes old test data first)
+   2. npm start
+   3. Login with any phone below (OTP: 123456)
+
+═══════════════════════════════════════════════════════════════════════
+
+1️⃣  ALICE JOHNSON (Main Test User) 👩
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550001111
+Username:   alice_dating_tester
+Gender:     Female
+Age:        29
+Location:   New York, USA (40.7128, -74.0060)
+Status:     ✅ ACTIVE
+Looking:    Men, Age 25-35, 0-50km
+Bio:        Coffee lover, travel enthusiast
+────────────────────────────────────────────────────────────────────
+USE THIS FOR ALL TESTING!
+────────────────────────────────────────────────────────────────────
+
+2️⃣  BOB SMITH (Match Ready) 👨
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550002222
+Username:   bob_nearby_match
+Gender:     Male
+Age:        33
+Location:   New York (~4.5km from Alice)
+Status:     ✅ ACTIVE
+Looking:    Women, Age 22-32, 0-50km
+────────────────────────────────────────────────────────────────────
+💑 SPECIAL: Already liked Alice! Like him back to CREATE A MATCH!
+────────────────────────────────────────────────────────────────────
+
+3️⃣  CHARLIE BROWN (To Dislike) 👨
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550003333
+Username:   charlie_to_dislike
+Gender:     Male
+Age:        35
+Location:   New York (~8km from Alice)
+Status:     ✅ ACTIVE
+────────────────────────────────────────────────────────────────────
+Use this profile to test DISLIKE functionality
+────────────────────────────────────────────────────────────────────
+
+4️⃣  DIANA PRINCE (To Comment) 👩
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550004444
+Username:   diana_friend
+Gender:     Female
+Age:        32
+Location:   New York (~2km from Alice)
+Status:     ✅ ACTIVE
+Looking:    Everyone, Age 20-40, 0-30km
+────────────────────────────────────────────────────────────────────
+Use this profile to test COMMENTING
+────────────────────────────────────────────────────────────────────
+
+5️⃣  EVE WILSON (Far Away) 👩
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550005555
+Username:   eve_far_away
+Gender:     Female
+Age:        31
+Location:   Los Angeles (~3936km away)
+Status:     ✅ ACTIVE
+────────────────────────────────────────────────────────────────────
+WON'T APPEAR in nearby search (too far)
+────────────────────────────────────────────────────────────────────
+
+6️⃣  FRANK MILLER (Inactive) 👨
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550006666
+Username:   frank_inactive
+Gender:     Male
+Age:        34
+Location:   New York (~3km from Alice)
+Status:     ❌ INACTIVE
+────────────────────────────────────────────────────────────────────
+WON'T APPEAR in any search (profile inactive)
+────────────────────────────────────────────────────────────────────
+
+7️⃣  GRACE LEE (New Dater) 👩
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550007777
+Username:   grace_new_dater
+Gender:     Female
+Age:        28
+Location:   New York (~1.5km from Alice)
+Status:     ✅ ACTIVE (Just joined!)
+Looking:    Everyone, Age 18-45, 0-100km
+────────────────────────────────────────────────────────────────────
+Use filter=new_dater to find her
+────────────────────────────────────────────────────────────────────
+
+8️⃣  HENRY DAVIS (Commenter) 👨
+────────────────────────────────────────────────────────────────────
+Phone:      +91 5550008888
+Username:   henry_commenter
+Gender:     Male
+Age:        36
+Location:   New York (~6km from Alice)
+Status:     ✅ ACTIVE
+────────────────────────────────────────────────────────────────────
+Has already COMMENTED on Alice's profile
+────────────────────────────────────────────────────────────────────
+
+═══════════════════════════════════════════════════════════════════
+
+🧪 QUICK TEST FLOW:
+
+1. LOGIN AS ALICE
+   POST /auth/send-otp
+   Body: { "phoneNumber": "5550001111", "countryCode": "+91" }
+   
+   POST /auth/verify-otp
+   Body: { "phoneNumber": "5550001111", "countryCode": "+91", "otp": "123456" }
+
+2. SEARCH PROFILES
+   GET /user/dating/profiles?distanceMax=50&filter=near_by
+   → Should see: Bob, Charlie, Diana, Grace, Henry
+   → Won't see: Eve (far), Frank (inactive)
+
+3. CREATE A MATCH
+   POST /user/dating/profiles/{BOB_ID}/like
+   Body: { "comment": "You seem awesome!" }
+   → Should return: isMatch: true ✅
+
+4. VIEW MATCHES
+   GET /user/dating/matches?status=active
+   → Should see Bob in matches
+
+5. DISLIKE
+   POST /user/dating/profiles/{CHARLIE_ID}/dislike
+
+6. COMMENT
+   POST /user/dating/profiles/{DIANA_ID}/comments
+   Body: { "text": "Love your vibe!" }
+
+7. BLOCK
+   POST /user/dating/profiles/{HENRY_ID}/block
+
+8. REPORT
+   POST /user/dating/profiles/{CHARLIE_ID}/report
+   Body: { "description": "Inappropriate content" }
+
+═══════════════════════════════════════════════════════════════════
+
+📊 FILTER TESTS:
+
+Near By:         GET /user/dating/profiles?filter=near_by&distanceMax=50
+                 → Expect: 5 profiles (Bob, Charlie, Diana, Grace, Henry)
+
+New Dater:       GET /user/dating/profiles?filter=new_dater
+                 → Expect: Grace
+
+Men Only:        GET /user/dating/profiles?wantToMeet=Man&distanceMax=50
+                 → Expect: Bob, Charlie, Henry
+
+Age Range:       GET /user/dating/profiles?ageMin=30&ageMax=35&distanceMax=50
+                 → Expect: Bob (33), Diana (32), Charlie (35)
+
+Distance:        GET /user/dating/profiles?distanceMax=5
+                 → Expect: Diana (~2km), Frank (~3km if active)
+
+Search:          GET /user/dating/profiles?search=bob
+                 → Expect: Bob Smith
+
+Same Interests:  GET /user/dating/profiles?filter=same_interests
+                 → Expect: Users with similar interests to Alice
+
+═══════════════════════════════════════════════════════════════════
+
+💡 POSTMAN TIPS:
+
+1. Set Bearer Token:
+   Authorization tab → Type: Bearer Token → Paste token from login
+
+2. Save User IDs in Environment:
+   Tests tab:
+   pm.environment.set("bobId", pm.response.json().data.profiles[0]._id);
+
+3. Base URL:
+   http://localhost:3000
+
+4. Collection Organization:
+   - 📁 Auth
+   - 📁 Profile
+   - 📁 Search
+   - 📁 Interactions
+   - 📁 Matches
+   - 📁 Safety
+
+═══════════════════════════════════════════════════════════════════
+
+🔍 DATABASE VERIFICATION:
+
+MongoDB Compass: mongodb://localhost:27017/vibgyorNode
+
+Collections:
+  - users (check dating.isDatingProfileActive)
+  - datinginteractions (likes/dislikes)
+  - datingmatches (mutual matches)
+  - datingprofilecomments (comments)
+
+═══════════════════════════════════════════════════════════════════
+
+📚 DOCUMENTATION:
+
+Full Guide:       DATING_API_TESTING_GUIDE.md
+API Reference:    docs/dating-api.md
+Seed Script:      datingSeed.js
+
+═══════════════════════════════════════════════════════════════════
+
+✅ EXPECTED RESULTS SUMMARY:
+
+Search (50km):         5 profiles (Bob, Charlie, Diana, Grace, Henry)
+Like Bob:              Match created ✅
+Dislike Charlie:       Dismissed ✅
+Comment on Diana:      Comment added ✅
+View Matches:          1 match (Bob)
+Block Henry:           Henry hidden from search
+Report Charlie:        Report created
+
+═══════════════════════════════════════════════════════════════════
+
+🐛 TROUBLESHOOTING:
+
+No profiles?           Check distanceMax parameter (use 100)
+Can't login?           Verify phone format: "5550001111" (no +91)
+No match?              Both users must like each other
+Token expired?         Re-login to get new token
+Seed failed?           Drop collections and re-seed with --clear
+
+═══════════════════════════════════════════════════════════════════
+
+Happy Testing! 🚀
+
+For detailed instructions, see: DATING_API_TESTING_GUIDE.md
+

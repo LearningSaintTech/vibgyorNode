@@ -246,12 +246,24 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 				}
 				
 				if (profileLat && profileLng) {
-					profile.distance = calculateDistance(
+					const distanceKm = calculateDistance(
 						currentUser.location.lat,
 						currentUser.location.lng,
 						profileLat,
 						profileLng
 					);
+					
+					profile.distance = distanceKm;
+					
+					// Format distance for display
+					if (distanceKm >= 1) {
+						// Round to 1 decimal place for km
+						profile.distanceAway = `${Math.round(distanceKm * 10) / 10} km away`;
+					} else {
+						// Convert to meters and round
+						const distanceMeters = Math.round(distanceKm * 1000);
+						profile.distanceAway = `${distanceMeters} m away`;
+					}
 				}
 			}
 

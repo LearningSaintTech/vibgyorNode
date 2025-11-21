@@ -3,6 +3,8 @@ const ApiResponse = require('../../../utils/apiResponse');
 const { signAccessToken, signRefreshToken } = require('../../../utils/Jwt');
 const { sendEmail, sendVerificationEmail, sendOtpVerificationEmail } = require('../../../services/emailService');
 const RefreshToken = require("../../social/userModel/refreshTokenModel");
+const DatingInteraction = require('../../dating/models/datingInteractionModel');
+const DatingProfileComment = require('../../dating/models/datingProfileCommentModel');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
 const HARD_CODED_OTP = '123456';
@@ -185,6 +187,18 @@ async function getMe(req, res) {
 		const user = await User.findById(req.user?.userId).select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt');
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 
+		// Get dating statistics
+		const [datingLikesReceived, datingCommentsReceived] = await Promise.all([
+			DatingInteraction.countDocuments({
+				targetUser: req.user.userId,
+				action: 'like'
+			}),
+			DatingProfileComment.countDocuments({
+				targetUser: req.user.userId,
+				isDeleted: false
+			})
+		]);
+
 		const profileData = {
 			id: user._id,
 			phoneNumber: user.maskedPhone(),
@@ -218,7 +232,15 @@ async function getMe(req, res) {
 			privacySettings: user.privacySettings,
 			lastLoginAt: user.lastLoginAt,
 			createdAt: user.createdAt,
-			updatedAt: user.updatedAt
+			updatedAt: user.updatedAt,
+			// Dating data added
+			dating: {
+				photos: user.dating?.photos || [],
+				videos: user.dating?.videos || [],
+				isDatingProfileActive: user.dating?.isDatingProfileActive || false,
+				likesReceived: datingLikesReceived,
+				commentsReceived: datingCommentsReceived
+			}
 		};
 
 		// Return in format expected by frontend: { success: true, data: { user: profileData } }
@@ -236,6 +258,18 @@ async function getProfile(req, res) {
 		console.log('[USER][AUTH] getProfile');
 		const user = await User.findById(req.user?.userId).select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt');
 		if (!user) return ApiResponse.notFound(res, 'User not found');
+
+		// Get dating statistics
+		const [datingLikesReceived, datingCommentsReceived] = await Promise.all([
+			DatingInteraction.countDocuments({
+				targetUser: req.user.userId,
+				action: 'like'
+			}),
+			DatingProfileComment.countDocuments({
+				targetUser: req.user.userId,
+				isDeleted: false
+			})
+		]);
 
 	const profileData = {
 		id: user._id,
@@ -270,7 +304,15 @@ async function getProfile(req, res) {
 		privacySettings: user.privacySettings,
 		lastLoginAt: user.lastLoginAt,
 		createdAt: user.createdAt,
-		updatedAt: user.updatedAt
+		updatedAt: user.updatedAt,
+		// Dating data added
+		dating: {
+			photos: user.dating?.photos || [],
+			videos: user.dating?.videos || [],
+			isDatingProfileActive: user.dating?.isDatingProfileActive || false,
+			likesReceived: datingLikesReceived,
+			commentsReceived: datingCommentsReceived
+		}
 	};
 
 	return ApiResponse.success(res, profileData, 'Profile retrieved successfully');
@@ -531,43 +573,107 @@ async function getUserProfile(req, res) {
 			currentUser.following.some(cf => cf.toString() === f.toString())
 		).length;
 
-		// Full profile data (visible to everyone)
-		const profileData = {
-			id: user._id,
-			username: user.username,
-			fullName: user.fullName,
-			profilePictureUrl: user.profilePictureUrl,
-			bio: user.bio,
-			gender: user.gender,
-			pronouns: user.pronouns,
-			likes: user.likes || [],
-			interests: user.interests || [],
-			preferences: {
-				hereFor: user.preferences?.hereFor || '',
-				primaryLanguage: user.preferences?.primaryLanguage || '',
-				secondaryLanguage: user.preferences?.secondaryLanguage || ''
-			},
-			location: user.location ? {
-				city: user.location.city,
-				country: user.location.country,
-				lat: user.location.lat,
-				lng: user.location.lng
-			} : null,
-			isVerified: user.verificationStatus === 'approved',
-			isPrivate: user.privacySettings?.isPrivate || false,
-			followersCount: user.followers?.length || 0,
-			followingCount: user.following?.length || 0,
-			createdAt: user.createdAt,
-			// Relationship flags
-			isFollowing: isFollowing,
-			isFollower: isFollower,
-			isBlocked: isBlocked,
-			hasBlockedYou: hasBlockedYou,
-			mutualFollowers: mutualFollowers
-		};
+	// Get dating statistics for other user
+	const [datingCommentsReceived, datingLikesReceived] = await Promise.all([
+		DatingProfileComment.countDocuments({
+			targetUser: userId,
+			isDeleted: false
+		}),
+		DatingInteraction.countDocuments({
+			targetUser: userId,
+			action: 'like'
+		})
+	]);
 
-		console.log('[USER][AUTH] Profile returned for user:', userId);
-		return ApiResponse.success(res, profileData, 'User profile retrieved');
+	// Calculate distance between current user and target user
+	let distance = null;
+	let distanceAway = null;
+	if (currentUser.location?.lat && currentUser.location?.lng) {
+		let targetLat = user.location?.lat;
+		let targetLng = user.location?.lng;
+
+		// Check dating preferences location if main location not available
+		if (!targetLat && user.dating?.preferences?.location?.coordinates?.lat) {
+			targetLat = user.dating.preferences.location.coordinates.lat;
+			targetLng = user.dating.preferences.location.coordinates.lng;
+		}
+
+		if (targetLat && targetLng) {
+			// Haversine formula for distance calculation
+			const toRadians = (deg) => deg * (Math.PI / 180);
+			const R = 6371; // Earth's radius in km
+			const dLat = toRadians(targetLat - currentUser.location.lat);
+			const dLon = toRadians(targetLng - currentUser.location.lng);
+			const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+					  Math.cos(toRadians(currentUser.location.lat)) * 
+					  Math.cos(toRadians(targetLat)) *
+					  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+			const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+			distance = R * c;
+
+			// Format distance
+			if (distance >= 1) {
+				distanceAway = `${Math.round(distance * 10) / 10} km away`;
+			} else {
+				const distanceMeters = Math.round(distance * 1000);
+				distanceAway = `${distanceMeters} m away`;
+			}
+		}
+	}
+
+	// Full profile data (visible to everyone)
+	const profileData = {
+		id: user._id,
+		username: user.username,
+		fullName: user.fullName,
+		profilePictureUrl: user.profilePictureUrl,
+		bio: user.bio,
+		gender: user.gender,
+		pronouns: user.pronouns,
+		likes: user.likes || [],
+		interests: user.interests || [],
+		preferences: {
+			hereFor: user.preferences?.hereFor || '',
+			primaryLanguage: user.preferences?.primaryLanguage || '',
+			secondaryLanguage: user.preferences?.secondaryLanguage || ''
+		},
+		location: user.location ? {
+			city: user.location.city,
+			country: user.location.country,
+			lat: user.location.lat,
+			lng: user.location.lng,
+			distance: distance,
+			distanceAway: distanceAway
+		} : null,
+		isVerified: user.verificationStatus === 'approved',
+		isPrivate: user.privacySettings?.isPrivate || false,
+		followersCount: user.followers?.length || 0,
+		followingCount: user.following?.length || 0,
+		createdAt: user.createdAt,
+		// Relationship flags
+		isFollowing: isFollowing,
+		isFollower: isFollower,
+		isBlocked: isBlocked,
+		hasBlockedYou: hasBlockedYou,
+		mutualFollowers: mutualFollowers,
+		// Dating data added (only show if dating profile is active)
+		dating: user.dating?.isDatingProfileActive ? {
+			photos: user.dating?.photos || [],
+			videos: user.dating?.videos || [],
+			isDatingProfileActive: true,
+			likesReceived: datingLikesReceived,
+			commentsReceived: datingCommentsReceived
+		} : {
+			photos: [],
+			videos: [],
+			isDatingProfileActive: false,
+			likesReceived: 0,
+			commentsReceived: 0
+		}
+	};
+
+	console.log('[USER][AUTH] Profile returned for user:', userId);
+	return ApiResponse.success(res, profileData, 'User profile retrieved');
 
 	} catch (e) {
 		console.error('[USER][AUTH] getUserProfile error', e?.message || e);

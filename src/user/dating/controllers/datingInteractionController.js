@@ -374,6 +374,122 @@ async function unblockProfile(req, res) {
 	}
 }
 
+async function getDatingProfileLikes(req, res) {
+	try {
+		const { profileId } = req.params;
+		const { page = 1, limit = 20 } = req.query;
+		const currentUserId = req.user?.userId;
+
+		if (!profileId) {
+			return ApiResponse.badRequest(res, 'Profile ID is required');
+		}
+
+		// Check if profile exists and is active
+		const targetUser = await User.findById(profileId).select('dating.isDatingProfileActive');
+		if (!targetUser) {
+			return ApiResponse.notFound(res, 'Profile not found');
+		}
+
+		if (!targetUser.dating?.isDatingProfileActive) {
+			return ApiResponse.badRequest(res, 'This dating profile is not active');
+		}
+
+		// Get all likes for this profile
+		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+
+		const [interactions, total] = await Promise.all([
+			DatingInteraction.find({
+				targetUser: profileId,
+				action: 'like'
+			})
+				.sort({ createdAt: -1 })
+				.skip(skip)
+				.limit(parseInt(limit, 10))
+				.populate('user', 'username fullName profilePictureUrl gender location verificationStatus')
+				.lean(),
+			DatingInteraction.countDocuments({
+				targetUser: profileId,
+				action: 'like'
+			})
+		]);
+
+		// Format the response with additional details
+		const likesWithDetails = interactions.map(interaction => {
+			const liker = interaction.user;
+			
+			// Calculate time ago
+			const likedAt = interaction.createdAt;
+			const now = new Date();
+			const diffInSeconds = Math.floor((now - likedAt) / 1000);
+			
+			let likedAgo = 'just now';
+			if (diffInSeconds >= 60) {
+				const diffInMinutes = Math.floor(diffInSeconds / 60);
+				if (diffInMinutes >= 60) {
+					const diffInHours = Math.floor(diffInMinutes / 60);
+					if (diffInHours >= 24) {
+						const diffInDays = Math.floor(diffInHours / 24);
+						if (diffInDays >= 7) {
+							const diffInWeeks = Math.floor(diffInDays / 7);
+							if (diffInWeeks >= 4) {
+								const diffInMonths = Math.floor(diffInDays / 30);
+								if (diffInMonths >= 12) {
+									const diffInYears = Math.floor(diffInDays / 365);
+									likedAgo = `${diffInYears}y`;
+								} else {
+									likedAgo = `${diffInMonths}mo`;
+								}
+							} else {
+								likedAgo = `${diffInWeeks}w`;
+							}
+						} else {
+							likedAgo = `${diffInDays}d`;
+						}
+					} else {
+						likedAgo = `${diffInHours}h`;
+					}
+				} else {
+					likedAgo = `${diffInMinutes}m`;
+				}
+			} else {
+				likedAgo = `${diffInSeconds}s`;
+			}
+
+			return {
+				userId: liker._id,
+				username: liker.username,
+				fullName: liker.fullName,
+				profilePictureUrl: liker.profilePictureUrl,
+				gender: liker.gender,
+				location: {
+					city: liker.location?.city || '',
+					country: liker.location?.country || ''
+				},
+				isVerified: liker.verificationStatus === 'approved',
+				likedAt: likedAt,
+				likedAgo: likedAgo,
+				isMatch: interaction.status === 'matched',
+				comment: interaction.comment?.text || null
+			};
+		});
+
+		return ApiResponse.success(res, {
+			likes: likesWithDetails,
+			pagination: {
+				currentPage: parseInt(page, 10),
+				totalPages: Math.ceil(total / parseInt(limit, 10)),
+				totalLikes: total,
+				hasNext: skip + interactions.length < total,
+				hasPrev: parseInt(page, 10) > 1
+			}
+		}, 'Dating profile likes retrieved successfully');
+
+	} catch (error) {
+		console.error('[DATING][LIKES] Error:', error);
+		return ApiResponse.serverError(res, 'Failed to get dating profile likes');
+	}
+}
+
 module.exports = {
 	likeProfile,
 	dislikeProfile,
@@ -382,6 +498,7 @@ module.exports = {
 	getMatches,
 	reportProfile,
 	blockProfile,
-	unblockProfile
+	unblockProfile,
+	getDatingProfileLikes
 };
 
