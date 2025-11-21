@@ -25,6 +25,15 @@ function buildKey({ userId, category = 'post', type = 'images', filename }) {
 	return `${prefix}/${name}`;
 }
 
+function normalizeMetadata(input = {}) {
+	const normalized = {};
+	for (const [key, value] of Object.entries(input)) {
+		if (value === undefined || value === null) continue;
+		normalized[key] = typeof value === 'string' ? value : String(value);
+	}
+	return normalized;
+}
+
 async function uploadBuffer({ buffer, contentType, userId, category, type, filename, acl = 'public-read', metadata = {} }) {
 	const Key = buildKey({ userId, category, type, filename });
 	const params = {
@@ -33,7 +42,7 @@ async function uploadBuffer({ buffer, contentType, userId, category, type, filen
 		Body: buffer,
 		ContentType: contentType,
 		// ACL removed - bucket has ACL disabled for security
-		Metadata: metadata,
+		Metadata: normalizeMetadata(metadata),
 	};
 	// eslint-disable-next-line no-console
 	console.log('[S3] PutObject', { Key, ContentType: contentType });
@@ -73,17 +82,18 @@ async function listByPrefix(prefix, maxKeys = 1000) {
 // Enhanced upload function for posts with media type detection
 async function uploadToS3({ buffer, contentType, userId, category, type, filename, metadata = {} }) {
 	const Key = buildKey({ userId, category, type, filename });
+	const baseMetadata = {
+		...metadata,
+		originalName: filename,
+		uploadedAt: new Date().toISOString(),
+		userId: String(userId)
+	};
 	const params = {
 		Bucket: BUCKET,
 		Key,
 		Body: buffer,
 		ContentType: contentType,
-		Metadata: {
-			...metadata,
-			originalName: filename,
-			uploadedAt: new Date().toISOString(),
-			userId: String(userId)
-		},
+		Metadata: normalizeMetadata(baseMetadata),
 	};
 
 	console.log('[S3] Uploading to S3:', { Key, ContentType: contentType, Size: buffer.length });

@@ -9,13 +9,17 @@ const {
 	getMatches,
 	reportProfile,
 	blockProfile,
-	unblockProfile
+	unblockProfile,
+	getDatingProfileLikes
 } = require('../controllers/datingInteractionController');
 
 router.use(authorize([Roles.USER]));
 
 router.post('/profiles/:profileId/like', likeProfile);
 router.post('/profiles/:profileId/dislike', dislikeProfile);
+
+// Get all likes on a dating profile (MUST come before other routes)
+router.get('/profiles/:profileId/likes', getDatingProfileLikes);
 
 router.post('/profiles/:profileId/comments', addProfileComment);
 router.get('/profiles/:profileId/comments', getProfileComments);

@@ -98,15 +98,15 @@ app.use('/user/dating', datingMediaRoutes);
 app.use('/user/dating', datingProfileRoutes);
 app.use('/user/dating', datingInteractionRoutes);
 
-// Notification routes (new architecture)
-const notificationRoutes = require('./notification/routes/notificationRoutes');
-const notificationPreferencesRoutes = require('./notification/routes/notificationPreferencesRoutes');
-app.use('/api/v1/notifications', notificationRoutes);
-app.use('/api/v1/notification-preferences', notificationPreferencesRoutes);
+// // Notification routes (new architecture)
+// const notificationRoutes = require('./notification/routes/notificationRoutes');
+// const notificationPreferencesRoutes = require('./notification/routes/notificationPreferencesRoutes');
+// app.use('/api/v1/notifications', notificationRoutes);
+// app.use('/api/v1/notification-preferences', notificationPreferencesRoutes);
 
-// Device token routes for push notifications
-const deviceTokenRoutes = require('./user/auth/routes/deviceTokenRoutes');
-app.use('/api/v1/user/device-token', deviceTokenRoutes);
+// // Device token routes for push notifications
+// const deviceTokenRoutes = require('./user/auth/routes/deviceTokenRoutes');
+// app.use('/api/v1/user/device-token', deviceTokenRoutes);
 
 // Enhanced API Routes (new optimized routes)
 app.use('/api/v1/user', enhancedUserRoutes);
