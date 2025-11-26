@@ -27,6 +27,7 @@ const MAX_FILES = 10; // allow multiple images/videos
 const storage = multer.memoryStorage();
 
 function fileFilter(req, file, cb) {
+	console.log("fileFilter",file);
 	if (!ACCEPTED_MIME.includes(file.mimetype)) {
 		// eslint-disable-next-line no-console
 		console.warn('[UPLOAD] Rejected file type', { mimetype: file.mimetype, filename: file.originalname });
