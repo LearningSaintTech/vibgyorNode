@@ -36,6 +36,7 @@ function normalizeMetadata(input = {}) {
 
 async function uploadBuffer({ buffer, contentType, userId, category, type, filename, acl = 'public-read', metadata = {} }) {
 	const Key = buildKey({ userId, category, type, filename });
+	console.log("Key",Key);
 	const params = {
 		Bucket: BUCKET,
 		Key,

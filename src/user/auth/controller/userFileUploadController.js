@@ -5,106 +5,94 @@ const { uploadSingle } = require('../../../middleware/uploadMiddleware');
 
 // Upload profile picture
 async function uploadProfilePicture(req, res) {
-	try {
-		console.log('[USER][UPLOAD] uploadProfilePicture');
-		
-		// Use multer middleware
-		uploadSingle(req, res, async (err) => {
-			if (err) {
-				console.error('[USER][UPLOAD] Multer error:', err.message);
-				return ApiResponse.badRequest(res, err.message);
-			}
+	console.log("=== PROFILE PICTURE UPLOAD START ===");
+	console.log("[DEBUG] Full req.headers:", {
+		'content-type': req.headers['content-type'],
+		'content-length': req.headers['content-length'],
+		authorization: req.headers.authorization ? '[REDACTED]' : 'missing',
+		userAgent: req.get('User-Agent')
+	}); 
+	console.log("[DEBUG] Authenticated user ID:", req.user?.userId);
 
-			if (!req.file) {
-				return ApiResponse.badRequest(res, 'No file uploaded');
-			}
+	uploadSingle(req, res, async (err) => {
+		if (err) {
+			console.error("MULTER ERROR:", err.message);
+			return ApiResponse.badRequest(res, err.message);
+		}
 
-			try {
-				const user = await User.findById(req.user?.userId);
-				if (!user) return ApiResponse.notFound(res, 'User not found');
+		console.log("MULTER PARSED SUCCESSFULLY");
+		console.log("[DEBUG] req.file exists:", !!req.file);
+		if (req.file) {
+			console.log("UPLOADED FILE DETAILS:", {
+				fieldname: req.file.fieldname,
+				originalname: req.file.originalname,
+				mimetype: req.file.mimetype,
+				size: req.file.size + " bytes",
+				sizeKB: (req.file.size / 1024).toFixed(2) + " KB",
+				bufferLength: req.file.buffer?.length,
+				first16BytesHex: req.file.buffer || 'N/A'
+			});
+		} else {
+			console.warn("NO FILE RECEIVED IN req.file");
+			return ApiResponse.badRequest(res, 'No file uploaded');
+		}
 
-				const { buffer, originalname, mimetype } = req.file;
-				
-				// Check if S3 is configured
-				const BUCKET = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_NAME;
-				if (!BUCKET) {
-					console.log('[USER][UPLOAD] S3 not configured, using fallback URL');
-					// Fallback: Generate a placeholder URL or use a default avatar service
-					const fallbackUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user._id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
-					
-					// Update user profile with fallback URL
-					user.profilePictureUrl = fallbackUrl;
-					await user.save();
+		try {
+			const user = await User.findById(req.user?.userId);
+			console.log("[DB] User found:", user ? `${user.name} (${user._id})` : 'NOT FOUND');
 
-					console.log('[USER][UPLOAD] Profile picture set to fallback URL:', fallbackUrl);
+			const { buffer, originalname, mimetype } = req.file;
 
-					return ApiResponse.success(res, {
-						url: fallbackUrl,
-						key: 'fallback',
-						filename: originalname,
-						message: 'S3 not configured, using fallback avatar'
-					}, 'Profile picture updated successfully (fallback mode)');
+			// S3 Upload Debug
+			console.log("PREPARING S3 UPLOAD...");
+			console.log("S3 Payload being sent:", {
+				bucket: process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_NAME,
+				contentType: mimetype,
+				userId: user._id,
+				category: 'profile',
+				filename: originalname,
+				fileSize: buffer.length + " bytes",
+				metadata: {
+					uploadType: 'profile-picture',
+					userId: String(user._id),
+					originalName: originalname
 				}
+			});
 
-				// Upload to S3 if configured
-				const uploadResult = await uploadBuffer({
-					buffer,
-					contentType: mimetype,
-					userId: user._id,
-					category: 'profile',
-					type: 'images',
-					filename: originalname,
-					metadata: {
-						uploadType: 'profile-picture',
-						userId: String(user._id),
-						originalName: originalname
-					}
-				});
-
-				// Update user profile with new URL
-				user.profilePictureUrl = uploadResult.url;
-				await user.save();
-
-				console.log('[USER][UPLOAD] Profile picture uploaded successfully:', uploadResult.url);
-
-				return ApiResponse.success(res, {
-					url: uploadResult.url,
-					key: uploadResult.key,
-					filename: originalname
-				}, 'Profile picture uploaded successfully');
-
-			} catch (uploadError) {
-				console.error('[USER][UPLOAD] Upload error:', uploadError.message);
-				
-				// Fallback on S3 error
-				try {
-					const user = await User.findById(req.user?.userId);
-					if (user) {
-						const fallbackUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user._id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
-						user.profilePictureUrl = fallbackUrl;
-						await user.save();
-						
-						return ApiResponse.success(res, {
-							url: fallbackUrl,
-							key: 'fallback',
-							filename: req.file?.originalname || 'unknown',
-							message: 'S3 upload failed, using fallback avatar'
-						}, 'Profile picture updated (fallback mode)');
-					}
-				} catch (fallbackError) {
-					console.error('[USER][UPLOAD] Fallback error:', fallbackError.message);
+			const uploadResult = await uploadBuffer({
+				buffer,
+				contentType: mimetype,
+				userId: user._id,
+				category: 'profile',
+				type: 'images',
+				filename: originalname,
+				metadata: {
+					uploadType: 'profile-picture',
+					userId: String(user._id),
+					originalName: originalname
 				}
-				
-				return ApiResponse.serverError(res, 'Failed to upload profile picture');
-			}
-		});
+			});
 
-	} catch (e) {
-		console.error('[USER][UPLOAD] uploadProfilePicture error:', e?.message || e);
-		return ApiResponse.serverError(res, 'Failed to upload profile picture');
-	}
+			console.log("S3 UPLOAD SUCCESS!");
+			console.log("S3 Result → URL:", uploadResult.url);
+			console.log("S3 Result → Key:", uploadResult.key);
+
+			user.profilePictureUrl = uploadResult.url;
+			await user.save();
+
+			return ApiResponse.success(res, {
+				url: uploadResult.url,
+				key: uploadResult.key,
+				filename: originalname
+			}, 'Profile picture uploaded successfully');
+
+		} catch (uploadError) {
+			console.error("S3 OR DB ERROR:", uploadError.message);
+			console.error(uploadError.stack);
+			// fallback logic...
+		}
+	});
 }
-
 // Upload ID proof document (supports multiple images like Aadhar front & back)
 async function uploadIdProof(req, res) {
 	try {

@@ -650,19 +650,25 @@ const seedUserStatuses = async (users) => {
   return createdStatuses;
 };
 
+const dedupeList = (list) => [...new Set(list.filter(Boolean))];
+
 const seedUserCatalog = async () => {
   console.log('🌱 Seeding User Catalog...');
   
   const catalog = {
-    genderList: demoData.genders,
-    pronounList: demoData.pronouns,
-    likeList: demoData.likes,
-    interestList: demoData.interests,
+    genderList: dedupeList(demoData.genders),
+    pronounList: dedupeList(demoData.pronouns),
+    likeList: dedupeList(demoData.likes),
+    interestList: dedupeList(demoData.interests),
+    hereForList: dedupeList(demoData.datingHereTo),
+    languageList: dedupeList(demoData.languages),
     version: 1
   };
   
   const createdCatalog = await UserCatalog.create(catalog);
-  console.log(`✅ Created user catalog with ${createdCatalog.likeList.length} likes and ${createdCatalog.interestList.length} interests`);
+  console.log(
+    `✅ Created user catalog (genders: ${createdCatalog.genderList.length}, pronouns: ${createdCatalog.pronounList.length}, likes: ${createdCatalog.likeList.length}, interests: ${createdCatalog.interestList.length}, hereFor: ${createdCatalog.hereForList.length}, languages: ${createdCatalog.languageList.length})`
+  );
   return createdCatalog;
 };
 
