@@ -17,6 +17,7 @@ const UserSchema = new mongoose.Schema(
 	interests: [{ type: String }],
 	preferences: {
 		hereFor: { type: String, default: '' },
+		wantToMeet: { type: String, default: '' },
 		primaryLanguage: { type: String, default: '' },
 		secondaryLanguage: { type: String, default: '' }
 	},

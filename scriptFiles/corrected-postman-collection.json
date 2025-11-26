@@ -1,9 +1,9 @@
 {
   "info": {
-    "name": "VibgyorNode API - Complete Collection (Corrected)",
+    "name": "vibNode",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_postman_id": "vibgyor-node-corrected-collection",
-    "description": "Complete API collection for VibgyorNode backend with all endpoints correctly organized.\n\n📸 Stories Feature (Simplified - 9 endpoints):\n- Image/Video/Text stories with 24h auto-expiration\n- Privacy controls: public/followers/close_friends\n- @mentions, hashtag search, view tracking\n- Replies (DM/public), reporting, analytics\n- NO notifications, reactions, polls, highlights\n\n🔐 Authentication:\n- Admin, SubAdmin, User roles\n- JWT access/refresh tokens\n- Phone & Email OTP verification\n\n💬 Enhanced Features:\n- Real-time chat & messaging\n- Video/Audio calls (WebRTC)\n- Posts, Search, Notifications\n- User management & moderation"
+    "description": "Complete API collection for VibgyorNode backend with all endpoints correctly organized.\n\n📸 Stories Feature (Simplified - 9 endpoints):\n- Image/Video/Text stories with 24h auto-expiration\n- Privacy controls: public/followers/close_friends\n- @mentions, hashtag search, view tracking\n- Replies (DM/public), reporting, analytics\n- NO notifications, reactions, polls, highlights\n\n💑 Dating Feature:\n- Profile management with photos/videos\n- Preferences & discovery filters\n- Like/dislike, matches, comments\n- Safety features (report/block)\n\n🔐 Authentication:\n- Admin, SubAdmin, User roles\n- JWT access/refresh tokens\n- Phone & Email OTP verification\n\n💬 Enhanced Features:\n- Real-time chat & messaging\n- Video/Audio calls (WebRTC)\n- Posts, Search, Notifications\n- User management & moderation"
   },
   "item": [
     {
@@ -3179,6 +3179,671 @@
               }
             }
           ]
+        },
+        {
+          "name": "Dating",
+          "description": "Complete dating feature APIs including profile management, media uploads, preferences, discovery, interactions, and safety features.",
+          "item": [
+            {
+              "name": "Dating Media",
+              "item": [
+                {
+                  "name": "Get Dating Profile",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profile",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profile"]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && json.data.datingProfile && json.data.datingProfile._id) {",
+                          "  pm.environment.set('targetUserId', json.data.datingProfile._id);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Upload Photos",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "formdata",
+                      "formdata": [
+                        { "key": "photos", "type": "file", "src": "", "description": "Photo files (max 5, 50MB each, JPEG/PNG/WebP/GIF)" }
+                      ]
+                    },
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/photos",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "photos"]
+                    }
+                  }
+                },
+                {
+                  "name": "Upload Videos",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "formdata",
+                      "formdata": [
+                        { "key": "videos", "type": "file", "src": "", "description": "Video files (max 2, 100MB each)" },
+                        { "key": "durations", "type": "text", "value": "12.5", "description": "Optional duration (seconds) per video index" }
+                      ]
+                    },
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/videos",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "videos"]
+                    }
+                  }
+                },
+                {
+                  "name": "Delete Photo",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/photos/{{photoIndex}}",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "photos", "{{photoIndex}}"]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "if (!pm.variables.get('photoIndex')) {",
+                          "  pm.variables.set('photoIndex', '0');",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Delete Video",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/videos/{{videoIndex}}",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "videos", "{{videoIndex}}"]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "prerequest",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "if (!pm.variables.get('videoIndex')) {",
+                          "  pm.variables.set('videoIndex', '0');",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Update Photo Order",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"photoIndex\": 0,\n  \"order\": 2\n}"
+                    },
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/photos/order",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "photos", "order"]
+                    }
+                  }
+                },
+                {
+                  "name": "Update Video Order",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"videoIndex\": 1,\n  \"order\": 0\n}"
+                    },
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/videos/order",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "videos", "order"]
+                    }
+                  }
+                },
+                {
+                  "name": "Toggle Profile",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{ \"isActive\": true }"
+                    },
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/toggle",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "toggle"]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Preferences & Discovery",
+              "item": [
+                {
+                  "name": "Get Preferences",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/preferences",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "preferences"]
+                    }
+                  }
+                },
+                {
+                  "name": "Update Preferences",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\n  \"hereTo\": \"Make New Friends\",\n  \"wantToMeet\": \"Woman\",\n  \"ageMin\": 20,\n  \"ageMax\": 35,\n  \"languages\": [\"English\", \"French\"],\n  \"location\": {\n    \"city\": \"Berlin\",\n    \"country\": \"Germany\",\n    \"coordinates\": {\"lat\": 52.52, \"lng\": 13.405}\n  },\n  \"distanceMin\": 0,\n  \"distanceMax\": 25\n}"
+                    },
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/preferences",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "preferences"]
+                    }
+                  }
+                },
+                {
+                  "name": "Search Profiles (Default)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles?search=anna&hereTo=Make%20New%20Friends&wantToMeet=Man&languages=English,French&city=Berlin&country=Germany&distanceMax=25&page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles"],
+                      "query": [
+                        { "key": "search", "value": "anna" },
+                        { "key": "hereTo", "value": "Make New Friends" },
+                        { "key": "wantToMeet", "value": "Man" },
+                        { "key": "languages", "value": "English,French" },
+                        { "key": "city", "value": "Berlin" },
+                        { "key": "country", "value": "Germany" },
+                        { "key": "distanceMax", "value": "25" },
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                          "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Search Profiles (Nearby)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles?filter=near_by&distanceMax=10",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles"],
+                      "query": [
+                        { "key": "filter", "value": "near_by" },
+                        { "key": "distanceMax", "value": "10" }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "Search Profiles (Same Interests)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles?filter=same_interests",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles"],
+                      "query": [
+                        { "key": "filter", "value": "same_interests" }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "Search Profiles (Liked You)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles?filter=liked_you&page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles"],
+                      "query": [
+                        { "key": "filter", "value": "liked_you" },
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                          "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Search Profiles (Liked by You)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles?filter=liked_by_you&page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles"],
+                      "query": [
+                        { "key": "filter", "value": "liked_by_you" },
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                          "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Search Profiles (New Dater)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles?filter=new_dater&page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles"],
+                      "query": [
+                        { "key": "filter", "value": "new_dater" },
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                          "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Interactions",
+              "item": [
+                {
+                  "name": "Like Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{}",
+                      "description": "Comment is optional. Use { \"comment\": \"Great profile!\" } to add a comment with the like."
+                    },
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/like",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "like"]
+            }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && json.data.matchId) {",
+                          "  pm.environment.set('matchId', json.data.matchId);",
+                          "}",
+                          "if (json.data && json.data.matches && json.data.matches.length > 0) {",
+                          "  pm.environment.set('matchId', json.data.matches[0].matchId);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Dislike Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/dislike",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "dislike"]
+            }
+                  }
+                },
+                {
+                  "name": "Get Likes For Profile",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/likes?page=1&limit=20",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "likes"],
+                      "query": [
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "Get Likes For My Profile",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles/me/likes?page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles", "me", "likes"],
+                      "query": [
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "Add Comment",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{ \"text\": \"Loved your travel photos!\" }"
+                    },
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/comments",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "comments"]
+            }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && json.data.comment && json.data.comment._id) {",
+                          "  pm.environment.set('commentId', json.data.comment._id);",
+                          "}",
+                          "if (json.data && json.data.comments && json.data.comments.length > 0) {",
+                          "  pm.environment.set('commentId', json.data.comments[0]._id || json.data.comments[0].id);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Get Comments",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/comments?page=1&limit=20",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "comments"],
+                      "query": [
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "Get Comments (My Profile)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/profiles/me/comments?page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "profiles", "me", "comments"],
+                      "query": [
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "name": "Get Matches",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+                    "url": {
+                      "raw": "{{BASE_URL}}/user/dating/matches?status=active&page=1&limit=20",
+                      "host": ["{{BASE_URL}}"],
+                      "path": ["user", "dating", "matches"],
+                      "query": [
+                        { "key": "status", "value": "active" },
+                        { "key": "page", "value": "1" },
+                        { "key": "limit", "value": "20" }
+                      ]
+                    }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && json.data.matches && json.data.matches.length > 0) {",
+                          "  pm.environment.set('matchId', json.data.matches[0].matchId || json.data.matches[0]._id);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Safety",
+              "item": [
+                {
+                  "name": "Report Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" },
+                      { "key": "Content-Type", "value": "application/json", "type": "text" }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{ \"description\": \"Fake profile\" }"
+                    },
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/report",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "report"]
+            }
+                  },
+                  "event": [
+                    {
+                      "listen": "test",
+                      "script": {
+                        "type": "text/javascript",
+                        "exec": [
+                          "const json = pm.response.json();",
+                          "if (json.data && json.data.reportId) {",
+                          "  pm.environment.set('reportId', json.data.reportId);",
+                          "}"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "Block Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/block",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "block"]
+            }
+                  }
+                },
+                {
+                  "name": "Unblock Profile",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      { "key": "Authorization", "value": "Bearer {{USER_ACCESS_TOKEN}}", "type": "text" }
+                    ],
+            "url": {
+              "raw": "{{BASE_URL}}/user/dating/profiles/{{targetUserId}}/block",
+              "host": ["{{BASE_URL}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "block"]
+            }
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -3748,7 +4413,58 @@
       ]
     }
   ],
-  "event": [],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script for collection-wide variable extraction",
+          "let json;",
+          "try {",
+          "  json = pm.response.json();",
+          "} catch (err) {",
+          "  return;",
+          "}",
+          "const data = json?.data || {};",
+          "",
+          "// Dating profile variables",
+          "if (data.datingProfile?._id) {",
+          "  pm.environment.set('targetUserId', data.datingProfile._id);",
+          "  pm.environment.set('profileId', data.datingProfile._id);",
+          "}",
+          "if (Array.isArray(data.profiles) && data.profiles.length) {",
+          "  const firstProfileId = data.profiles[0]._id || data.profiles[0].userId;",
+          "  if (firstProfileId) {",
+          "    pm.environment.set('targetUserId', firstProfileId);",
+          "    pm.environment.set('profileId', firstProfileId);",
+          "  }",
+          "}",
+          "",
+          "// Dating match variables",
+          "if (data.matchId) {",
+          "  pm.environment.set('matchId', data.matchId);",
+          "}",
+          "if (data.matches && data.matches.length) {",
+          "  pm.environment.set('matchId', data.matches[0].matchId || data.matches[0]._id);",
+          "}",
+          "",
+          "// Dating comment variables",
+          "if (data.comment?._id) {",
+          "  pm.environment.set('commentId', data.comment._id);",
+          "}",
+          "if (data.comments && data.comments.length) {",
+          "  pm.environment.set('commentId', data.comments[0]._id || data.comments[0].id);",
+          "}",
+          "",
+          "// Dating report variables",
+          "if (data.reportId) {",
+          "  pm.environment.set('reportId', data.reportId);",
+          "}"
+        ]
+      }
+    }
+  ],
   "variable": [
     {
       "key": "BASE_URL",
@@ -3840,6 +4556,30 @@
     },
     {
       "key": "MODERATION_ID",
+      "value": ""
+    },
+    {
+      "key": "targetUserId",
+      "value": ""
+    },
+    {
+      "key": "matchId",
+      "value": ""
+    },
+    {
+      "key": "commentId",
+      "value": ""
+    },
+    {
+      "key": "photoIndex",
+      "value": "0"
+    },
+    {
+      "key": "videoIndex",
+      "value": "0"
+    },
+    {
+      "key": "reportId",
       "value": ""
     }
   ]

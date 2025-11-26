@@ -11,7 +11,7 @@ const DatingProfileComment = require('./src/user/dating/models/datingProfileComm
 // 🎯 DATING API SEED SCRIPT - HIGHLIGHTED TEST PROFILES
 // ====================================================================
 //
-// LOCAL DATABASE: mongodb://localhost:27017/vibgyorNode
+// LOCAL DATABASE: mongodb://localhost:27017/vib
 //
 // 📱 TEST PROFILES TO USE IN POSTMAN:
 // ====================================================================
@@ -104,7 +104,7 @@ const DatingProfileComment = require('./src/user/dating/models/datingProfileComm
 // Database connection
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vibgyorNode';
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vib';
     await mongoose.connect(mongoURI);
     console.log('✅ Connected to MongoDB:', mongoURI);
   } catch (error) {

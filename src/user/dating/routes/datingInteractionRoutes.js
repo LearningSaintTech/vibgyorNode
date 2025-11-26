@@ -15,21 +15,21 @@ const {
 
 router.use(authorize([Roles.USER]));
 
-router.post('/profiles/:profileId/like', likeProfile);
-router.post('/profiles/:profileId/dislike', dislikeProfile);
+router.post('/profiles/:userId/like', likeProfile);
+router.post('/profiles/:userId/dislike', dislikeProfile);
 
 // Get all likes on a dating profile (MUST come before other routes)
-router.get('/profiles/:profileId/likes', getDatingProfileLikes);
+router.get('/profiles/:userId/likes', getDatingProfileLikes);
 
-router.post('/profiles/:profileId/comments', addProfileComment);
-router.get('/profiles/:profileId/comments', getProfileComments);
+router.post('/profiles/:userId/comments', addProfileComment);
+router.get('/profiles/:userId/comments', getProfileComments);
 
 router.get('/matches', getMatches);
 
-router.post('/profiles/:profileId/report', reportProfile);
+router.post('/profiles/:userId/report', reportProfile);
 
-router.post('/profiles/:profileId/block', blockProfile);
-router.delete('/profiles/:profileId/block', unblockProfile);
+router.post('/profiles/:userId/block', blockProfile);
+router.delete('/profiles/:userId/block', unblockProfile);
 
 module.exports = router;
 

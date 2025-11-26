@@ -26,7 +26,7 @@ const ContentModeration = require('./user/social/userModel/contentModerationMode
 // Database connection
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vibgyorNode';
+    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vib';
     await mongoose.connect(mongoURI);
     console.log('✅ Connected to MongoDB');
   } catch (error) {
@@ -422,6 +422,9 @@ const seedUsers = async () => {
   
   const users = [];
   for (let i = 0; i < 30; i++) {
+    const primaryLanguage = getRandomElement(demoData.languages);
+    const secondaryLanguage = getRandomElement(demoData.languages.filter(lang => lang !== primaryLanguage));
+
     const user = {
       phoneNumber: demoData.phoneNumbers[i],
       countryCode: '+91',
@@ -444,6 +447,12 @@ const seedUsers = async () => {
         city: getRandomElement(demoData.cities),
         country: getRandomElement(demoData.countries)
       },
+      preferences: {
+        hereFor: getRandomElement(demoData.datingHereTo),
+        wantToMeet: getRandomElement(demoData.datingWantToMeet),
+        primaryLanguage,
+        secondaryLanguage
+      },
       role: 'user',
       isProfileCompleted: Math.random() > 0.2, // 80% completed
       isActive: true, // All users active for testing
@@ -464,6 +473,39 @@ const seedUsers = async () => {
   return createdUsers;
 };
 
+const searchSampleProfiles = [
+  {
+    city: 'Berlin',
+    country: 'Germany',
+    lat: 52.52,
+    lng: 13.405,
+    hereTo: 'Make New Friends',
+    wantToMeet: 'Woman',
+    languages: ['English', 'French'],
+    interests: ['Photography', 'Travel', 'Music']
+  },
+  {
+    city: 'Paris',
+    country: 'France',
+    lat: 48.8566,
+    lng: 2.3522,
+    hereTo: 'Dating',
+    wantToMeet: 'Man',
+    languages: ['French', 'English'],
+    interests: ['Cooking', 'Art', 'Travel']
+  },
+  {
+    city: 'New York',
+    country: 'United States',
+    lat: 40.7128,
+    lng: -74.0060,
+    hereTo: 'Serious Relationship',
+    wantToMeet: 'Everyone',
+    languages: ['English', 'Spanish'],
+    interests: ['Photography', 'Food', 'Music']
+  }
+];
+
 const seedDatingProfiles = async (users) => {
   console.log('🌱 Configuring Dating Profiles...');
 
@@ -477,7 +519,7 @@ const seedDatingProfiles = async (users) => {
   const operations = [];
   let activeCount = 0;
 
-  for (const user of users) {
+  users.forEach((user, index) => {
     const isActive = randomBool(0.6);
     if (isActive) activeCount += 1;
 
@@ -505,43 +547,68 @@ const seedDatingProfiles = async (users) => {
       };
     });
 
+    const sampleProfile = searchSampleProfiles[index] || null;
+
+    const hereTo = sampleProfile?.hereTo || getRandomElement(demoData.datingHereTo);
+    const wantToMeet = sampleProfile?.wantToMeet || getRandomElement(demoData.datingWantToMeet);
+    const languages = sampleProfile?.languages || getRandomElements(demoData.languages, getRandomInt(1, 3));
+    const location = sampleProfile ? {
+      city: sampleProfile.city,
+      country: sampleProfile.country,
+      coordinates: { lat: sampleProfile.lat, lng: sampleProfile.lng }
+    } : {
+      city: user.location?.city || getRandomElement(demoData.cities),
+      country: user.location?.country || getRandomElement(demoData.countries),
+      coordinates: {
+        lat: user.location?.lat || 40.7128 + (Math.random() - 0.5) * 10,
+        lng: user.location?.lng || -74.0060 + (Math.random() - 0.5) * 10
+      }
+    };
+
     const preferences = {
-      hereTo: getRandomElement(demoData.datingHereTo),
-      wantToMeet: getRandomElement(demoData.datingWantToMeet),
+      hereTo,
+      wantToMeet,
       ageRange: {
         min: getRandomInt(18, 28),
         max: getRandomInt(30, 45)
       },
-      languages: getRandomElements(demoData.languages, getRandomInt(1, 3)),
-      location: {
-        city: user.location?.city || getRandomElement(demoData.cities),
-        country: user.location?.country || getRandomElement(demoData.countries),
-        coordinates: {
-          lat: user.location?.lat || 0,
-          lng: user.location?.lng || 0
-        }
-      },
+      languages,
+      location,
       distanceRange: {
         min: 0,
-        max: getRandomElement([5, 10, 25, 50, 100])
+        max: sampleProfile ? 25 : getRandomElement([5, 10, 25, 50, 100])
       }
     };
+
+    const setPayload = {
+      'dating.photos': photos,
+      'dating.videos': videos,
+      'dating.isDatingProfileActive': isActive,
+      'dating.lastUpdatedAt': new Date(),
+      'dating.preferences': preferences,
+      'preferences.hereFor': hereTo,
+      'preferences.wantToMeet': wantToMeet,
+      'preferences.primaryLanguage': languages[0] || '',
+      'preferences.secondaryLanguage': languages[1] || '',
+      'location.city': location.city,
+      'location.country': location.country,
+      'location.lat': location.coordinates.lat,
+      'location.lng': location.coordinates.lng
+    };
+
+    if (sampleProfile?.interests) {
+      setPayload.interests = sampleProfile.interests;
+    }
 
     operations.push({
       updateOne: {
         filter: { _id: user._id },
         update: {
-          $set: {
-            'dating.photos': photos,
-            'dating.videos': videos,
-            'dating.isDatingProfileActive': isActive,
-            'dating.lastUpdatedAt': new Date(),
-            'dating.preferences': preferences
-          }
+          $set: setPayload
         }
       }
     });
-  }
+  });
 
   if (operations.length > 0) {
     await User.bulkWrite(operations);
@@ -1037,7 +1104,7 @@ const seedPosts = async (users) => {
       content: content,
       caption: Math.random() > 0.5 ? content.substring(0, 100) : '',
       media: Math.random() > 0.7 ? [{
-        type: getRandomElement(['image', 'video', 'audio']),
+        type: getRandomElement(['image', 'video']),
         url: 'https://yoraaecommerce.s3.ap-south-1.amazonaws.com/68e75b3b6375ab1ca60c7d44/profile-images/1759992714775-group-three-fashion-designers-working-atelier-with-laptop-papers.jpg',
         filename: `post_${i}.jpg`,
         fileSize: Math.floor(Math.random() * 5000000) + 100000,

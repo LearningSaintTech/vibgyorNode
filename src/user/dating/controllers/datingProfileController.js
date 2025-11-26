@@ -2,13 +2,51 @@ const ApiResponse = require('../../../utils/apiResponse');
 const datingProfileService = require('../services/datingProfileService');
 const User = require('../../auth/model/userAuthModel');
 
+function normalizeLanguages(languages) {
+	if (!languages) {
+		return [];
+	}
+
+	if (Array.isArray(languages)) {
+		return languages.filter(Boolean);
+	}
+
+	if (typeof languages === 'string') {
+		return languages.split(',').map(lang => lang.trim()).filter(Boolean);
+	}
+
+	return [];
+}
+
+function buildPreferencesResponse(user) {
+	const primaryLanguage = user.preferences?.primaryLanguage || '';
+	const secondaryLanguage = user.preferences?.secondaryLanguage || '';
+	const languages = [primaryLanguage, secondaryLanguage].filter(Boolean);
+
+	return {
+		hereTo: user.preferences?.hereFor || '',
+		wantToMeet: user.preferences?.wantToMeet || '',
+		ageRange: user.dating?.preferences?.ageRange || { min: 18, max: 100 },
+		languages,
+		location: {
+			city: user.location?.city || '',
+			country: user.location?.country || '',
+			coordinates: {
+				lat: user.location?.lat ?? null,
+				lng: user.location?.lng ?? null
+			}
+		},
+		distanceRange: user.dating?.preferences?.distanceRange || { min: 0, max: 100 }
+	};
+}
+
 /**
  * Get all dating profiles with filters
  * Supports search by name/username and various filters
  */
 async function getAllDatingProfiles(req, res) {
 	try {
-		console.log('[DATING][PROFILE] getAllDatingProfiles request');
+		console.log('[DATING][PROFILE] getAllDatingProfiles request', { query: req.query, userId: req.user?.userId });
 		
 		const currentUserId = req.user?.userId;
 		if (!currentUserId) {
@@ -26,7 +64,7 @@ async function getAllDatingProfiles(req, res) {
 			city = null,
 			country = null, // Note: location doesn't have state field in schema
 			distanceMax = null, // in km
-			filter = 'all', // 'all', 'liked_you', 'new_dater', 'near_by', 'same_interests'
+			filter = 'all', // 'all', 'liked_you', 'liked_by_you', 'new_dater', 'near_by', 'same_interests'
 			page = 1,
 			limit = 20
 		} = req.query;
@@ -69,7 +107,11 @@ async function getAllDatingProfiles(req, res) {
 			}
 		);
 
-		console.log(`[DATING][PROFILE] Found ${result.profiles.length} profiles`);
+		console.log('[DATING][PROFILE] getAllDatingProfiles result', {
+			count: result.profiles.length,
+			page: result.pagination?.page,
+			limit: result.pagination?.limit
+		});
 
 		return ApiResponse.success(
 			res,
@@ -92,7 +134,7 @@ async function getAllDatingProfiles(req, res) {
  */
 async function updateDatingPreferences(req, res) {
 	try {
-		console.log('[DATING][PREFERENCES] updateDatingPreferences request');
+		console.log('[DATING][PREFERENCES] update request', { body: req.body, userId: req.user?.userId });
 		
 		const currentUserId = req.user?.userId;
 		if (!currentUserId) {
@@ -115,6 +157,8 @@ async function updateDatingPreferences(req, res) {
 			distanceMax
 		} = req.body;
 
+		const languagesArr = normalizeLanguages(languages);
+
 		// Initialize dating object if it doesn't exist
 		if (!user.dating) {
 			user.dating = {
@@ -130,12 +174,23 @@ async function updateDatingPreferences(req, res) {
 			user.dating.preferences = {};
 		}
 
+		if (!user.preferences) {
+			user.preferences = {};
+		}
+
 		// Update preferences
 		if (hereTo !== undefined) {
+			user.preferences.hereFor = hereTo;
 			user.dating.preferences.hereTo = hereTo;
 		}
 		if (wantToMeet !== undefined) {
+			user.preferences.wantToMeet = wantToMeet;
 			user.dating.preferences.wantToMeet = wantToMeet;
+		}
+		if (languagesArr.length) {
+			user.preferences.primaryLanguage = languagesArr[0] || '';
+			user.preferences.secondaryLanguage = languagesArr[1] || '';
+			user.dating.preferences.languages = languagesArr;
 		}
 		if (ageMin !== undefined || ageMax !== undefined) {
 			if (!user.dating.preferences.ageRange) {
@@ -148,16 +203,19 @@ async function updateDatingPreferences(req, res) {
 				user.dating.preferences.ageRange.max = parseInt(ageMax, 10);
 			}
 		}
-		if (languages !== undefined) {
-			user.dating.preferences.languages = Array.isArray(languages) ? languages : [languages];
-		}
 		if (location !== undefined) {
-			user.dating.preferences.location = {
+			user.location = {
 				city: location.city || '',
 				country: location.country || '',
+				lat: location.coordinates?.lat ?? location.lat ?? null,
+				lng: location.coordinates?.lng ?? location.lng ?? null
+			};
+			user.dating.preferences.location = {
+				city: user.location.city,
+				country: user.location.country,
 				coordinates: {
-					lat: location.coordinates?.lat || location.lat || null,
-					lng: location.coordinates?.lng || location.lng || null
+					lat: user.location.lat,
+					lng: user.location.lng
 				}
 			};
 		}
@@ -174,12 +232,14 @@ async function updateDatingPreferences(req, res) {
 		}
 
 		user.dating.lastUpdatedAt = new Date();
+		user.markModified('preferences');
 		await user.save();
 
+		const preferencesResponse = buildPreferencesResponse(user);
 		return ApiResponse.success(
 			res,
 			{
-				preferences: user.dating.preferences
+				preferences: preferencesResponse
 			},
 			'Dating preferences updated successfully'
 		);
@@ -195,6 +255,7 @@ async function updateDatingPreferences(req, res) {
  */
 async function getDatingPreferences(req, res) {
 	try {
+		console.log('[DATING][PREFERENCES] get request', { userId: req.user?.userId });
 		const currentUserId = req.user?.userId;
 		if (!currentUserId) {
 			return ApiResponse.unauthorized(res, 'User not authenticated');
@@ -205,18 +266,7 @@ async function getDatingPreferences(req, res) {
 			return ApiResponse.notFound(res, 'User not found');
 		}
 
-		const preferences = user.dating?.preferences || {
-			hereTo: user.preferences?.hereFor || '', // Fallback to preferences.hereFor
-			wantToMeet: '',
-			ageRange: { min: 18, max: 100 },
-			languages: [],
-			location: {
-				city: '',
-				country: '',
-				coordinates: { lat: null, lng: null }
-			},
-			distanceRange: { min: 0, max: 100 }
-		};
+		const preferences = buildPreferencesResponse(user);
 
 		return ApiResponse.success(
 			res,
