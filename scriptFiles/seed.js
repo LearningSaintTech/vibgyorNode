@@ -34,14 +34,24 @@ const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/d
 // Import models
 const Admin = require('../src/admin/adminModel/adminModel');
 const SubAdmin = require('../src/subAdmin/subAdminModel/subAdminAuthModel');
-const User = require('../src/user/userModel/userAuthModel');
-const Chat = require('../src/user/userModel/chatModel');
-const Message = require('../src/user/userModel/messageModel');
-const Call = require('../src/user/userModel/callModel');
-const FollowRequest = require('../src/user/userModel/followRequestModel');
-const MessageRequest = require('../src/user/userModel/messageRequestModel');
-const UserReport = require('../src/user/userModel/userReportModel');
-const Post = require('../src/user/userModel/postModel');
+const User = require('../src/user/auth/model/userAuthModel');
+const UserCatalog = require('../src/user/auth/model/userCatalogModel');
+const Chat = require('../src/user/social/userModel/chatModel');
+const Message = require('../src/user/social/userModel/messageModel');
+const Call = require('../src/user/social/userModel/callModel');
+const FollowRequest = require('../src/user/social/userModel/followRequestModel');
+const MessageRequest = require('../src/user/social/userModel/messageRequestModel');
+const UserReport = require('../src/user/social/userModel/userReportModel');
+const Post = require('../src/user/social/userModel/postModel');
+const Story = require('../src/user/social/userModel/storyModel');
+const UserStatus = require('../src/user/social/userModel/userStatusModel');
+const RefreshToken = require('../src/user/social/userModel/refreshTokenModel');
+const ContentModeration = require('../src/user/social/userModel/contentModerationModel');
+const Notification = require('../src/notification/models/notificationModel');
+const NotificationPreferences = require('../src/notification/models/notificationPreferencesModel');
+const DatingInteraction = require('../src/user/dating/models/datingInteractionModel');
+const DatingMatch = require('../src/user/dating/models/datingMatchModel');
+const DatingProfileComment = require('../src/user/dating/models/datingProfileCommentModel');
 // Optional models - will be handled gracefully if they don't exist
 let PostTemplate, PostCollection;
 try {
@@ -72,6 +82,12 @@ const DEFAULT_CONFIG = {
   messageRequests: 125,
   reports: 40,
   posts: 500,
+  stories: 250,
+  notifications: 400,
+  refreshTokens: 150,
+  moderationEntries: 60,
+  datingInteractions: 200,
+  datingComments: 120,
   postTemplates: 50,
   postCollections: 75
 };
@@ -210,6 +226,39 @@ const SAMPLE_HASHTAGS = [
   '#family', '#work', '#success', '#goals', '#dreams', '#peace', '#joy'
 ];
 
+const SAMPLE_LANGUAGES = ['English', 'Spanish', 'French', 'German', 'Hindi', 'Mandarin'];
+
+const SAMPLE_STATUS_MESSAGES = [
+  'Online and thriving',
+  'In a meeting',
+  'Traveling today',
+  'Heads down, coding',
+  'Coffee first',
+  'Exploring new ideas',
+  'Available for chats',
+  'Out for a walk',
+  'Focusing on product',
+  'Back soon'
+];
+
+const SAMPLE_NOTIFICATION_TYPES = [
+  'post_like',
+  'post_comment',
+  'follow_request',
+  'story_reply',
+  'match',
+  'dating_like',
+  'system_announcement'
+];
+
+const SAMPLE_DATING_COMMENTS = [
+  'Loved your travel vibes!',
+  'Great smile!',
+  'Let’s grab coffee sometime.',
+  'This totally resonates.',
+  'Amazing energy in your profile!'
+];
+
 // Utility functions
 function getRandomElement(array) {
   return array[Math.floor(Math.random() * array.length)];
@@ -249,7 +298,17 @@ async function clearDatabase() {
       FollowRequest.deleteMany({}),
       MessageRequest.deleteMany({}),
       UserReport.deleteMany({}),
-      Post.deleteMany({})
+      Post.deleteMany({}),
+      Story.deleteMany({}),
+      Notification.deleteMany({}),
+      NotificationPreferences.deleteMany({}),
+      UserStatus.deleteMany({}),
+      RefreshToken.deleteMany({}),
+      ContentModeration.deleteMany({}),
+      DatingInteraction.deleteMany({}),
+      DatingMatch.deleteMany({}),
+      DatingProfileComment.deleteMany({}),
+      UserCatalog.deleteMany({})
     ];
     
     if (PostTemplate) deletePromises.push(PostTemplate.deleteMany({}));
@@ -346,6 +405,9 @@ async function createUsers(count) {
     
     // Create some users with incomplete profiles for realistic testing
     const profileCompleteness = Math.random();
+    const primaryLanguage = getRandomElement(SAMPLE_LANGUAGES);
+    const secondaryLanguage = getRandomElement(SAMPLE_LANGUAGES.filter(lang => lang !== primaryLanguage));
+
     let userData = {
       phoneNumber: phoneNumber,
       countryCode: '+91',
@@ -389,7 +451,49 @@ async function createUsers(count) {
         isPrivate: Math.random() > 0.8, // 20% private
         allowFollowRequests: Math.random() > 0.2, // 80% allow
         showOnlineStatus: Math.random() > 0.3, // 70% show
-        allowMessages: getRandomElement(['everyone', 'followers', 'none'])
+        allowMessages: getRandomElement(['everyone', 'followers', 'none']),
+        allowCommenting: Math.random() > 0.1, // 90% allow
+        allowTagging: Math.random() > 0.1, // 90% allow
+        allowStoriesSharing: Math.random() > 0.1 // 90% allow
+      },
+      preferences: {
+        hereFor: getRandomElement(['Make New Friends', 'Dating', 'Networking']),
+        primaryLanguage,
+        secondaryLanguage,
+        location: {
+          city: profileCompleteness > 0.9 ? faker.location.city() : '',
+          country: profileCompleteness > 0.9 ? faker.location.country() : '',
+          lat: profileCompleteness > 0.9 ? parseFloat(faker.location.latitude()) : null,
+          lng: profileCompleteness > 0.9 ? parseFloat(faker.location.longitude()) : null
+        }
+      },
+      dating: {
+        photos: [],
+        videos: [],
+        isDatingProfileActive: Math.random() > 0.6,
+        // Dating preferences (used by controller even though not in schema)
+        preferences: {
+          hereTo: getRandomElement(['Make New Friends', 'Dating']),
+          wantToMeet: getRandomElement(['Man', 'Woman', 'Everyone']),
+          ageRange: {
+            min: Math.floor(Math.random() * 5) + 20,
+            max: Math.floor(Math.random() * 15) + 30
+          },
+          languages: getRandomElements(SAMPLE_LANGUAGES, 2),
+          location: {
+            city: profileCompleteness > 0.9 ? faker.location.city() : '',
+            country: profileCompleteness > 0.9 ? faker.location.country() : '',
+            coordinates: {
+              lat: profileCompleteness > 0.9 ? parseFloat(faker.location.latitude()) : null,
+              lng: profileCompleteness > 0.9 ? parseFloat(faker.location.longitude()) : null
+            }
+          },
+          distanceRange: {
+            min: 0,
+            max: Math.floor(Math.random() * 50) + 10
+          }
+        },
+        lastUpdatedAt: new Date()
       },
       otpCode: null,
       otpExpiresAt: null,
@@ -771,6 +875,11 @@ async function createPosts(users, count) {
         }
       }] : [];
       
+      // Ensure content or media exists (Post model requirement)
+      if (!content && media.length === 0) {
+        content = getRandomElement(SAMPLE_POST_CONTENT);
+      }
+      
       // Create some posts with location
       const hasLocation = Math.random() > 0.7; // 30% have location
       const location = hasLocation ? {
@@ -801,20 +910,34 @@ async function createPosts(users, count) {
       
       const post = {
         author: author._id,
-        content: content,
-        caption: caption,
+        ...(content && { content: content }),
+        ...(caption && { caption: caption }),
         media: media,
         hashtags: hashtags,
         mentions: mentions,
-        location: location,
+        ...(Object.keys(location).length > 0 && { location: location }),
         visibility: visibility,
+        commentVisibility: getRandomElement(['everyone', 'followers', 'none']),
         status: status,
         publishedAt: status === 'published' ? publishedAt : null,
         scheduledAt: null,
+        likes: [],
+        comments: [],
+        shares: [],
+        views: [],
         likesCount: Math.floor(Math.random() * 100),
         commentsCount: Math.floor(Math.random() * 50),
         sharesCount: Math.floor(Math.random() * 20),
         viewsCount: Math.floor(Math.random() * 500),
+        isReported: false,
+        reports: [],
+        analytics: {
+          reach: 0,
+          impressions: 0,
+          engagement: 0,
+          lastAnalyzed: new Date()
+        },
+        lastEngagementAt: publishedAt,
         createdAt: publishedAt,
         updatedAt: publishedAt
       };
@@ -851,6 +974,11 @@ async function createPosts(users, count) {
       }
     }] : [];
     
+    // Ensure content or media exists (Post model requirement)
+    if (!content && media.length === 0) {
+      content = getRandomElement(SAMPLE_POST_CONTENT);
+    }
+    
     // Create some posts with location
     const hasLocation = Math.random() > 0.7; // 30% have location
     const location = hasLocation ? {
@@ -881,20 +1009,34 @@ async function createPosts(users, count) {
     
     const post = {
       author: author._id,
-      content: content,
-      caption: caption,
+      ...(content && { content: content }),
+      ...(caption && { caption: caption }),
       media: media,
       hashtags: hashtags,
       mentions: mentions,
-      location: location,
+      ...(Object.keys(location).length > 0 && { location: location }),
       visibility: visibility,
+      commentVisibility: getRandomElement(['everyone', 'followers', 'none']),
       status: status,
       publishedAt: status === 'published' ? publishedAt : null,
       scheduledAt: null,
+      likes: [],
+      comments: [],
+      shares: [],
+      views: [],
       likesCount: Math.floor(Math.random() * 100),
       commentsCount: Math.floor(Math.random() * 50),
       sharesCount: Math.floor(Math.random() * 20),
       viewsCount: Math.floor(Math.random() * 500),
+      isReported: false,
+      reports: [],
+      analytics: {
+        reach: 0,
+        impressions: 0,
+        engagement: 0,
+        lastAnalyzed: new Date()
+      },
+      lastEngagementAt: publishedAt,
       createdAt: publishedAt,
       updatedAt: publishedAt
     };
@@ -908,6 +1050,457 @@ async function createPosts(users, count) {
     return createdPosts;
   } catch (error) {
     console.error('❌ Error creating posts:', error);
+    throw error;
+  }
+}
+
+// Create stories
+async function createStories(users, count) {
+  console.log(`🎬 Creating ${count} stories...`);
+
+  if (!count || users.length === 0) {
+    return [];
+  }
+
+  const stories = [];
+
+  for (let i = 0; i < count; i++) {
+    const author = getRandomElement(users);
+    const mediaType = Math.random() > 0.4 ? 'video' : 'image';
+    const filename = `story_${i}.${mediaType === 'video' ? 'mp4' : 'jpg'}`;
+
+    const mediaUrl = mediaType === 'video'
+      ? VIDEO_URL
+      : faker.image.urlLoremFlickr({ width: 1080, height: 1920, category: 'people' });
+
+    // Ensure content or media exists for story
+    const storyContent = Math.random() > 0.3 ? faker.lorem.sentence() : '';
+    
+    const story = {
+      author: author._id,
+      ...(storyContent && { content: storyContent }),
+      media: {
+        type: mediaType,
+        url: mediaUrl,
+        thumbnail: mediaType === 'video' ? VIDEO_URL : mediaUrl,
+        filename,
+        fileSize: Math.floor(Math.random() * 4_000_000) + 200_000,
+        mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+        duration: mediaType === 'video' ? Math.floor(Math.random() * 20) + 5 : null,
+        dimensions: { width: 1080, height: 1920 },
+        s3Key: `stories/${author._id}/${filename}`
+      },
+      mentions: [],
+      views: [],
+      replies: [],
+      status: 'active',
+      privacy: getRandomElement(['public', 'followers', 'close_friends']),
+      closeFriends: getRandomElements(users, Math.floor(Math.random() * 3))
+        .map(user => user._id),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      analytics: {
+        viewsCount: 0,
+        likesCount: 0,
+        repliesCount: 0,
+        sharesCount: 0
+      },
+      isReported: false,
+      reports: []
+    };
+
+    if (Math.random() > 0.7) {
+      const mentionedUser = getRandomElement(users.filter(u => u._id.toString() !== author._id.toString()));
+      story.mentions.push({
+        user: mentionedUser?._id,
+        position: { start: 0, end: 5 }
+      });
+    }
+
+    if (Math.random() > 0.6) {
+      const viewer = getRandomElement(users);
+      story.views.push({
+        user: viewer._id,
+        viewedAt: new Date(),
+        viewDuration: Math.floor(Math.random() * 30),
+        isLiked: Math.random() > 0.5
+      });
+      story.analytics.viewsCount = story.views.length;
+      story.analytics.likesCount = story.views.filter(view => view.isLiked).length;
+    }
+
+    stories.push(story);
+  }
+
+  try {
+    const createdStories = await Story.insertMany(stories);
+    console.log(`✅ Created ${createdStories.length} stories`);
+    return createdStories;
+  } catch (error) {
+    console.error('❌ Error creating stories:', error);
+    throw error;
+  }
+}
+
+// Seed dating interactions, matches, and comments
+async function seedDatingData(users, interactionsCount, commentsCount) {
+  console.log(`💘 Creating ${interactionsCount} dating interactions and ${commentsCount} comments...`);
+
+  if (!users.length) {
+    return { interactions: [], matches: [], comments: [] };
+  }
+
+  const interactions = [];
+  const usedPairs = new Set();
+  const potentialMatches = [];
+
+  for (let i = 0; i < interactionsCount; i++) {
+    const user = getRandomElement(users);
+    let target = getRandomElement(users);
+
+    while (target._id.toString() === user._id.toString()) {
+      target = getRandomElement(users);
+    }
+
+    const pairKey = `${user._id.toString()}-${target._id.toString()}`;
+    if (usedPairs.has(pairKey)) {
+      continue;
+    }
+
+    const action = Math.random() > 0.25 ? 'like' : 'dislike';
+    const hasComment = action === 'like' && Math.random() > 0.8;
+    const baseInteraction = {
+      user: user._id,
+      targetUser: target._id,
+      action,
+      status: action === 'like' ? 'pending' : 'dismissed',
+      isMatchNotified: false,
+      ...(hasComment && {
+        comment: {
+          text: getRandomElement(SAMPLE_DATING_COMMENTS),
+          createdAt: new Date()
+        }
+      })
+    };
+
+    interactions.push(baseInteraction);
+    usedPairs.add(pairKey);
+
+    if (action === 'like' && Math.random() > 0.6) {
+      const reverseKey = `${target._id.toString()}-${user._id.toString()}`;
+      if (!usedPairs.has(reverseKey)) {
+        interactions.push({
+          user: target._id,
+          targetUser: user._id,
+          action: 'like',
+          status: 'matched',
+          matchedAt: new Date(),
+          isMatchNotified: false
+        });
+        usedPairs.add(reverseKey);
+      }
+      potentialMatches.push([user._id, target._id]);
+    }
+  }
+
+  let createdInteractions = [];
+  let createdMatches = [];
+
+  try {
+    createdInteractions = await DatingInteraction.insertMany(interactions, { ordered: false });
+
+    for (const [userId, targetId] of potentialMatches) {
+      const match = await DatingMatch.createOrGetMatch(userId, targetId);
+      createdMatches.push(match);
+    }
+  } catch (error) {
+    console.error('❌ Error creating dating interactions:', error.message || error);
+  }
+
+  const comments = [];
+  for (let i = 0; i < commentsCount; i++) {
+    const author = getRandomElement(users);
+    let target = getRandomElement(users);
+    while (target._id.toString() === author._id.toString()) {
+      target = getRandomElement(users);
+    }
+    comments.push({
+      user: author._id,
+      targetUser: target._id,
+      text: getRandomElement(SAMPLE_DATING_COMMENTS),
+      likes: [],
+      likesCount: 0,
+      isPinned: false,
+      isDeleted: false
+    });
+  }
+
+  let createdComments = [];
+  try {
+    createdComments = await DatingProfileComment.insertMany(comments);
+  } catch (error) {
+    console.error('❌ Error creating dating comments:', error);
+  }
+
+  console.log(`✅ Dating data seeded: ${createdInteractions.length} interactions, ${createdMatches.length} matches, ${createdComments.length} comments`);
+  return { interactions: createdInteractions, matches: createdMatches, comments: createdComments };
+}
+
+// Create notifications
+async function createNotifications(users, posts, matches, count) {
+  console.log(`🔔 Creating ${count} notifications...`);
+
+  if (!count) {
+    return [];
+  }
+
+  const notifications = [];
+
+  for (let i = 0; i < count; i++) {
+    const recipient = getRandomElement(users);
+    let sender = getRandomElement(users);
+    while (sender._id.toString() === recipient._id.toString() && Math.random() > 0.2) {
+      sender = getRandomElement(users);
+    }
+
+    const type = getRandomElement(SAMPLE_NOTIFICATION_TYPES);
+    const context = ['dating_like', 'match'].includes(type) ? 'dating' : 'social';
+
+    let relatedContent = null;
+    if (type === 'post_like' || type === 'post_comment') {
+      const post = getRandomElement(posts);
+      if (post) {
+        relatedContent = {
+          contentType: 'post',
+          contentId: post._id,
+          metadata: {
+            caption: post.caption,
+            preview: post.content?.slice(0, 80)
+          }
+        };
+      }
+    } else if (type === 'match' && matches?.length) {
+      const match = getRandomElement(matches);
+      relatedContent = {
+        contentType: 'match',
+        contentId: match._id,
+        metadata: {}
+      };
+    }
+
+    notifications.push({
+      context,
+      recipient: recipient._id,
+      sender: sender?._id,
+      type,
+      title: faker.helpers.arrayElement([
+        'New like received',
+        'Someone commented on your post',
+        'You have a new match',
+        'Reminder from Vibgyor'
+      ]),
+      message: faker.lorem.sentence(),
+      relatedContent,
+      deliveryStatus: 'delivered',
+      status: Math.random() > 0.5 ? 'read' : 'unread',
+      priority: getRandomElement(['low', 'normal', 'high']),
+      deliveryChannels: {
+        inApp: { delivered: true, deliveredAt: new Date() },
+        push: { delivered: Math.random() > 0.3, deliveredAt: new Date(), deviceTokens: [] },
+        email: { delivered: Math.random() > 0.7, deliveredAt: new Date(), emailAddress: recipient.email || '' },
+        sms: { delivered: false }
+      },
+      analytics: {
+        openCount: 0,
+        clickCount: 0,
+        lastOpenedAt: null,
+        lastClickedAt: null
+      }
+    });
+  }
+
+  try {
+    const createdNotifications = await Notification.insertMany(notifications);
+    console.log(`✅ Created ${createdNotifications.length} notifications`);
+    return createdNotifications;
+  } catch (error) {
+    console.error('❌ Error creating notifications:', error);
+    throw error;
+  }
+}
+
+// Create notification preferences
+async function createNotificationPreferences(users) {
+  console.log('🛎️  Creating notification preferences...');
+
+  for (const user of users) {
+    const typeSettings = {};
+    SAMPLE_NOTIFICATION_TYPES.forEach(type => {
+      typeSettings[type] = {
+        enabled: true,
+        channels: {
+          inApp: true,
+          push: type !== 'system_announcement',
+          email: ['system_announcement', 'post_comment'].includes(type),
+          sms: false
+        }
+      };
+    });
+
+    try {
+      await NotificationPreferences.findOneAndUpdate(
+        { user: user._id },
+        {
+          user: user._id,
+          contexts: {
+            social: { enabled: true, types: typeSettings },
+            dating: { enabled: true, types: typeSettings }
+          },
+          globalSettings: {
+            enableNotifications: true,
+            quietHours: {
+              enabled: Math.random() > 0.85,
+              startTime: '22:00',
+              endTime: '07:00',
+              timezone: 'UTC'
+            },
+            frequency: getRandomElement(['immediate', 'daily', 'weekly'])
+          },
+          channels: {
+            inApp: { enabled: true, sound: true, vibration: true },
+            push: { enabled: true, sound: true, badge: true },
+            email: { enabled: Math.random() > 0.4, frequency: 'daily' },
+            sms: { enabled: false, emergencyOnly: true }
+          }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    } catch (error) {
+      console.error(`❌ Error creating notification preferences for user ${user._id}:`, error);
+    }
+  }
+}
+
+// Create refresh tokens
+async function createRefreshTokens(users, count) {
+  console.log(`🔐 Creating ${count} refresh tokens...`);
+
+  if (!count) {
+    return [];
+  }
+
+  const tokens = [];
+  for (let i = 0; i < count; i++) {
+    const user = getRandomElement(users);
+    tokens.push({
+      userId: user._id,
+      token: faker.string.uuid(),
+      issuedAt: new Date(),
+      ipAddress: faker.internet.ip(),
+      isValid: Math.random() > 0.2,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+    });
+  }
+
+  try {
+    const createdTokens = await RefreshToken.insertMany(tokens);
+    console.log(`✅ Created ${createdTokens.length} refresh tokens`);
+    return createdTokens;
+  } catch (error) {
+    console.error('❌ Error creating refresh tokens:', error);
+    throw error;
+  }
+}
+
+// Create content moderation entries
+async function createContentModerationEntries(posts, count) {
+  console.log(`🛡️  Creating ${count} content moderation entries...`);
+
+  if (!count || posts.length === 0) {
+    return [];
+  }
+
+  const entries = [];
+  for (let i = 0; i < count; i++) {
+    const post = getRandomElement(posts);
+    if (!post) continue;
+
+    entries.push({
+      contentType: 'post',
+      contentId: post._id,
+      contentAuthor: post.author,
+      content: {
+        text: post.content || faker.lorem.sentences(2),
+        media: (post.media || []).slice(0, 1),
+        hashtags: post.hashtags || [],
+        mentions: (post.mentions || []).map(m => m.user?.toString())
+      },
+      moderationResults: {
+        aiAnalysis: {
+          isAnalyzed: true,
+          analyzedAt: new Date(),
+          confidence: Math.floor(Math.random() * 40) + 60,
+          categories: [{
+            category: getRandomElement(['spam', 'safe', 'inappropriate']),
+            confidence: Math.floor(Math.random() * 30) + 50
+          }],
+          flagged: Math.random() > 0.85,
+          flagReason: 'Automated sampling',
+          riskScore: Math.floor(Math.random() * 40)
+        },
+        manualReview: {
+          isReviewed: Math.random() > 0.7,
+          reviewedAt: new Date(),
+          decision: getRandomElement(['approved', 'pending', 'escalated']),
+          actionTaken: getRandomElement(['none', 'warning'])
+        }
+      },
+      status: getRandomElement(['active', 'under_review', 'hidden'])
+    });
+  }
+
+  try {
+    const createdEntries = await ContentModeration.insertMany(entries);
+    console.log(`✅ Created ${createdEntries.length} content moderation entries`);
+    return createdEntries;
+  } catch (error) {
+    console.error('❌ Error creating content moderation entries:', error);
+    throw error;
+  }
+}
+
+// Create user statuses
+async function createUserStatuses(users) {
+  console.log('🟢 Creating user presence snapshots...');
+
+  const statuses = [];
+  for (const user of users) {
+    statuses.push({
+      userId: user._id,
+      isOnline: Math.random() > 0.6,
+      lastSeen: getRandomDate(3),
+      status: getRandomElement(SAMPLE_STATUS_MESSAGES),
+      deviceInfo: {
+        platform: getRandomElement(['ios', 'android', 'web']),
+        browser: getRandomElement(['Safari', 'Chrome', 'Edge']),
+        userAgent: faker.internet.userAgent()
+      },
+      privacySettings: {
+        showOnlineStatus: Math.random() > 0.2,
+        showLastSeen: Math.random() > 0.3,
+        showTypingStatus: Math.random() > 0.3
+      },
+      lastActivity: getRandomDate(2),
+      typingIn: []
+    });
+  }
+
+  try {
+    await UserStatus.deleteMany({});
+    const createdStatuses = await UserStatus.insertMany(statuses);
+    console.log(`✅ Created ${createdStatuses.length} user statuses`);
+    return createdStatuses;
+  } catch (error) {
+    console.error('❌ Error creating user statuses:', error);
     throw error;
   }
 }
@@ -1044,6 +1637,77 @@ async function createPostCollections(users, posts, count) {
   }
 }
 
+// Ensure user catalog values exist
+async function ensureUserCatalog() {
+  console.log('📚 Ensuring user catalog entries exist...');
+
+  const existing = await UserCatalog.findOne();
+  if (existing) {
+    return existing;
+  }
+
+  const catalog = await UserCatalog.create({
+    genderList: ['Male', 'Female', 'Non-binary', 'Prefer not to say'],
+    pronounList: ['he/him', 'she/her', 'they/them', 'xe/xem'],
+    likeList: SAMPLE_LIKES,
+    interestList: SAMPLE_INTERESTS,
+    hereForList: ['Make New Friends', 'Dating', 'Networking'],
+    languageList: ['English', 'Spanish', 'French', 'German', 'Hindi'],
+    version: 1
+  });
+
+  console.log('✅ User catalog created');
+  return catalog;
+}
+
+// Add dating media (photos/videos) for users with active dating profiles
+async function addDatingMedia(users) {
+  console.log('📸 Adding dating photos/videos to active dating profiles...');
+  
+  try {
+    const usersWithDating = users.filter(user => user.dating?.isDatingProfileActive);
+    
+    for (const user of usersWithDating) {
+      const numPhotos = Math.floor(Math.random() * 4) + 1; // 1-4 photos
+      const numVideos = Math.random() > 0.7 ? Math.floor(Math.random() * 2) + 1 : 0; // 0-2 videos
+      
+      const photos = [];
+      for (let i = 0; i < numPhotos; i++) {
+        photos.push({
+          url: VIDEO_URL,
+          thumbnailUrl: VIDEO_URL,
+          order: i,
+          uploadedAt: getRandomDate(30)
+        });
+      }
+      
+      const videos = [];
+      for (let i = 0; i < numVideos; i++) {
+        videos.push({
+          url: VIDEO_URL,
+          thumbnailUrl: VIDEO_URL,
+          duration: Math.floor(Math.random() * 60) + 10, // 10-70 seconds
+          order: i,
+          uploadedAt: getRandomDate(30)
+        });
+      }
+      
+      await User.findByIdAndUpdate(user._id, {
+        $set: {
+          'dating.photos': photos,
+          'dating.videos': videos,
+          'dating.lastUpdatedAt': new Date()
+        }
+      });
+    }
+    
+    console.log(`✅ Added dating media to ${usersWithDating.length} users`);
+  } catch (error) {
+    console.error('❌ Error adding dating media:', error);
+    // Don't throw - this is optional
+  }
+}
+
 // Update user statistics and relationships
 async function updateUserStatistics(users, followRequests, messageRequests) {
   console.log('📊 Updating user statistics and relationships...');
@@ -1140,8 +1804,19 @@ async function seedDatabase(config) {
     
     // Create Posts features
     const posts = await createPosts(users, config.posts);
+    const stories = await createStories(users, config.stories);
+    const datingData = await seedDatingData(users, config.datingInteractions, config.datingComments);
     const postTemplates = await createPostTemplates(users, config.postTemplates);
     const postCollections = await createPostCollections(users, posts, config.postCollections);
+    const notifications = await createNotifications(users, posts, datingData.matches, config.notifications);
+    await createNotificationPreferences(users);
+    const refreshTokens = await createRefreshTokens(users, config.refreshTokens);
+    const moderationEntries = await createContentModerationEntries(posts, config.moderationEntries);
+    await createUserStatuses(users);
+    await ensureUserCatalog();
+    
+    // Add dating photos/videos for users with active dating profiles
+    await addDatingMedia(users);
     
     // Update statistics
     await updateUserStatistics(users, followRequests, messageRequests);
@@ -1159,8 +1834,15 @@ async function seedDatabase(config) {
     console.log(`   📨 Message Requests: ${messageRequests.length}`);
     console.log(`   🚨 Reports: ${reports.length}`);
     console.log(`   📝 Posts: ${posts.length}`);
+    console.log(`   📸 Stories: ${stories.length}`);
     console.log(`   📋 Post Templates: ${postTemplates.length}`);
     console.log(`   📚 Post Collections: ${postCollections.length}`);
+    console.log(`   💘 Dating Interactions: ${datingData.interactions.length}`);
+    console.log(`   💞 Matches: ${datingData.matches.length}`);
+    console.log(`   💬 Dating Comments: ${datingData.comments.length}`);
+    console.log(`   🔔 Notifications: ${notifications.length}`);
+    console.log(`   🔐 Refresh Tokens: ${refreshTokens.length}`);
+    console.log(`   🛡️  Moderation Entries: ${moderationEntries.length}`);
     
     console.log('\n🔑 Test Credentials:');
     console.log('   Admin: +91-9998887777 (OTP: 123456)');
@@ -1214,6 +1896,14 @@ module.exports = {
   createMessageRequests,
   createUserReports,
   createPosts,
+  createStories,
   createPostTemplates,
-  createPostCollections
+  createPostCollections,
+  seedDatingData,
+  createNotifications,
+  createNotificationPreferences,
+  createRefreshTokens,
+  createContentModerationEntries,
+  createUserStatuses,
+  ensureUserCatalog
 };

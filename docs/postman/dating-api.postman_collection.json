@@ -2,34 +2,21 @@
   "info": {
     "name": "Vibgyor Dating API",
     "_postman_id": "d97ed1c4-1f4a-43b5-b9d4-a2519db1dd00",
-    "description": "Postman collection for Vibgyor dating endpoints. Base URL stored in {{baseUrl}}. Auth header uses {{token}}.",
+    "description": "Complete Postman collection for Vibgyor dating endpoints. Base URL stored in {{baseUrl}}. Auth header uses {{token}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Auth Headers",
+      "name": "Health (Auth Check)",
       "request": {
         "method": "GET",
         "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}",
-            "type": "text"
-          },
-          {
-            "key": "Content-Type",
-            "value": "application/json",
-            "type": "text"
-          }
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
         ],
         "url": {
           "raw": "{{baseUrl}}/health",
-          "host": [
-            "{{baseUrl}}"
-          ],
-          "path": [
-            "health"
-          ]
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
         }
       }
     },
@@ -37,36 +24,36 @@
       "name": "Dating Media",
       "item": [
         {
+          "name": "Get Dating Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profile"]
+            }
+          }
+        },
+        {
           "name": "Upload Photos",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "body": {
               "mode": "formdata",
               "formdata": [
-                {
-                  "key": "photos",
-                  "type": "file",
-                  "src": ""
-                }
+                { "key": "photos", "type": "file", "src": "" }
               ]
             },
             "url": {
               "raw": "{{baseUrl}}/user/dating/photos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "photos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "photos"]
             }
           }
         },
@@ -75,32 +62,111 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "body": {
               "mode": "formdata",
               "formdata": [
-                {
-                  "key": "videos",
-                  "type": "file",
-                  "src": ""
-                }
+                { "key": "videos", "type": "file", "src": "" },
+                { "key": "durations", "type": "text", "value": "12.5", "description": "Optional duration (seconds) per video index" }
               ]
             },
             "url": {
               "raw": "{{baseUrl}}/user/dating/videos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "videos"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "videos"]
+            }
+          }
+        },
+        {
+          "name": "Delete Photo",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/photos/{{photoIndex}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "photos", "{{photoIndex}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('photoIndex')) {",
+                  "  pm.variables.set('photoIndex', '0');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Video",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/videos/{{videoIndex}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "videos", "{{videoIndex}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('videoIndex')) {",
+                  "  pm.variables.set('videoIndex', '0');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Photo Order",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"photoIndex\": 0,\n  \"order\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/photos/order",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "photos", "order"]
+            }
+          }
+        },
+        {
+          "name": "Update Video Order",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"videoIndex\": 1,\n  \"order\": 0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/videos/order",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "videos", "order"]
             }
           }
         },
@@ -109,16 +175,8 @@
           "request": {
             "method": "PUT",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
             ],
             "body": {
               "mode": "raw",
@@ -126,14 +184,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/user/dating/toggle",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "toggle"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "toggle"]
             }
           }
         }
@@ -147,21 +199,12 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
               "raw": "{{baseUrl}}/user/dating/preferences",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "preferences"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "preferences"]
             }
           }
         },
@@ -170,60 +213,178 @@
           "request": {
             "method": "PUT",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"hereTo\": \"Make New Friends\",\n  \"wantToMeet\": \"Woman\",\n  \"ageMin\": 20,\n  \"ageMax\": 35,\n  \"languages\": [\"English\", \"French\"],\n  \"location\": {\n    \"city\": \"Berlin\",\n    \"country\": \"Germany\",\n    \"lat\": 52.52,\n    \"lng\": 13.405\n  },\n  \"distanceMin\": 0,\n  \"distanceMax\": 25\n}"
+              "raw": "{\n  \"hereTo\": \"Make New Friends\",\n  \"wantToMeet\": \"Woman\",\n  \"ageMin\": 20,\n  \"ageMax\": 35,\n  \"languages\": [\"English\", \"French\"],\n  \"location\": {\n    \"city\": \"Berlin\",\n    \"country\": \"Germany\",\n    \"coordinates\": {\"lat\": 52.52, \"lng\": 13.405}\n  },\n  \"distanceMin\": 0,\n  \"distanceMax\": 25\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/user/dating/preferences",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "preferences"
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "preferences"]
+            }
+          }
+        },
+        {
+          "name": "Search Profiles (Default)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?search=anna&hereTo=Make%20New%20Friends&wantToMeet=Man&languages=English,French&city=Berlin&country=Germany&distanceMax=25&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                { "key": "search", "value": "anna" },
+                { "key": "hereTo", "value": "Make New Friends" },
+                { "key": "wantToMeet", "value": "Man" },
+                { "key": "languages", "value": "English,French" },
+                { "key": "city", "value": "Berlin" },
+                { "key": "country", "value": "Germany" },
+                { "key": "distanceMax", "value": "25" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
               ]
             }
           }
         },
         {
-          "name": "Search Profiles",
+          "name": "Search Profiles (Nearby)",
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles?search=anna&hereTo=Make%20New%20Friends&city=Berlin&distanceMax=25",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles"
-              ],
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=near_by&distanceMax=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
               "query": [
-                { "key": "search", "value": "anna" },
-                { "key": "hereTo", "value": "Make New Friends" },
-                { "key": "city", "value": "Berlin" },
-                { "key": "distanceMax", "value": "25" }
+                { "key": "filter", "value": "near_by" },
+                { "key": "distanceMax", "value": "10" }
               ]
             }
           }
+        },
+        {
+          "name": "Search Profiles (Same Interests)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=same_interests",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                { "key": "filter", "value": "same_interests" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search Profiles (Liked You)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=liked_you&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                { "key": "filter", "value": "liked_you" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                  "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Profiles (Liked by You)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=liked_by_you&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                { "key": "filter", "value": "liked_by_you" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                  "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Profiles (New Dater)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=new_dater&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                { "key": "filter", "value": "new_dater" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                  "  pm.environment.set('targetUserId', json.data.profiles[0]._id || json.data.profiles[0].userId);",
+                  "}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -235,31 +396,18 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{ \"comment\": \"Great profile!\" }"
+              "raw": "{}",
+              "description": "Comment is optional. Use { \"comment\": \"Great profile!\" } to add a comment with the like."
             },
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/like",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "like"
-              ]
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "like"]
             }
           }
         },
@@ -268,22 +416,47 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/dislike",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "dislike"
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/dislike",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "dislike"]
+            }
+          }
+        },
+        {
+          "name": "Get Likes For Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/likes?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "likes"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Likes For My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/me/likes?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "me", "likes"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
               ]
             }
           }
@@ -293,31 +466,17 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
             ],
             "body": {
               "mode": "raw",
               "raw": "{ \"text\": \"Loved your travel photos!\" }"
             },
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/comments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "comments"
-              ]
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "comments"]
             }
           }
         },
@@ -326,23 +485,30 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/comments?page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "comments"
-              ],
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/comments?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "comments"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Comments (My Profile)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/me/comments?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "me", "comments"],
               "query": [
                 { "key": "page", "value": "1" },
                 { "key": "limit", "value": "20" }
@@ -355,21 +521,12 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
               "raw": "{{baseUrl}}/user/dating/matches?status=active&page=1&limit=20",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "matches"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "matches"],
               "query": [
                 { "key": "status", "value": "active" },
                 { "key": "page", "value": "1" },
@@ -388,31 +545,17 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+              { "key": "Content-Type", "value": "application/json", "type": "text" }
             ],
             "body": {
               "mode": "raw",
               "raw": "{ \"description\": \"Fake profile\" }"
             },
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/report",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "report"
-              ]
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/report",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "report"]
             }
           }
         },
@@ -421,23 +564,12 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/block",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "block"
-              ]
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "block"]
             }
           }
         },
@@ -446,23 +578,12 @@
           "request": {
             "method": "DELETE",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{token}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
             ],
             "url": {
-              "raw": "{{baseUrl}}/user/dating/profiles/{{profileId}}/block",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "dating",
-                "profiles",
-                "{{profileId}}",
-                "block"
-              ]
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "block"]
             }
           }
         }
@@ -471,24 +592,45 @@
   ],
   "event": [
     {
-      "listen": "prerequest",
-      "script": {
-        "type": "text/javascript",
-        "exec": []
-      }
-    },
-    {
       "listen": "test",
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const res = pm.response.json();",
-          "if (res?.data?.matchId) {",
-          "  pm.environment.set('matchId', res.data.matchId);",
+          "let json;",
+          "try {",
+          "  json = pm.response.json();",
+          "} catch (err) {",
+          "  return;",
+          "}",
+          "const data = json?.data || {};",
+        "if (data.datingProfile?._id) {",
+        "  pm.environment.set('targetUserId', data.datingProfile._id);",
+        "}",
+        "if (Array.isArray(data.profiles) && data.profiles.length) {",
+        "  pm.environment.set('targetUserId', data.profiles[0]._id);",
+        "}",
+          "if (data.matchId) {",
+          "  pm.environment.set('matchId', data.matchId);",
+          "}",
+          "if (data.matches && data.matches.length) {",
+          "  pm.environment.set('matchId', data.matches[0].matchId);",
+          "}",
+          "if (data.comment?._id) {",
+          "  pm.environment.set('commentId', data.comment._id);",
+          "}",
+          "if (data.comments && data.comments.length) {",
+          "  pm.environment.set('commentId', data.comments[0]._id || data.comments[0].id || data.comments[0]._id);",
+          "}",
+          "if (data.reportId) {",
+          "  pm.environment.set('reportId', data.reportId);",
           "}"
         ]
       }
     }
+  ],
+  "variable": [
+    { "key": "photoIndex", "value": "0" },
+    { "key": "videoIndex", "value": "0" }
   ]
 }
 

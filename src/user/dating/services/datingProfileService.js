@@ -1,4 +1,5 @@
 const User = require('../../auth/model/userAuthModel');
+const DatingInteraction = require('../models/datingInteractionModel');
 
 /**
  * Calculate distance between two coordinates using Haversine formula
@@ -33,7 +34,7 @@ function buildSearchQuery(currentUser, filters = {}) {
 		languages = null,
 		location = null, // { city, state, country }
 		distanceMax = null, // in km
-		filter = 'all' // 'all', 'liked_you', 'new_dater', 'near_by', 'same_interests'
+		filter = 'all' // 'all', 'liked_you', 'liked_by_you', 'new_dater', 'near_by', 'same_interests'
 	} = filters;
 
 	// Base query - exclude current user, blocked users, and inactive profiles
@@ -209,6 +210,27 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			.skip(skip)
 			.limit(pagination.limit * 2) // Fetch more to account for distance filtering
 			.lean();
+
+		// Filter by interaction type (liked_you, liked_by_you)
+		if (filters.filter === 'liked_you') {
+			// Find users who have liked the current user
+			const likedYouInteractions = await DatingInteraction.find({
+				targetUser: currentUserId,
+				action: 'like'
+			}).select('user').lean();
+			
+			const likedYouUserIds = likedYouInteractions.map(interaction => interaction.user);
+			profiles = profiles.filter(profile => likedYouUserIds.some(id => id.toString() === profile._id.toString()));
+		} else if (filters.filter === 'liked_by_you') {
+			// Find users that the current user has liked
+			const likedByYouInteractions = await DatingInteraction.find({
+				user: currentUserId,
+				action: 'like'
+			}).select('targetUser').lean();
+			
+			const likedByYouUserIds = likedByYouInteractions.map(interaction => interaction.targetUser);
+			profiles = profiles.filter(profile => likedByYouUserIds.some(id => id.toString() === profile._id.toString()));
+		}
 
 		// Filter by distance if needed
 		if (filters.distanceMax !== null) {

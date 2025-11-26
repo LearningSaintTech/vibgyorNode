@@ -1,24 +1,37 @@
-## Vibgyor Dating API
+node src/seed.js --clear
 
-### 1. Media & Profile Setup
 
-| Endpoint | Method | Description |
-| --- | --- | --- |
-| `/user/dating/photos` | `POST` | Upload 1–5 photos (`photos[]` multipart) |
-| `/user/dating/videos` | `POST` | Upload 1–5 videos (`videos[]` multipart) |
-| `/user/dating/photos/:photoIndex` | `DELETE` | Remove photo by index |
-| `/user/dating/videos/:videoIndex` | `DELETE` | Remove video by index |
-| `/user/dating/photos/order` | `PUT` | Body `{ photoIndex, order }` |
-| `/user/dating/videos/order` | `PUT` | Body `{ videoIndex, order }` |
-| `/user/dating/toggle` | `PUT` | Body `{ isActive: true/false }` |
-| `/user/dating/profile` | `GET` | Fetch media + status |
+## Vibgyor Dating APIs
+
+All dating endpoints live under `/user/dating/*` and require an authenticated `Roles.USER` token (`Authorization: Bearer <JWT>`). Media upload routes sit in `datingMediaRoutes`, profile discovery in `datingProfileRoutes`, and social interactions in `datingInteractionRoutes`.
+
+---
+
+### 1. Dating Media & Profile Activation
+
+| Method | Endpoint | Body / Params | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/user/dating/profile` | – | Returns full dating profile snapshot (`photos`, `videos`, `isDatingProfileActive`, preferences). |
+| `POST` | `/user/dating/photos` | form-data `photos[]` (max 5, 50 MB each, JPEG/PNG/WebP/GIF) | Streams to S3 and appends metadata order. Response includes uploaded items + refreshed profile. |
+| `POST` | `/user/dating/videos` | form-data `videos[]` (max 5, MP4/MOV/AVI/WebM, 50 MB each), optional `durations[]` | Stores media + optional duration per clip. |
+| `DELETE` | `/user/dating/photos/:photoIndex` | path `photoIndex` (0-based) | Removes file + attempts S3 delete. |
+| `DELETE` | `/user/dating/videos/:videoIndex` | path `videoIndex` | Same flow for videos. |
+| `PUT` | `/user/dating/photos/order` | `{ "photoIndex": 0, "order": 3 }` | Reorders in place via user helpers. |
+| `PUT` | `/user/dating/videos/order` | `{ "videoIndex": 1, "order": 0 }` | — |
+| `PUT` | `/user/dating/toggle` | `{ "isActive": true }` | Calls `user.toggleDatingProfile` to activate/deactivate discoverability. |
+
+Typical setup flow:
+1. Hit `GET /user/dating/profile` to fetch current state.
+2. Upload media (repeat `POST /photos` & `POST /videos` until 5 assets each max).
+3. Reorder or delete as needed, then `PUT /toggle` with `true` once satisfied.
+
+---
 
 ### 2. Preferences & Discovery
 
-#### Preferences
+#### 2.1 Preference Management (`datingProfileController`)
 
-- `GET /user/dating/preferences`
-- `PUT /user/dating/preferences`
+End-to-end body handled in `updateDatingPreferences`:
 
 ```json
 {
@@ -30,74 +43,133 @@
   "location": {
     "city": "Berlin",
     "country": "Germany",
-    "lat": 52.52,
-    "lng": 13.405
+    "coordinates": { "lat": 52.52, "lng": 13.405 }
   },
   "distanceMin": 0,
   "distanceMax": 25
 }
 ```
 
-#### Profile Search
-
-`GET /user/dating/profiles`
-
-- Query params: `search`, `hereTo`, `wantToMeet`, `ageMin`, `ageMax`, `languages`, `city`, `country`, `distanceMax`, `filter` (`all|new_dater|near_by|same_interests`), `page`, `limit`.
-- Uses `datingProfileService` for query-building and distance filtering.
-
-### 3. Interactions
-
-| Endpoint | Method | Description |
+| Method | Endpoint | Notes |
 | --- | --- | --- |
-| `/user/dating/profiles/:profileId/like` | `POST` | Body `{ comment? }` – mutual likes trigger matches |
-| `/user/dating/profiles/:profileId/dislike` | `POST` | Marks interaction as dismissed |
-| `/user/dating/profiles/:profileId/comments` | `POST` | Body `{ text }` |
-| `/user/dating/profiles/:profileId/comments` | `GET` | Query `page`, `limit` |
-| `/user/dating/matches` | `GET` | Query `status`, `page`, `limit` |
-| `/user/dating/profiles/:profileId/report` | `POST` | Body `{ description }` |
-| `/user/dating/profiles/:profileId/block` | `POST` | Blocks & ends matches |
-| `/user/dating/profiles/:profileId/block` | `DELETE` | Unblocks |
+| `GET` | `/user/dating/preferences` | Auto-fills defaults from `User.preferences` if dating prefs absent. |
+| `PUT` | `/user/dating/preferences` | Validates arrays, coerces numbers, refreshes `dating.lastUpdatedAt`. |
 
-- **Match flow**: `likeProfile` creates/updates `DatingInteraction`. If reciprocal like exists, `DatingMatch.createOrGetMatch` returns match data (response `{ liked: true, isMatch, matchId }`).
-- **Comments**: stored in `DatingProfileComment`, supports like toggles, pagination.
-- **Reports**: reuse `userReportModel`; unique reporter/reported constraint.
-- **Blocking**: mirrors social module + ends matches + deletes follow requests.
+#### 2.2 Profile Discovery (`datingProfileService`)
 
-### 4. Data Models
+`GET /user/dating/profiles` accepts rich filters (all optional):
 
-- `User.dating`: photos, videos, `isDatingProfileActive`, `lastUpdatedAt`, dynamic `preferences`.
-- `DatingInteraction`: `user`, `targetUser`, `action (like/dislike)`, optional comment snapshot, `status`, `matchedAt`.
-- `DatingMatch`: unique `userA/userB`, `status (active/blocked/ended)`, helper methods `createOrGetMatch`, `endMatch`.
-- `DatingProfileComment`: `user`, `targetUser`, `text`, likes, pinned/deleted flags.
+- `search`: matches `fullName` or `username`.
+- `hereTo`, `wantToMeet` (`everyone` disables gender filter).
+- `ageMin`, `ageMax`: converted to DOB constraints.
+- `languages`: comma string or array; checks dating + primary/secondary languages.
+- `city`, `country`: matches either profile or stored dating location.
+- `distanceMax`: numeric km; uses Haversine filtering when requester has coordinates.
+- `filter`:  
+  - `all` *(default)* – no extra constraints.  
+  - `near_by` – prioritises distance sorting.  
+  - `same_interests` – requires intersection with `currentUser.interests`.  
+  - `new_dater` – users created within the last 7 days.  
+  - `liked_you` – users who liked the current user (`targetUser = me`).  
+  - `liked_by_you` – users the current user already liked (`user = me`).
+- Pagination: `page`, `limit` (default 1,20).
 
-### 5. Postman Configuration
+Response payload:
+```json
+{
+  "profiles": [
+    {
+      "_id": "...",
+      "username": "anna",
+      "age": 29,
+      "distanceAway": "2.4 km away",
+      "datingProfile": { "photos": [], "videos": [], "isActive": true },
+      "preferences": { ... }
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 20, "hasMore": true }
+}
+```
 
-1. **Environment**
-   - `{{baseUrl}} = http://localhost:3000`
-   - Global header `Authorization: Bearer {{token}}`
-2. **Collections (suggested folders)**
-   - `Dating Media`
-   - `Dating Preferences`
-   - `Dating Discovery`
-   - `Dating Interactions`
-   - `Dating Safety`
-3. **Sample Requests**
-   - `POST {{baseUrl}}/user/dating/profiles/{{profileId}}/like`
-   - `GET {{baseUrl}}/user/dating/profiles?search=anna&hereTo=Make%20New%20Friends&city=Berlin&distanceMax=25`
-   - `PUT {{baseUrl}}/user/dating/preferences` (use body above)
-4. **Tests/Variables**
+---
+
+### 3. Interactions, Matches & Safety
+
+| Method | Endpoint | Payload / Params | Highlights |
+| --- | --- | --- | --- |
+| `POST` | `/user/dating/profiles/:userId/like` | `{ "comment": "Nice profile!" }?` (optional body) | Runs protection checks (self-like, blocked, inactive target). Mutual likes invoke `DatingMatch.createOrGetMatch` and return `{ liked, isMatch, matchId }`. Comment is stored only when provided. |
+| `POST` | `/user/dating/profiles/:userId/dislike` | – | Sets `DatingInteraction` to `dislike` + `status: dismissed`, and `DatingMatch.endMatch`. |
+| `GET` | `/user/dating/profiles/:userId/likes` | `page`, `limit` | Lists users that liked a profile, adds `likedAgo`, `isMatch`, `comment` snippet. |
+| `GET` | `/user/dating/profiles/me/likes` | `page`, `limit` | Convenience alias for current user (accepts `me`, `self`, `current` or blank `:userId`). |
+| `POST` | `/user/dating/profiles/:userId/comments` | `{ "text": "..." }` | Trims 500 chars, populates commenter fields. |
+| `GET` | `/user/dating/profiles/:userId/comments` | `page`, `limit` | Sorted desc, returns pagination metadata. |
+| `GET` | `/user/dating/profiles/me/comments` | `page`, `limit` | Same as above but scoped to the caller’s profile (also accepts `me|self|current`). |
+| `GET` | `/user/dating/matches` | `status` (`active|blocked|ended`), `page`, `limit` | Shapes each match with “other user” info + timestamps. |
+| `POST` | `/user/dating/profiles/:userId/report` | `{ "description": "..." }` | Creates `Report` document (`reportType: inappropriate_content`). Duplicate by same reporter rejected (Mongo unique index). |
+| `POST` | `/user/dating/profiles/:userId/block` | – | Mutually removes follows/follow-requests, appends to `blockedUsers/blockedBy`, ends matches as `blocked`. |
+| `DELETE` | `/user/dating/profiles/:userId/block` | – | Pulls ids from block arrays. |
+
+Error codes bubble up with descriptive messages (e.g., `Profile not found`, `User already blocked`, `You have already reported this profile`).
+
+---
+
+### 4. Data Surfaces
+
+- `User.dating` stores `photos`, `videos`, `isDatingProfileActive`, `preferences`, `lastUpdatedAt`. Helper methods (`addDatingPhoto`, `toggleDatingProfile`, etc.) centralize S3 and ordering logic.
+- `DatingInteraction`: tracks `user`, `targetUser`, `action`, `status (pending|matched|dismissed)`, `matchedAt`, optional inline `comment`.
+- `DatingMatch`: enforces unique pair keys (`userA`, `userB`) and exposes `createOrGetMatch` / `endMatch(reason)` to keep single source of truth for match status.
+- `DatingProfileComment`: regular comment store with `isDeleted`, `likes`, and user population for UI.
+
+---
+
+### 5. Postman Collection & Environment
+
+1. **Import Collection**  
+   - File: `docs/postman/dating-api.postman_collection.json` (groups calls by Media, Preferences, Discovery, Interactions, Safety).
+   - Unified collection (`scriptFiles/corrected-postman-collection.json`) also contains these calls under *User → Dating* with extra test scripts that capture `targetUserId`, `matchId`, `commentId`, and `reportId`.
+
+2. **Environment Variables**
+   - `baseUrl = http://localhost:3000` (or deployed host).  
+   - `token = <JWT>` (set in `Authorization` header used by all requests).  
+   - Dynamic vars captured from test scripts: `targetUserId`, `matchId`, `commentId`, `reportId`.
+
+3. **Auth Helper**
+   - Under Collection → Authorization: type `Bearer Token` with `{{token}}`. Individual requests inherit.
+
+4. **File Upload Requests**
+   - Set Body → `form-data`.  
+   - Key `photos` or `videos` marked as *File*, attach up to 5 files.  
+   - Optional `durations` key (text) repeated per video to store seconds.
+
+5. **Test Scripts / Variable Chaining**
    ```js
-   if (pm.response.json().data?.matchId) {
-     pm.environment.set("matchId", pm.response.json().data.matchId);
-   }
+   const json = pm.response.json();
+   const data = json.data || {};
+   if (data.matchId) pm.environment.set('matchId', data.matchId);
+   if (data.datingProfile?._id) pm.environment.set('targetUserId', data.datingProfile._id);
    ```
-   - Set `profileId`, `commentId`, `matchId` after creation for subsequent calls.
+   - Comments endpoint can store `commentId` similarly for subsequent delete/update steps if implemented later.
 
-### 6. Flow Summary
+6. **Suggested Collection Structure**
+   - `Dating Media`: profile snapshot, photo/video CRUD, toggle.  
+   - `Preferences`: get/update preferences payloads.  
+   - `Discovery`: profiles search scenarios (`generic`, `near_by`, `same_interests`, `new_dater`, `liked_you`, `liked_by_you`). Each request writes the first profile ID back to `targetUserId` so interaction calls can reuse it.  
+   - `Interactions`: like/dislike, likes feed (targeted + “me”), comments CRUD (targeted + “me”), matches listing.  
+   - `Safety`: report/block/unblock flows.
 
-1. User uploads photos/videos (`datingMediaController`), toggles profile active.
-2. Sets preferences (`PUT /preferences`).
-3. Discovers profiles via `/profiles` list with filters/distance.
-4. Likes/dislikes/comment/report/block using interaction endpoints.
-5. Mutual likes become matches, accessible via `/matches`.
+---
+
+### 6. End-to-End Smoke Flow (Recommended)
+
+1. Authenticate user → set `{{token}}`.
+2. `GET /user/dating/profile` (should return empty media).
+3. Upload at least one photo and video, reorder if needed, `PUT /toggle` to activate profile.
+4. `PUT /user/dating/preferences` to configure filters.
+5. `GET /user/dating/profiles` using filters; capture a `targetUserId`. Use `filter=liked_you|liked_by_you|new_dater` for CTA-specific tabs.  
+6. `POST /profiles/:userId/like`; if testing mutual match, run same request from second user account.  
+7. `GET /matches` to confirm match entry, `GET /profiles/:userId/likes` (or `/profiles/me/likes`) to view inbound likes.  
+8. Exercise `POST /profiles/:userId/comments`, `GET /profiles/:userId/comments` (and `/profiles/me/comments` for self-feed).  
+9. Test `POST /profiles/:userId/report` and `POST /profiles/:userId/block`, then `DELETE` unblock to reset state.
+
+Following this script ensures every controller/service path (`datingMediaController`, `datingProfileController`, `datingInteractionController`, `datingProfileService`) stays healthy after future refactors.
 
