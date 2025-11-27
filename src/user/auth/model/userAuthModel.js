@@ -85,6 +85,27 @@ const UserSchema = new mongoose.Schema(
 				uploadedAt: { type: Date, default: Date.now }
 			}],
 			isDatingProfileActive: { type: Boolean, default: false },
+			preferences: {
+				hereTo: { type: String, default: '' },
+				wantToMeet: { type: String, default: '' },
+				ageRange: {
+					min: { type: Number, default: 18 },
+					max: { type: Number, default: 100 }
+				},
+				languages: [{ type: String }],
+				location: {
+					city: { type: String, default: '' },
+					country: { type: String, default: '' },
+					coordinates: {
+						lat: { type: Number, default: null },
+						lng: { type: Number, default: null }
+					}
+				},
+				distanceRange: {
+					min: { type: Number, default: 0 },
+					max: { type: Number, default: 100 }
+				}
+			},
 			lastUpdatedAt: { type: Date, default: null }
 		},
 		// phone OTP
