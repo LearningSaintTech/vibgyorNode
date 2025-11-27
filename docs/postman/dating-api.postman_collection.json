@@ -171,6 +171,114 @@
           }
         },
         {
+          "name": "Upload Photos (Alternative)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photos", "type": "file", "src": "", "description": "Photo files (max 5, 50MB each, JPEG/PNG/WebP/GIF)" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/file-upload/dating/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "file-upload", "dating", "photos"]
+            }
+          }
+        },
+        {
+          "name": "Upload Videos (Alternative)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "videos", "type": "file", "src": "", "description": "Video files (max 5, 50MB each)" },
+                { "key": "durations", "type": "text", "value": "12.5", "description": "Optional duration (seconds) per video index" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/file-upload/dating/videos",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "file-upload", "dating", "videos"]
+            }
+          }
+        },
+        {
+          "name": "Update Photo",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "photo", "type": "file", "src": "", "description": "Single photo file (50MB max, JPEG/PNG/WebP/GIF)" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/file-upload/dating/photos/{{photoIndex}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "file-upload", "dating", "photos", "{{photoIndex}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('photoIndex')) {",
+                  "  pm.variables.set('photoIndex', '0');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Video",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "video", "type": "file", "src": "", "description": "Single video file (50MB max, MP4/MOV/AVI/WebM)" },
+                { "key": "duration", "type": "text", "value": "15.5", "description": "Optional duration in seconds" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/file-upload/dating/videos/{{videoIndex}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "file-upload", "dating", "videos", "{{videoIndex}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('videoIndex')) {",
+                  "  pm.variables.set('videoIndex', '0');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Toggle Profile",
           "request": {
             "method": "PUT",
