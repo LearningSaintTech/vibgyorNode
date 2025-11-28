@@ -258,7 +258,7 @@ async function getProfileComments(req, res) {
 				.populate('user', 'username fullName profilePictureUrl')
 				.lean(),
 			DatingProfileComment.countDocuments({
-				targetUser: profileId,
+				targetUser: targetUserId,
 				isDeleted: false
 			})
 		]);
