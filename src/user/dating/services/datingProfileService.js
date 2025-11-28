@@ -211,6 +211,19 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			.limit(pagination.limit * 2) // Fetch more to account for distance filtering
 			.lean();
 
+		// Exclude profiles that the current user has already interacted with (liked or disliked)
+		// This prevents showing profiles that have already been swiped on
+		// Exception: Don't exclude when filter is 'liked_by_you' (we want to show those)
+		if (filters.filter !== 'liked_by_you' && filters.filter !== 'liked_you') {
+			const userInteractions = await DatingInteraction.find({
+				user: currentUserId,
+				action: { $in: ['like', 'dislike'] }
+			}).select('targetUser').lean();
+			
+			const interactedUserIds = userInteractions.map(interaction => interaction.targetUser.toString());
+			profiles = profiles.filter(profile => !interactedUserIds.includes(profile._id.toString()));
+		}
+
 		// Filter by interaction type (liked_you, liked_by_you)
 		if (filters.filter === 'liked_you') {
 			// Find users who have liked the current user
@@ -242,6 +255,9 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 
 		// Calculate age for each profile
 		profiles = profiles.map(profile => {
+			// Always expose username so search results can display it
+			profile.username = profile.username || '';
+
 			if (profile.dob) {
 				const today = new Date();
 				const birthDate = new Date(profile.dob);
@@ -286,7 +302,15 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 						const distanceMeters = Math.round(distanceKm * 1000);
 						profile.distanceAway = `${distanceMeters} m away`;
 					}
+				} else {
+					// No coordinates on profile, surface empty distance fields
+					profile.distance = null;
+					profile.distanceAway = null;
 				}
+			} else {
+				// Current user has no coordinates, still expose distance keys for the client
+				profile.distance = null;
+				profile.distanceAway = null;
 			}
 
 			// Format dating profile
