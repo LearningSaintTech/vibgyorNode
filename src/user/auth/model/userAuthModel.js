@@ -44,8 +44,9 @@ const UserSchema = new mongoose.Schema(
 			default: 'none' 
 		},
 		verificationDocument: {
-			documentType: { type: String, default: '' }, // 'id_proof', 'passport', 'driving_license', etc.
-			documentUrl: { type: String, default: '' },
+			documentType: { type: String, default: '' }, // 'id_proof', 'passport', 'driving_license', 'aadhaar', etc.
+			documentUrl: { type: String, default: '' }, // Primary/first document URL (for backward compatibility)
+			documentUrls: [{ type: String }], // Array of all document URLs (for multiple files like Aadhaar front & back)
 			documentNumber: { type: String, default: '' },
 			uploadedAt: { type: Date, default: null },
 			reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },

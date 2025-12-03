@@ -179,16 +179,45 @@ async function uploadIdProof(req, res) {
 
 				// Update user verification document info
 				user.verificationDocument.documentType = documentType;
-				user.verificationDocument.documentUrls = uploadedUrls; // Store all URLs
 				user.verificationDocument.documentUrl = uploadedUrls[0]; // Store first URL for backward compatibility
+				user.verificationDocument.documentUrls = uploadedUrls; // Store all URLs (array)
 				user.verificationDocument.documentNumber = req.body.documentNumber || '';
 				user.verificationDocument.uploadedAt = new Date();
 				user.verificationStatus = 'pending'; // Set status to pending for review
-				await user.save();
-
-				console.log('[USER][UPLOAD] ID proof uploaded successfully:', {
+				
+				// Mark the nested object as modified to ensure it gets saved
+				user.markModified('verificationDocument');
+				
+				// Save to database
+				const savedUser = await user.save();
+				
+				// Verify the save by fetching the user again
+				const verifyUser = await User.findById(user._id).select('verificationDocument verificationStatus');
+				
+				if (!verifyUser || !verifyUser.verificationDocument.documentUrl) {
+					console.error('[USER][UPLOAD] Save verification failed - document not found in DB');
+					return ApiResponse.serverError(res, 'Failed to save document to database');
+				}
+				
+				// Verify that all URLs were saved
+				const savedUrlsCount = verifyUser.verificationDocument.documentUrls?.length || 0;
+				if (savedUrlsCount !== uploadedUrls.length) {
+					console.error('[USER][UPLOAD] Not all URLs were saved:', {
+						expected: uploadedUrls.length,
+						saved: savedUrlsCount
+					});
+					return ApiResponse.serverError(res, `Failed to save all documents. Expected ${uploadedUrls.length}, saved ${savedUrlsCount}`);
+				}
+				
+				console.log('[USER][UPLOAD] ID proof uploaded and saved successfully:', {
 					count: uploadedUrls.length,
-					firstUrl: uploadedUrls[0]
+					allUrls: uploadedUrls,
+					firstUrl: uploadedUrls[0],
+					documentType: verifyUser.verificationDocument.documentType,
+					verificationStatus: verifyUser.verificationStatus,
+					documentUrl: verifyUser.verificationDocument.documentUrl,
+					documentUrls: verifyUser.verificationDocument.documentUrls,
+					savedCount: savedUrlsCount
 				});
 
 				return ApiResponse.success(res, {
@@ -196,8 +225,10 @@ async function uploadIdProof(req, res) {
 					keys: uploadedKeys,
 					filenames: uploadedFilenames,
 					totalFiles: uploadedUrls.length,
-					documentType: documentType,
-					verificationStatus: user.verificationStatus
+					documentType: verifyUser.verificationDocument.documentType,
+					verificationStatus: verifyUser.verificationStatus,
+					documentUrl: verifyUser.verificationDocument.documentUrl,
+					documentUrls: verifyUser.verificationDocument.documentUrls || uploadedUrls
 				}, `${uploadedUrls.length} ID proof document(s) uploaded successfully`);
 
 			} catch (uploadError) {
