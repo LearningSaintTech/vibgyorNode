@@ -310,6 +310,35 @@ class FeedAlgorithmService {
           $unwind: '$author'
         },
         {
+          $addFields: {
+            isLiked: {
+              $cond: [
+                {
+                  $gt: [
+                    {
+                      $size: {
+                        $filter: {
+                          input: { $ifNull: ['$likes', []] },
+                          as: 'like',
+                          cond: {
+                            $eq: [
+                              { $toString: '$$like.user' },
+                              userId.toString()
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                true,
+                false
+              ]
+            }
+          }
+        },
+        {
           $lookup: {
             from: 'users',
             localField: 'comments.user',
@@ -426,6 +455,40 @@ class FeedAlgorithmService {
         },
         {
           $unwind: '$author'
+        },
+        {
+          $addFields: {
+            isLiked: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: [userId, null] },
+                    {
+                      $gt: [
+                        {
+                          $size: {
+                            $filter: {
+                              input: { $ifNull: ['$likes', []] },
+                              as: 'like',
+                              cond: {
+                                $eq: [
+                                  { $toString: '$$like.user' },
+                                  userId.toString()
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    }
+                  ]
+                },
+                true,
+                false
+              ]
+            }
+          }
         }
       ]);
 
@@ -513,6 +576,40 @@ class FeedAlgorithmService {
         },
         {
           $unwind: '$author'
+        },
+        {
+          $addFields: {
+            isLiked: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: [userId, null] },
+                    {
+                      $gt: [
+                        {
+                          $size: {
+                            $filter: {
+                              input: { $ifNull: ['$likes', []] },
+                              as: 'like',
+                              cond: {
+                                $eq: [
+                                  { $toString: '$$like.user' },
+                                  userId.toString()
+                                ]
+                              }
+                            }
+                          }
+                        },
+                        0
+                      ]
+                    }
+                  ]
+                },
+                true,
+                false
+              ]
+            }
+          }
         }
       ]);
 

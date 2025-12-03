@@ -4,7 +4,7 @@ const FollowRequest = require('../userModel/followRequestModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const feedAlgorithmService = require('../../../services/feedAlgorithmService');
-const notificationService = require('../../../notification/services/notificationService');
+// const notificationService = require('../../../services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
 
 // Helper function to normalize location with all fields visible
@@ -38,9 +38,40 @@ function normalizeLocation(location) {
   };
 }
 
+// Helper function to add isLiked field to a post
+function addIsLiked(post, userId) {
+  // If isLiked is already set (from aggregation pipeline), use it
+  if (post.isLiked !== undefined) {
+    return post;
+  }
+  
+  if (!userId) {
+    post.isLiked = false;
+    return post;
+  }
+  
+  // Check if likes exists and is an array
+  if (!post.likes || !Array.isArray(post.likes)) {
+    post.isLiked = false;
+    return post;
+  }
+  
+  // Check if user has liked this post
+  const isLiked = post.likes.some(like => {
+    const likeUserId = like.user?._id ? like.user._id.toString() : like.user?.toString();
+    return likeUserId === userId.toString();
+  });
+  
+  post.isLiked = !!isLiked;
+  return post;
+}
+
 // Helper function to transform post media into a cleaner structure
-function transformPostMedia(post) {
+function transformPostMedia(post, userId = null) {
   const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
+  
+  // Add isLiked field
+  addIsLiked(postObj, userId);
   
   // Separate images and videos
   const images = [];
@@ -226,8 +257,8 @@ async function createPost(req, res) {
       // Don't fail the post creation if moderation fails
     }
 
-    // Transform media into organized structure before returning
-    const transformedPost = transformPostMedia(post);
+    // Transform media into organized structure before returning (includes isLiked)
+    const transformedPost = transformPostMedia(post, userId);
 
     console.log('[POST] Post created successfully:', post._id);
     return ApiResponse.success(res, transformedPost, 'Post created successfully');
@@ -289,8 +320,8 @@ async function getUserPosts(req, res) {
         postObj.lastComment = null;
       }
       
-      // Transform media into organized structure
-      return transformPostMedia(postObj);
+      // Transform media into organized structure (includes isLiked)
+      return transformPostMedia(postObj, currentUserId);
     });
 
     return ApiResponse.success(res, {
@@ -322,8 +353,8 @@ async function getFeedPosts(req, res) {
       parseInt(limit)
     );
 
-    // Transform media for all feed posts
-    const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post));
+    // Transform media for all feed posts (includes isLiked)
+    const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId));
 
     // Get total count for pagination (excluding own posts and blocked users)
     const user = await User.findById(userId).select('following blockedUsers blockedBy');
@@ -408,8 +439,8 @@ async function getPost(req, res) {
       postObj.lastComment = null;
     }
 
-    // Transform media into organized structure
-    const transformedPost = transformPostMedia(postObj);
+    // Transform media into organized structure (includes isLiked)
+    const transformedPost = transformPostMedia(postObj, userId);
 
     return ApiResponse.success(res, transformedPost, 'Post retrieved successfully');
   } catch (error) {
@@ -514,9 +545,10 @@ async function updatePost(req, res) {
 
     await post.save();
     await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
+    await post.populate('likes.user', 'username fullName');
 
-    // Transform media into organized structure before returning
-    const transformedPost = transformPostMedia(post);
+    // Transform media into organized structure before returning (includes isLiked)
+    const transformedPost = transformPostMedia(post, userId);
 
     console.log('[POST] Post updated successfully:', postId);
     return ApiResponse.success(res, transformedPost, 'Post updated successfully');
@@ -584,24 +616,12 @@ async function toggleLike(req, res) {
     } else {
       await post.addLike(userId);
       
-      // Create notification for post like
+      // Send notification for like
       try {
-        const postAuthor = await User.findById(post.author);
-        if (postAuthor && postAuthor._id.toString() !== userId) {
-          await notificationService.create({
-            context: 'social',
-            type: 'post_like',
-            recipientId: post.author.toString(),
-            senderId: userId,
-            data: {
-              postId: post._id.toString(),
-              contentType: 'post'
-            }
-          });
-        }
+        await notificationService.notifyPostEngagement(postId, userId, 'like');
       } catch (notificationError) {
-        console.error('[POST] Error creating notification for post like:', notificationError);
-        // Don't fail the request if notification fails
+        console.error('[POST] Like notification error:', notificationError);
+        // Don't fail the like action if notification fails
       }
       
       return ApiResponse.success(res, { liked: true, likesCount: post.likesCount }, 'Post liked');
@@ -820,25 +840,14 @@ async function addComment(req, res) {
     await post.populate(`comments.${commentIndex}.user`, 'username fullName profilePictureUrl');
     const newComment = post.comments[commentIndex];
 
-    // Create notification for post comment
+    // Send notification for comment
     try {
-      const postAuthor = await User.findById(post.author);
-      if (postAuthor && postAuthor._id.toString() !== userId) {
-        await notificationService.create({
-          context: 'social',
-          type: 'post_comment',
-          recipientId: post.author.toString(),
-          senderId: userId,
-          data: {
-            postId: post._id.toString(),
-            commentId: newComment._id.toString(),
-            contentType: 'post'
-          }
-        });
-      }
+      await notificationService.notifyPostEngagement(postId, userId, 'comment', {
+        commentContent: content.trim()
+      });
     } catch (notificationError) {
-      console.error('[POST] Error creating notification for post comment:', notificationError);
-      // Don't fail the request if notification fails
+      console.error('[POST] Comment notification error:', notificationError);
+      // Don't fail the comment action if notification fails
     }
 
     console.log('[POST] Comment added successfully');
@@ -866,7 +875,7 @@ async function getPostComments(req, res) {
       });
 
     if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
+      return ApiResponse.notFound(res, 'Post no found');
     }
 
     // Sort comments by createdAt (most recent first) and paginate
@@ -1061,8 +1070,11 @@ async function searchPosts(req, res) {
 
     const posts = await Post.searchPosts(query, parseInt(page), parseInt(limit), allBlockedIds);
 
-    // Transform media for all search results
-    const transformedPosts = posts.map(post => transformPostMedia(post));
+    // Transform media for all search results (includes isLiked)
+    const transformedPosts = posts.map(post => {
+      const postObj = post.toObject ? post.toObject() : post;
+      return transformPostMedia(postObj, userId);
+    });
 
     // Count total posts excluding blocked users
     const totalCountQuery = {
@@ -1176,8 +1188,8 @@ async function getTrendingPosts(req, res) {
       userId // Pass userId to exclude blocked users
     );
 
-    // Transform media for all trending posts
-    const transformedPosts = trendingPosts.map(post => transformPostMedia(post));
+    // Transform media for all trending posts (includes isLiked)
+    const transformedPosts = trendingPosts.map(post => transformPostMedia(post, userId));
 
     return ApiResponse.success(res, {
       posts: transformedPosts,
@@ -1207,8 +1219,8 @@ async function getPostsByHashtag(req, res) {
       userId // Pass userId to exclude blocked users
     );
 
-    // Transform media for all hashtag posts
-    const transformedPosts = posts.map(post => transformPostMedia(post));
+    // Transform media for all hashtag posts (includes isLiked)
+    const transformedPosts = posts.map(post => transformPostMedia(post, userId));
 
     // Get total count excluding blocked users
     let totalCountQuery = {
@@ -1484,12 +1496,16 @@ module.exports = {
       const savedIds = user.savedPosts || [];
       const posts = await Post.find({ _id: { $in: savedIds }, status: { $ne: 'deleted' } })
         .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
+        .populate('likes.user', 'username fullName')
         .sort({ publishedAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      // Transform media for all saved posts
-      const transformedPosts = posts.map(post => transformPostMedia(post));
+      // Transform media for all saved posts (includes isLiked)
+      const transformedPosts = posts.map(post => {
+        const postObj = post.toObject();
+        return transformPostMedia(postObj, userId);
+      });
 
       const totalPosts = await Post.countDocuments({ _id: { $in: savedIds }, status: { $ne: 'deleted' } });
 
@@ -1568,7 +1584,7 @@ module.exports = {
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      // Transform media for all archived posts
+      // Transform media for all archived posts (includes isLiked)
       const transformedPosts = posts.map(post => {
         const postObj = post.toObject();
         
@@ -1582,7 +1598,7 @@ module.exports = {
           postObj.lastComment = null;
         }
         
-        return transformPostMedia(postObj);
+        return transformPostMedia(postObj, userId);
       });
 
       const totalPosts = await Post.countDocuments({
