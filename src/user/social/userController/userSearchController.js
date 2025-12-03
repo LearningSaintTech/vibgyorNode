@@ -3,6 +3,34 @@ const User = require('../../auth/model/userAuthModel');
 const Post = require('../userModel/postModel');
 const ApiResponse = require('../../../utils/apiResponse');
 
+// Helper function to add isLiked field to a post
+function addIsLiked(post, userId) {
+	// If isLiked is already set (from aggregation pipeline), use it
+	if (post.isLiked !== undefined) {
+		return post;
+	}
+	
+	if (!userId) {
+		post.isLiked = false;
+		return post;
+	}
+	
+	// Check if likes exists and is an array
+	if (!post.likes || !Array.isArray(post.likes)) {
+		post.isLiked = false;
+		return post;
+	}
+	
+	// Check if user has liked this post
+	const isLiked = post.likes.some(like => {
+		const likeUserId = like.user?._id ? like.user._id.toString() : like.user?.toString();
+		return likeUserId === userId.toString();
+	});
+	
+	post.isLiked = !!isLiked;
+	return post;
+}
+
 // Helper function to process search input
 // Extracts hashtags (with #) and separates them from keywords
 // Used by hashtag search to determine if # is present or not
@@ -213,6 +241,7 @@ async function searchPosts(req, res) {
 			Post.find(searchQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
 				.populate('mentions.user', 'username fullName')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -225,10 +254,13 @@ async function searchPosts(req, res) {
 			total: total
 		});
 
+		// Add isLiked field to each post
+		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			type: 'posts',
-			results: results,
-			count: results.length,
+			results: resultsWithIsLiked,
+			count: resultsWithIsLiked.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
@@ -389,6 +421,7 @@ async function searchHashtags(req, res) {
 		const [results, total] = await Promise.all([
 			Post.find(searchQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -400,16 +433,19 @@ async function searchHashtags(req, res) {
 			count: results.length,
 			total: total
 		});
-		
+
 		// Debug: Show sample hashtags from results (if any)
 		if (results.length > 0) {
 			console.log('[USER][SEARCH] Sample hashtags from results:', results[0].hashtags);
 		}
 
+		// Add isLiked field to each post
+		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			type: 'hashtags',
-			results: results,
-			count: results.length,
+			results: resultsWithIsLiked,
+			count: resultsWithIsLiked.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
@@ -493,6 +529,7 @@ async function searchLocation(req, res) {
 		const [results, total] = await Promise.all([
 			Post.find(searchQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -505,10 +542,13 @@ async function searchLocation(req, res) {
 			total: total
 		});
 
+		// Add isLiked field to each post
+		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			type: 'location',
-			results: results,
-			count: results.length,
+			results: resultsWithIsLiked,
+			count: resultsWithIsLiked.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
@@ -584,6 +624,7 @@ async function searchAll(req, res) {
 				Post.find(defaultPostsQuery)
 					.populate('author', 'username fullName profilePictureUrl verificationStatus')
 					.populate('mentions.user', 'username fullName')
+					.populate('likes.user', 'username fullName')
 					.sort({ publishedAt: -1 })
 					.skip(skip)
 					.limit(parseInt(limit))
@@ -596,10 +637,13 @@ async function searchAll(req, res) {
 				total: total
 			});
 			
+			// Add isLiked field to each post
+			const postsWithIsLiked = posts.map(post => addIsLiked(post, currentUserId));
+			
 			const responseData = {
 				type: 'posts',
-				results: posts,
-				count: posts.length,
+				results: postsWithIsLiked,
+				count: postsWithIsLiked.length,
 				pagination: {
 					page: parseInt(page),
 					limit: parseInt(limit),
@@ -733,18 +777,21 @@ async function searchAll(req, res) {
 			Post.find(postsQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
 				.populate('mentions.user', 'username fullName')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
 				.lean(),
 			Post.find(hashtagsQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
 				.lean(),
 			Post.find(locationQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -762,22 +809,27 @@ async function searchAll(req, res) {
 		
 		console.log('[USER][SEARCH] Total results across all categories:', totalResults);
 
+		// Add isLiked field to all post results
+		const postsWithIsLiked = posts.map(post => addIsLiked(post, currentUserId));
+		const hashtagPostsWithIsLiked = hashtagPosts.map(post => addIsLiked(post, currentUserId));
+		const locationPostsWithIsLiked = locationPosts.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			people: {
 				results: people,
 				count: people.length
 			},
 			posts: {
-				results: posts,
-				count: posts.length
+				results: postsWithIsLiked,
+				count: postsWithIsLiked.length
 			},
 			hashtags: {
-				results: hashtagPosts,
-				count: hashtagPosts.length
+				results: hashtagPostsWithIsLiked,
+				count: hashtagPostsWithIsLiked.length
 			},
 			location: {
-				results: locationPosts,
-				count: locationPosts.length
+				results: locationPostsWithIsLiked,
+				count: locationPostsWithIsLiked.length
 			},
 			totalResults: totalResults,
 			pagination: {

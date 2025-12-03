@@ -24,7 +24,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 /**
  * Build search query based on filters
  */
-function buildSearchQuery(currentUser, filters = {}) {
+function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 	const {
 		search = '', // Search by name or username
 		hereTo = null,
@@ -37,13 +37,24 @@ function buildSearchQuery(currentUser, filters = {}) {
 		filter = 'all' // 'all', 'liked_you', 'liked_by_you', 'new_dater', 'near_by', 'same_interests'
 	} = filters;
 
-	// Base query - exclude current user, blocked users, and inactive profiles
+	// Combine all excluded user IDs (blocked users + already interacted users)
+	// Convert all to strings first to remove duplicates, then back to ObjectIds for consistency
+	const allExcludedIdsStrings = [
+		...(currentUser.blockedUsers || []).map(id => id.toString()),
+		...(currentUser.blockedBy || []).map(id => id.toString()),
+		...excludedUserIds.map(id => id.toString())
+	].filter(Boolean);
+	
+	// Remove duplicates and convert back to ObjectIds
+	const allExcludedIds = [...new Set(allExcludedIdsStrings)].map(id => require('mongoose').Types.ObjectId(id));
+
+	// Base query - exclude current user, blocked users, interacted users, and inactive profiles
 	const query = {
 		$and: [
 			{ _id: { $ne: currentUser._id } }, // Exclude current user
 			{ isActive: true }, // Only active users
 			{ 'dating.isDatingProfileActive': true }, // Only active dating profiles
-			{ _id: { $nin: [...(currentUser.blockedUsers || []), ...(currentUser.blockedBy || [])] } } // Exclude blocked users
+			...(allExcludedIds.length > 0 ? [{ _id: { $nin: allExcludedIds } }] : []) // Exclude blocked users and already interacted users
 		]
 	};
 
@@ -198,8 +209,23 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			throw new Error('Current user not found');
 		}
 
-		// Build search query
-		const query = buildSearchQuery(currentUser, filters);
+		// Get users that the current user has already interacted with (liked or disliked)
+		// Exception: Don't exclude when filter is 'liked_by_you' or 'liked_you' (we want to show those)
+		let excludedUserIds = [];
+		if (filters.filter !== 'liked_by_you' && filters.filter !== 'liked_you') {
+			const userInteractions = await DatingInteraction.find({
+				user: currentUserId,
+				action: { $in: ['like', 'dislike'] }
+			}).select('targetUser').lean();
+			
+			// Extract targetUser IDs and remove duplicates
+			excludedUserIds = [...new Set(
+				userInteractions.map(interaction => interaction.targetUser.toString())
+			)].map(id => require('mongoose').Types.ObjectId(id));
+		}
+
+		// Build search query with excluded user IDs
+		const query = buildSearchQuery(currentUser, filters, excludedUserIds);
 		
 		const skip = (pagination.page - 1) * pagination.limit;
 
@@ -210,19 +236,6 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			.skip(skip)
 			.limit(pagination.limit * 2) // Fetch more to account for distance filtering
 			.lean();
-
-		// Exclude profiles that the current user has already interacted with (liked or disliked)
-		// This prevents showing profiles that have already been swiped on
-		// Exception: Don't exclude when filter is 'liked_by_you' (we want to show those)
-		if (filters.filter !== 'liked_by_you' && filters.filter !== 'liked_you') {
-			const userInteractions = await DatingInteraction.find({
-				user: currentUserId,
-				action: { $in: ['like', 'dislike'] }
-			}).select('targetUser').lean();
-			
-			const interactedUserIds = userInteractions.map(interaction => interaction.targetUser.toString());
-			profiles = profiles.filter(profile => !interactedUserIds.includes(profile._id.toString()));
-		}
 
 		// Filter by interaction type (liked_you, liked_by_you)
 		if (filters.filter === 'liked_you') {
