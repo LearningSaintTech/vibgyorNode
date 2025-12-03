@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../../auth/model/userAuthModel');
 const Post = require('../userModel/postModel');
 const ApiResponse = require('../../../utils/apiResponse');
@@ -36,6 +37,15 @@ async function getMentionedUserIds(keyword) {
 	}).select('_id');
 	
 	return users.map(user => user._id);
+}
+
+// Helper function to get private account user IDs
+async function getPrivateAccountUserIds() {
+	const privateUsers = await User.find({ 
+		'privacySettings.isPrivate': true 
+	}).select('_id');
+	
+	return privateUsers.map(user => user._id);
 }
 
 // Search People
@@ -148,6 +158,17 @@ async function searchPosts(req, res) {
 		const blockedBy = user.blockedBy || [];
 		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length);
 
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...blockedBy.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+
 		let searchQuery;
 		
 		// If no keyword, return all public posts
@@ -157,7 +178,7 @@ async function searchPosts(req, res) {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
-					{ author: { $nin: [...blockedUsers, ...blockedBy] } }
+					{ author: { $nin: excludedUserIds } }
 				]
 			};
 		} else {
@@ -169,7 +190,7 @@ async function searchPosts(req, res) {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
-					{ author: { $nin: [...blockedUsers, ...blockedBy] } },
+					{ author: { $nin: excludedUserIds } },
 					{
 						$or: [
 							{ content: { $regex: keyword, $options: 'i' } },
@@ -263,9 +284,19 @@ async function searchHashtags(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+		
 		// Process hashtag search terms
 		// IMPORTANT: When filter=hashtags, we ALWAYS search the hashtags column,
-		// regardless of whether # symbol is present in the query. We search both
+		// regardless of whethe r # symbol is present in the query. We search both
 		// the normalized form (without #) and the # prefixed form to support data
 		// stored in either format.
 		const hashtagNamesSet = new Set();
@@ -312,7 +343,7 @@ async function searchHashtags(req, res) {
 			$and: [
 				{ status: 'published' }, // Only published posts
 				{ visibility: 'public' }, // Only public posts
-				{ author: { $nin: blockedUsers } }, // Exclude blocked users' posts
+				{ author: { $nin: excludedUserIds } }, // Exclude blocked users' and private account users' posts
 				{ hashtags: { $in: hashtagNames } } // Search hashtags column (always, regardless of # presence)
 			]
 		};
@@ -429,11 +460,21 @@ async function searchLocation(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+		
 		const searchQuery = {
 			$and: [
 				{ status: 'published' }, // Only published posts
 				{ visibility: 'public' }, // Only public posts
-				{ author: { $nin: blockedUsers } }, // Exclude blocked users' posts
+				{ author: { $nin: excludedUserIds } }, // Exclude blocked users' and private account users' posts
 				{
 					$or: [
 						{ 'location.name': { $regex: keyword, $options: 'i' } },
@@ -512,6 +553,17 @@ async function searchAll(req, res) {
 		const blockedBy = user.blockedBy || [];
 		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length);
 		
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...blockedBy.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+		
 		// If no search term provided, return all public posts (explore/discovery feed)
 		if (!processed.hasKeywords && !processed.hasHashtags) {
 			console.log('[USER][SEARCH] No search keyword - returning all public posts (explore feed)');
@@ -523,7 +575,7 @@ async function searchAll(req, res) {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
-					{ author: { $nin: [...blockedUsers, ...blockedBy] } }
+					{ author: { $nin: excludedUserIds } }
 				]
 			};
 			console.log('[USER][SEARCH] Default posts query:', JSON.stringify(defaultPostsQuery));
@@ -606,7 +658,7 @@ async function searchAll(req, res) {
 			$and: [
 				{ status: 'published' },
 				{ visibility: 'public' },
-				{ author: { $nin: blockedUsers } },
+				{ author: { $nin: excludedUserIds } },
 				{
 					$or: [
 						{ content: { $regex: keyword, $options: 'i' } },
@@ -645,7 +697,7 @@ async function searchAll(req, res) {
 			$and: [
 				{ status: 'published' },
 				{ visibility: 'public' },
-				{ author: { $nin: blockedUsers } },
+				{ author: { $nin: excludedUserIds } },
 				{ hashtags: { $in: hashtagNames } }
 			]
 		};
@@ -657,7 +709,7 @@ async function searchAll(req, res) {
 			$and: [
 				{ status: 'published' },
 				{ visibility: 'public' },
-				{ author: { $nin: blockedUsers } },
+				{ author: { $nin: excludedUserIds } },
 				{
 					$or: [
 						{ 'location.name': { $regex: keyword, $options: 'i' } },
