@@ -198,7 +198,11 @@ async function getUserStories(req, res) {
     // Add hasViewed flag to each story
     const storiesWithViewedFlag = stories.map(story => {
       const storyObj = story.toObject();
-      const hasViewed = story.views.some(view => view.user.toString() === currentUserId);
+      // Handle both populated and unpopulated view.user cases
+      const hasViewed = story.views.some(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === currentUserId.toString();
+      });
       storyObj.hasViewed = hasViewed;
       return storyObj;
     });
@@ -272,7 +276,11 @@ async function getStoriesFeed(req, res) {
       const storyObj = story.toObject();
       
       // Check if current user has viewed this story
-      const hasViewed = story.views.some(view => view.user.toString() === userId);
+      // Handle both populated and unpopulated view.user cases
+      const hasViewed = story.views.some(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === userId.toString();
+      });
       storyObj.hasViewed = hasViewed;
       
       const authorId = story.author._id.toString();
@@ -351,7 +359,11 @@ async function getStory(req, res) {
 
     // Add hasViewed flag
     const storyObj = story.toObject();
-    const hasViewed = story.views.some(view => view.user.toString() === userId);
+    // Handle both populated and unpopulated view.user cases
+    const hasViewed = story.views.some(view => {
+      const viewUserId = (view.user._id || view.user).toString();
+      return viewUserId === userId.toString();
+    });
     storyObj.hasViewed = hasViewed;
 
     console.log('[STORY] Story retrieved successfully:', {
@@ -525,7 +537,11 @@ async function getStoriesByHashtag(req, res) {
     // Add hasViewed flag to each story
     const storiesWithViewedFlag = stories.map(story => {
       const storyObj = story.toObject();
-      const hasViewed = story.views.some(view => view.user.toString() === userId);
+      // Handle both populated and unpopulated view.user cases
+      const hasViewed = story.views.some(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === userId.toString();
+      });
       storyObj.hasViewed = hasViewed;
       return storyObj;
     });
@@ -600,7 +616,11 @@ async function trackStoryView(req, res) {
     }
 
     // Check if user already viewed this story
-    const hasAlreadyViewed = story.views.some(view => view.user.toString() === userId);
+    // Handle both populated and unpopulated view.user cases
+    const hasAlreadyViewed = story.views.some(view => {
+      const viewUserId = (view.user._id || view.user).toString();
+      return viewUserId === userId.toString();
+    });
 
     if (hasAlreadyViewed) {
       console.log('[STORY] User already viewed this story');
@@ -681,7 +701,11 @@ async function toggleLikeStory(req, res) {
     await story.toggleLike(userId);
 
     // Find the updated view to check isLiked status
-    const userView = story.views.find(view => view.user.toString() === userId);
+    // Handle both populated and unpopulated view.user cases
+    const userView = story.views.find(view => {
+      const viewUserId = (view.user._id || view.user).toString();
+      return viewUserId === userId.toString();
+    });
     const isLiked = userView ? userView.isLiked : false;
 
     console.log('[STORY] Story like toggled successfully:', {
