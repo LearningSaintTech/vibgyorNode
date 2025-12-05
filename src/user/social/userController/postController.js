@@ -83,12 +83,16 @@ function transformPostMedia(post, userId = null) {
         images.push({
           url: mediaItem.url,
           thumbnail: mediaItem.thumbnail,
-          dimensions: mediaItem.dimensions
+          thumbnailUrl: mediaItem.thumbnailUrl || mediaItem.thumbnail,
+          dimensions: mediaItem.dimensions,
+          blurhash: mediaItem.blurhash || null, // BlurHash for instant placeholders
+          responsiveUrls: mediaItem.responsiveUrls || null, // Multiple sizes for images
         });
       } else if (mediaItem.type === 'video') {
         videos.push({
           url: mediaItem.url,
           thumbnail: mediaItem.thumbnail,
+          thumbnailUrl: mediaItem.thumbnailUrl || mediaItem.thumbnail,
           duration: mediaItem.duration,
           dimensions: mediaItem.dimensions
         });
@@ -121,17 +125,41 @@ async function createPost(req, res) {
       return ApiResponse.badRequest(res, 'Post media is required');
     }
 
-    // Process media files
+    // Process media files and thumbnails
     const media = [];
-    if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
+    
+    // Handle both uploadMultiple (req.files array) and uploadWithThumbnails (req.files object)
+    let mediaFiles = [];
+    let thumbnailFiles = [];
+    
+    if (Array.isArray(req.files)) {
+      // Old format: uploadMultiple - all files in array
+      mediaFiles = req.files;
+    } else if (req.files && typeof req.files === 'object') {
+      // New format: uploadWithThumbnails - files organized by fieldname
+      mediaFiles = req.files.files || [];
+      thumbnailFiles = req.files.thumbnails || [];
+    }
+    
+    // Create thumbnail map for quick lookup (match by index)
+    const thumbnailMap = new Map();
+    thumbnailFiles.forEach((thumbFile, index) => {
+      thumbnailMap.set(index, thumbFile);
+    });
+
+    if (mediaFiles.length > 0) {
+      let videoIndex = 0; // Track video index for thumbnail matching
+      
+      for (let i = 0; i < mediaFiles.length; i++) {
+        const file = mediaFiles[i];
+        
         // Validate media type - only images and videos allowed
         if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
           return ApiResponse.badRequest(res, 'Only images and videos are allowed');
         }
 
         try {
-          // Upload to S3
+          // Upload main media file to S3
           const uploadResult = await uploadToS3({
             buffer: file.buffer,
             contentType: file.mimetype,
@@ -145,16 +173,47 @@ async function createPost(req, res) {
             }
           });
 
+          // Upload thumbnail for videos (if provided)
+          let thumbnailUrl = null;
+          if (file.mimetype.startsWith('video/')) {
+            const thumbnailFile = thumbnailMap.get(videoIndex);
+            if (thumbnailFile) {
+              try {
+                const thumbnailResult = await uploadToS3({
+                  buffer: thumbnailFile.buffer,
+                  contentType: thumbnailFile.mimetype,
+                  userId: userId,
+                  category: 'posts',
+                  type: 'image',
+                  filename: `thumbnail_${file.originalname.replace(/\.[^/.]+$/, '.jpg')}`,
+                  metadata: {
+                    originalName: thumbnailFile.originalname,
+                    uploadedAt: new Date().toISOString(),
+                    isThumbnail: 'true',
+                    parentMedia: uploadResult.key
+                  }
+                });
+                thumbnailUrl = thumbnailResult.url;
+                console.log('[POST] Video thumbnail uploaded:', thumbnailResult.url);
+              } catch (thumbError) {
+                console.warn('[POST] Thumbnail upload failed, continuing without thumbnail:', thumbError);
+              }
+            }
+            videoIndex++;
+          }
+
           media.push({
             type: uploadResult.type,
             url: uploadResult.url,
-            thumbnail: uploadResult.thumbnail || null,
+            thumbnail: thumbnailUrl || uploadResult.thumbnail || null,
             filename: file.originalname,
             fileSize: file.size,
             mimeType: file.mimetype,
             duration: uploadResult.duration || null,
             dimensions: uploadResult.dimensions || null,
-            s3Key: uploadResult.key
+            s3Key: uploadResult.key,
+            responsiveUrls: uploadResult.responsiveUrls || null, // Multiple sizes for images
+            blurhash: uploadResult.blurhash || null, // BlurHash for instant placeholders
           });
         } catch (uploadError) {
           console.error('[POST] Media upload error:', uploadError);

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authorize, Roles } = require('../../../middleware/authMiddleware');
-const { uploadMultiple } = require('../../../middleware/uploadMiddleware');
+const { uploadMultiple, uploadWithThumbnails } = require('../../../middleware/uploadMiddleware');
 const {
   createPost,
   getUserPosts,
@@ -116,9 +116,10 @@ const validateReport = (req, res, next) => {
 };
 
 // Post CRUD Routes
+// Use uploadWithThumbnails to support video thumbnails
 router.post('/',
   authorize([Roles.USER]),
-  uploadMultiple,
+  uploadWithThumbnails, // Supports both 'files' and 'thumbnails' fields
   validateCreatePost,
   createPost
 );

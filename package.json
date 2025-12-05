@@ -12,7 +12,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed:admin": "node scriptFiles/createAdmin.js",
     "seed": "node src/seed.js",
-    "seed:reset": "node src/seed.js --reset"
+    "seed:reset": "node src/seed.js --reset",
+    "seed:optimization": "node scriptFiles/seedOptimizationTest.js"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +24,7 @@
     "@aws-sdk/s3-request-presigner": "^3.895.0",
     "@faker-js/faker": "^10.0.0",
     "bcrypt": "^6.0.0",
+    "blurhash": "^2.0.5",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -37,6 +39,7 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.6",
+    "sharp": "^0.33.5",
     "socket.io": "^4.8.1",
     "uuid": "^13.0.0"
   },

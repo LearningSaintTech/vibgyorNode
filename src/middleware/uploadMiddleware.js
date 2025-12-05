@@ -41,9 +41,20 @@ function fileFilter(req, file, cb) {
 const uploadSingle = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE } }).single('file');
 const uploadMultiple = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES } }).array('files', MAX_FILES);
 
+// Upload with thumbnails support (for posts with videos)
+const uploadWithThumbnails = multer({ 
+  storage, 
+  fileFilter, 
+  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES * 2 } // Allow files + thumbnails
+}).fields([
+  { name: 'files', maxCount: MAX_FILES },
+  { name: 'thumbnails', maxCount: MAX_FILES }, // Video thumbnails
+]);
+
 module.exports = {
 	uploadSingle,
 	uploadMultiple,
+	uploadWithThumbnails,
 	ACCEPTED_MIME,
 	MAX_FILE_SIZE,
 	MAX_FILES,

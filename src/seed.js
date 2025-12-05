@@ -421,18 +421,53 @@ const seedUsers = async () => {
   console.log('🌱 Seeding Users...');
   
   const users = [];
-  for (let i = 0; i < 30; i++) {
+  const totalUsers = 500;
+  
+  // Helper function to generate unique data for users beyond demo data
+  const generateUserData = (index) => {
+    const firstNameOptions = ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Avery', 'Quinn', 'Sage', 'River', 'Phoenix', 'Skylar', 'Rowan', 'Blake', 'Cameron', 'Dakota', 'Emery', 'Finley', 'Harper', 'Hayden'];
+    const lastNameOptions = ['Anderson', 'Brown', 'Davis', 'Garcia', 'Harris', 'Jackson', 'Johnson', 'Jones', 'Lee', 'Martinez', 'Miller', 'Moore', 'Robinson', 'Smith', 'Taylor', 'Thomas', 'Thompson', 'Walker', 'White', 'Williams'];
+    
+    const firstName = getRandomElement(firstNameOptions);
+    const lastName = getRandomElement(lastNameOptions);
+    const fullName = `${firstName} ${lastName}`;
+    const username = `${firstName.toLowerCase()}_${lastName.toLowerCase()}_${index}`;
+    const email = `user${index}@example.com`;
+    const phoneNumber = `9876543${String(index).padStart(3, '0')}`;
+    
+    return { fullName, username, email, phoneNumber };
+  };
+  
+  for (let i = 0; i < totalUsers; i++) {
     const primaryLanguage = getRandomElement(demoData.languages);
     const secondaryLanguage = getRandomElement(demoData.languages.filter(lang => lang !== primaryLanguage));
 
+    // Use demo data for first 30 users, generate unique data for the rest
+    let phoneNumber, email, username, usernameNorm, fullName;
+    
+    if (i < demoData.phoneNumbers.length) {
+      phoneNumber = demoData.phoneNumbers[i];
+      email = demoData.emails[i];
+      username = demoData.usernames[i];
+      usernameNorm = demoData.usernames[i].toLowerCase();
+      fullName = demoData.names[i];
+    } else {
+      const generatedData = generateUserData(i);
+      phoneNumber = generatedData.phoneNumber;
+      email = generatedData.email;
+      username = generatedData.username;
+      usernameNorm = generatedData.username.toLowerCase();
+      fullName = generatedData.fullName;
+    }
+
     const user = {
-      phoneNumber: demoData.phoneNumbers[i],
+      phoneNumber: phoneNumber,
       countryCode: '+91',
-      email: demoData.emails[i],
+      email: email,
       emailVerified: Math.random() > 0.3, // 70% verified
-      username: demoData.usernames[i],
-      usernameNorm: demoData.usernames[i].toLowerCase(),
-      fullName: demoData.names[i],
+      username: username,
+      usernameNorm: usernameNorm,
+      fullName: fullName,
       dob: getRandomDate(365 * 25), // Random date within last 25 years
       bio: getRandomElement(demoData.bios),
       gender: getRandomElement(demoData.genders),

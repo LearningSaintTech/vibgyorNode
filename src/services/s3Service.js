@@ -1,8 +1,10 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { getCloudFrontUrl, getResponsiveUrls } = require('./cloudfrontService');
 
 const BUCKET = process.env.AWS_S3_BUCKET || process.env.AWS_S3_BUCKET_NAME;
 const REGION = process.env.AWS_REGION || process.env.AWS_S3_REGION;
+const USE_CLOUDFRONT = process.env.USE_CLOUDFRONT === 'true' || process.env.USE_CLOUDFRONT === '1';
 
 if (!BUCKET) {
 	// eslint-disable-next-line no-console
@@ -48,12 +50,17 @@ async function uploadBuffer({ buffer, contentType, userId, category, type, filen
 	// eslint-disable-next-line no-console
 	console.log('[S3] PutObject', { Key, ContentType: contentType });
 	await s3.send(new PutObjectCommand(params));
-	// Generate proper S3 URL based on region
+	// Generate URL - use CloudFront if configured, otherwise S3
 	let url;
-	if (REGION === 'us-east-1') {
-		url = `https://${BUCKET}.s3.amazonaws.com/${Key}`;
+	if (USE_CLOUDFRONT) {
+		url = getCloudFrontUrl(Key);
 	} else {
-		url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${Key}`;
+		// Generate proper S3 URL based on region
+		if (REGION === 'us-east-1') {
+			url = `https://${BUCKET}.s3.amazonaws.com/${Key}`;
+		} else {
+			url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${Key}`;
+		}
 	}
 	return { key: Key, bucket: BUCKET, region: REGION, url };
 }
@@ -100,12 +107,23 @@ async function uploadToS3({ buffer, contentType, userId, category, type, filenam
 	console.log('[S3] Uploading to S3:', { Key, ContentType: contentType, Size: buffer.length });
 	await s3.send(new PutObjectCommand(params));
 
-	// Generate proper S3 URL based on region
+	// Generate URL - use CloudFront if configured, otherwise S3
 	let url;
-	if (REGION === 'us-east-1') {
-		url = `https://${BUCKET}.s3.amazonaws.com/${Key}`;
+	let responsiveUrls = null;
+	
+	if (USE_CLOUDFRONT) {
+		url = getCloudFrontUrl(Key);
+		// Generate responsive URLs for images
+		if (contentType.startsWith('image/')) {
+			responsiveUrls = getResponsiveUrls(Key);
+		}
 	} else {
-		url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${Key}`;
+		// Generate proper S3 URL based on region
+		if (REGION === 'us-east-1') {
+			url = `https://${BUCKET}.s3.amazonaws.com/${Key}`;
+		} else {
+			url = `https://${BUCKET}.s3.${REGION}.amazonaws.com/${Key}`;
+		}
 	}
 
 	// Detect media type and return appropriate data
@@ -113,15 +131,46 @@ async function uploadToS3({ buffer, contentType, userId, category, type, filenam
 	                 contentType.startsWith('video/') ? 'video' : 
 	                 contentType.startsWith('audio/') ? 'audio' : 'document';
 
+	// Generate BlurHash for images
+	// Note: For small images, we can generate synchronously. For large images, consider background job.
+	let blurhash = null;
+	if (contentType.startsWith('image/')) {
+		try {
+			const { generateBlurHash } = require('./blurhashService');
+			// Generate BlurHash (await for small images, or use background job for large)
+			// For now, we'll try to generate it, but won't block if it takes too long
+			const blurhashPromise = generateBlurHash(buffer);
+			
+			// Set a timeout to avoid blocking upload
+			const timeoutPromise = new Promise((resolve) => {
+				setTimeout(() => resolve(null), 2000); // 2 second timeout
+			});
+			
+			// Race between blurhash generation and timeout
+			blurhash = await Promise.race([blurhashPromise, timeoutPromise]);
+			
+			if (blurhash) {
+				console.log(`✅ BlurHash generated for ${Key}: ${blurhash.substring(0, 20)}...`);
+			} else {
+				console.log(`⏱️ BlurHash generation timed out for ${Key} (non-critical)`);
+			}
+		} catch (error) {
+			console.warn('⚠️ BlurHash generation failed (non-critical):', error.message);
+			// Continue without blurhash - non-critical feature
+		}
+	}
+
 	return {
 		key: Key,
 		bucket: BUCKET,
 		region: REGION,
 		url,
+		responsiveUrls, // Multiple sizes for images (thumbnail, small, medium, large, original)
 		type: mediaType,
 		contentType,
 		filename,
-		size: buffer.length
+		size: buffer.length,
+		blurhash // BlurHash string for instant placeholders
 	};
 }
 
