@@ -1,6 +1,35 @@
+const mongoose = require('mongoose');
 const User = require('../../auth/model/userAuthModel');
 const Post = require('../userModel/postModel');
 const ApiResponse = require('../../../utils/apiResponse');
+
+// Helper function to add isLiked field to a post
+function addIsLiked(post, userId) {
+	// If isLiked is already set (from aggregation pipeline), use it
+	if (post.isLiked !== undefined) {
+		return post;
+	}
+	
+	if (!userId) {
+		post.isLiked = false;
+		return post;
+	}
+	
+	// Check if likes exists and is an array
+	if (!post.likes || !Array.isArray(post.likes)) {
+		post.isLiked = false;
+		return post;
+	}
+	
+	// Check if user has liked this post
+	const isLiked = post.likes.some(like => {
+		const likeUserId = like.user?._id ? like.user._id.toString() : like.user?.toString();
+		return likeUserId === userId.toString();
+	});
+	
+	post.isLiked = !!isLiked;
+	return post;
+}
 
 // Helper function to process search input
 // Extracts hashtags (with #) and separates them from keywords
@@ -36,6 +65,15 @@ async function getMentionedUserIds(keyword) {
 	}).select('_id');
 	
 	return users.map(user => user._id);
+}
+
+// Helper function to get private account user IDs
+async function getPrivateAccountUserIds() {
+	const privateUsers = await User.find({ 
+		'privacySettings.isPrivate': true 
+	}).select('_id');
+	
+	return privateUsers.map(user => user._id);
 }
 
 // Search People
@@ -148,6 +186,17 @@ async function searchPosts(req, res) {
 		const blockedBy = user.blockedBy || [];
 		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length);
 
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...blockedBy.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+
 		let searchQuery;
 		
 		// If no keyword, return all public posts
@@ -157,7 +206,7 @@ async function searchPosts(req, res) {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
-					{ author: { $nin: [...blockedUsers, ...blockedBy] } }
+					{ author: { $nin: excludedUserIds } }
 				]
 			};
 		} else {
@@ -169,7 +218,7 @@ async function searchPosts(req, res) {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
-					{ author: { $nin: [...blockedUsers, ...blockedBy] } },
+					{ author: { $nin: excludedUserIds } },
 					{
 						$or: [
 							{ content: { $regex: keyword, $options: 'i' } },
@@ -192,6 +241,7 @@ async function searchPosts(req, res) {
 			Post.find(searchQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
 				.populate('mentions.user', 'username fullName')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -204,10 +254,13 @@ async function searchPosts(req, res) {
 			total: total
 		});
 
+		// Add isLiked field to each post
+		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			type: 'posts',
-			results: results,
-			count: results.length,
+			results: resultsWithIsLiked,
+			count: resultsWithIsLiked.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
@@ -263,9 +316,19 @@ async function searchHashtags(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+		
 		// Process hashtag search terms
 		// IMPORTANT: When filter=hashtags, we ALWAYS search the hashtags column,
-		// regardless of whether # symbol is present in the query. We search both
+		// regardless of whethe r # symbol is present in the query. We search both
 		// the normalized form (without #) and the # prefixed form to support data
 		// stored in either format.
 		const hashtagNamesSet = new Set();
@@ -312,7 +375,7 @@ async function searchHashtags(req, res) {
 			$and: [
 				{ status: 'published' }, // Only published posts
 				{ visibility: 'public' }, // Only public posts
-				{ author: { $nin: blockedUsers } }, // Exclude blocked users' posts
+				{ author: { $nin: excludedUserIds } }, // Exclude blocked users' and private account users' posts
 				{ hashtags: { $in: hashtagNames } } // Search hashtags column (always, regardless of # presence)
 			]
 		};
@@ -358,6 +421,7 @@ async function searchHashtags(req, res) {
 		const [results, total] = await Promise.all([
 			Post.find(searchQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -369,16 +433,19 @@ async function searchHashtags(req, res) {
 			count: results.length,
 			total: total
 		});
-		
+
 		// Debug: Show sample hashtags from results (if any)
 		if (results.length > 0) {
 			console.log('[USER][SEARCH] Sample hashtags from results:', results[0].hashtags);
 		}
 
+		// Add isLiked field to each post
+		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			type: 'hashtags',
-			results: results,
-			count: results.length,
+			results: resultsWithIsLiked,
+			count: resultsWithIsLiked.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
@@ -429,11 +496,21 @@ async function searchLocation(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+		
 		const searchQuery = {
 			$and: [
 				{ status: 'published' }, // Only published posts
 				{ visibility: 'public' }, // Only public posts
-				{ author: { $nin: blockedUsers } }, // Exclude blocked users' posts
+				{ author: { $nin: excludedUserIds } }, // Exclude blocked users' and private account users' posts
 				{
 					$or: [
 						{ 'location.name': { $regex: keyword, $options: 'i' } },
@@ -452,6 +529,7 @@ async function searchLocation(req, res) {
 		const [results, total] = await Promise.all([
 			Post.find(searchQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -464,10 +542,13 @@ async function searchLocation(req, res) {
 			total: total
 		});
 
+		// Add isLiked field to each post
+		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			type: 'location',
-			results: results,
-			count: results.length,
+			results: resultsWithIsLiked,
+			count: resultsWithIsLiked.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
@@ -512,6 +593,17 @@ async function searchAll(req, res) {
 		const blockedBy = user.blockedBy || [];
 		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length);
 		
+		// Get private account user IDs to exclude their posts
+		const privateAccountUserIds = await getPrivateAccountUserIds();
+		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
+
+		// Combine all excluded user IDs
+		const excludedUserIds = [...new Set([
+			...blockedUsers.map(id => id.toString()),
+			...blockedBy.map(id => id.toString()),
+			...privateAccountUserIds.map(id => id.toString())
+		])].map(id => new mongoose.Types.ObjectId(id));
+		
 		// If no search term provided, return all public posts (explore/discovery feed)
 		if (!processed.hasKeywords && !processed.hasHashtags) {
 			console.log('[USER][SEARCH] No search keyword - returning all public posts (explore feed)');
@@ -523,7 +615,7 @@ async function searchAll(req, res) {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
-					{ author: { $nin: [...blockedUsers, ...blockedBy] } }
+					{ author: { $nin: excludedUserIds } }
 				]
 			};
 			console.log('[USER][SEARCH] Default posts query:', JSON.stringify(defaultPostsQuery));
@@ -532,6 +624,7 @@ async function searchAll(req, res) {
 				Post.find(defaultPostsQuery)
 					.populate('author', 'username fullName profilePictureUrl verificationStatus')
 					.populate('mentions.user', 'username fullName')
+					.populate('likes.user', 'username fullName')
 					.sort({ publishedAt: -1 })
 					.skip(skip)
 					.limit(parseInt(limit))
@@ -544,10 +637,13 @@ async function searchAll(req, res) {
 				total: total
 			});
 			
+			// Add isLiked field to each post
+			const postsWithIsLiked = posts.map(post => addIsLiked(post, currentUserId));
+			
 			const responseData = {
 				type: 'posts',
-				results: posts,
-				count: posts.length,
+				results: postsWithIsLiked,
+				count: postsWithIsLiked.length,
 				pagination: {
 					page: parseInt(page),
 					limit: parseInt(limit),
@@ -606,7 +702,7 @@ async function searchAll(req, res) {
 			$and: [
 				{ status: 'published' },
 				{ visibility: 'public' },
-				{ author: { $nin: blockedUsers } },
+				{ author: { $nin: excludedUserIds } },
 				{
 					$or: [
 						{ content: { $regex: keyword, $options: 'i' } },
@@ -645,7 +741,7 @@ async function searchAll(req, res) {
 			$and: [
 				{ status: 'published' },
 				{ visibility: 'public' },
-				{ author: { $nin: blockedUsers } },
+				{ author: { $nin: excludedUserIds } },
 				{ hashtags: { $in: hashtagNames } }
 			]
 		};
@@ -657,7 +753,7 @@ async function searchAll(req, res) {
 			$and: [
 				{ status: 'published' },
 				{ visibility: 'public' },
-				{ author: { $nin: blockedUsers } },
+				{ author: { $nin: excludedUserIds } },
 				{
 					$or: [
 						{ 'location.name': { $regex: keyword, $options: 'i' } },
@@ -681,18 +777,21 @@ async function searchAll(req, res) {
 			Post.find(postsQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
 				.populate('mentions.user', 'username fullName')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
 				.lean(),
 			Post.find(hashtagsQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
 				.lean(),
 			Post.find(locationQuery)
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
+				.populate('likes.user', 'username fullName')
 				.sort({ publishedAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit))
@@ -710,22 +809,27 @@ async function searchAll(req, res) {
 		
 		console.log('[USER][SEARCH] Total results across all categories:', totalResults);
 
+		// Add isLiked field to all post results
+		const postsWithIsLiked = posts.map(post => addIsLiked(post, currentUserId));
+		const hashtagPostsWithIsLiked = hashtagPosts.map(post => addIsLiked(post, currentUserId));
+		const locationPostsWithIsLiked = locationPosts.map(post => addIsLiked(post, currentUserId));
+
 		const responseData = {
 			people: {
 				results: people,
 				count: people.length
 			},
 			posts: {
-				results: posts,
-				count: posts.length
+				results: postsWithIsLiked,
+				count: postsWithIsLiked.length
 			},
 			hashtags: {
-				results: hashtagPosts,
-				count: hashtagPosts.length
+				results: hashtagPostsWithIsLiked,
+				count: hashtagPostsWithIsLiked.length
 			},
 			location: {
-				results: locationPosts,
-				count: locationPosts.length
+				results: locationPostsWithIsLiked,
+				count: locationPostsWithIsLiked.length
 			},
 			totalResults: totalResults,
 			pagination: {

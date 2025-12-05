@@ -24,6 +24,14 @@ router.post('/', uploadMultiple, storyController.createStory);
 router.get('/feed', storyController.getStoriesFeed);
 
 /**
+ * @route GET /user/stories/my-stories
+ * @desc Get current user's own stories with complete analytics (view count, who viewed, likes, etc.)
+ * @access Private
+ * @query includeExpired - Include expired stories (default: true)
+ */
+router.get('/my-stories', storyController.getMyStories);
+
+/**
  * @route GET /user/stories/user/:userId
  * @desc Get user's stories
  * @access Private

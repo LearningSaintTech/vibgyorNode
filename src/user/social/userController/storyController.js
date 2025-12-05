@@ -198,7 +198,11 @@ async function getUserStories(req, res) {
     // Add hasViewed flag to each story
     const storiesWithViewedFlag = stories.map(story => {
       const storyObj = story.toObject();
-      const hasViewed = story.views.some(view => view.user.toString() === currentUserId);
+      // Handle both populated and unpopulated view.user cases
+      const hasViewed = story.views.some(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === currentUserId.toString();
+      });
       storyObj.hasViewed = hasViewed;
       return storyObj;
     });
@@ -272,7 +276,11 @@ async function getStoriesFeed(req, res) {
       const storyObj = story.toObject();
       
       // Check if current user has viewed this story
-      const hasViewed = story.views.some(view => view.user.toString() === userId);
+      // Handle both populated and unpopulated view.user cases
+      const hasViewed = story.views.some(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === userId.toString();
+      });
       storyObj.hasViewed = hasViewed;
       
       const authorId = story.author._id.toString();
@@ -351,7 +359,11 @@ async function getStory(req, res) {
 
     // Add hasViewed flag
     const storyObj = story.toObject();
-    const hasViewed = story.views.some(view => view.user.toString() === userId);
+    // Handle both populated and unpopulated view.user cases
+    const hasViewed = story.views.some(view => {
+      const viewUserId = (view.user._id || view.user).toString();
+      return viewUserId === userId.toString();
+    });
     storyObj.hasViewed = hasViewed;
 
     console.log('[STORY] Story retrieved successfully:', {
@@ -525,7 +537,11 @@ async function getStoriesByHashtag(req, res) {
     // Add hasViewed flag to each story
     const storiesWithViewedFlag = stories.map(story => {
       const storyObj = story.toObject();
-      const hasViewed = story.views.some(view => view.user.toString() === userId);
+      // Handle both populated and unpopulated view.user cases
+      const hasViewed = story.views.some(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === userId.toString();
+      });
       storyObj.hasViewed = hasViewed;
       return storyObj;
     });
@@ -600,7 +616,11 @@ async function trackStoryView(req, res) {
     }
 
     // Check if user already viewed this story
-    const hasAlreadyViewed = story.views.some(view => view.user.toString() === userId);
+    // Handle both populated and unpopulated view.user cases
+    const hasAlreadyViewed = story.views.some(view => {
+      const viewUserId = (view.user._id || view.user).toString();
+      return viewUserId === userId.toString();
+    });
 
     if (hasAlreadyViewed) {
       console.log('[STORY] User already viewed this story');
@@ -681,7 +701,11 @@ async function toggleLikeStory(req, res) {
     await story.toggleLike(userId);
 
     // Find the updated view to check isLiked status
-    const userView = story.views.find(view => view.user.toString() === userId);
+    // Handle both populated and unpopulated view.user cases
+    const userView = story.views.find(view => {
+      const viewUserId = (view.user._id || view.user).toString();
+      return viewUserId === userId.toString();
+    });
     const isLiked = userView ? userView.isLiked : false;
 
     console.log('[STORY] Story like toggled successfully:', {
@@ -766,10 +790,126 @@ async function getStoryViews(req, res) {
   }
 }
 
+// Get user's own stories with complete analytics (view count, who viewed, likes, etc.)
+async function getMyStories(req, res) {
+  try {
+    const userId = req.user?.userId;
+    const { includeExpired = true } = req.query;
+
+    console.log('[STORY] Get my stories - START:', { userId, includeExpired });
+
+    // Fetch all user's stories with full details (including expired ones by default)
+    const stories = await Story.getUserStories(userId, includeExpired === 'true' || includeExpired === true);
+
+    console.log('[STORY] Stories fetched:', stories.length);
+
+    // Format stories with complete information including analytics, views, likes, and replies
+    const formattedStories = stories.map(story => {
+      const storyObj = story.toObject();
+      
+      // Add comprehensive analytics information
+      storyObj.analytics = {
+        viewsCount: story.analytics.viewsCount || 0,
+        likesCount: story.analytics.likesCount || 0,
+        repliesCount: story.analytics.repliesCount || 0,
+        sharesCount: story.analytics.sharesCount || 0,
+        engagementRate: story.engagementRate || 0
+      };
+      
+      // Add time remaining (in seconds)
+      storyObj.timeRemaining = story.timeRemaining || 0;
+      
+      // Add detailed view information (who viewed, when, duration, and if they liked)
+      storyObj.views = story.views.map(view => ({
+        user: {
+          id: view.user._id,
+          username: view.user.username,
+          fullName: view.user.fullName,
+          profilePictureUrl: view.user.profilePictureUrl,
+          isVerified: view.user.isVerified || false
+        },
+        viewedAt: view.viewedAt,
+        viewDuration: view.viewDuration || 0,
+        isLiked: view.isLiked || false
+      }));
+      
+      // Get users who liked (filter views where isLiked is true)
+      storyObj.likedBy = story.views
+        .filter(view => view.isLiked)
+        .map(view => ({
+          user: {
+            id: view.user._id,
+            username: view.user.username,
+            fullName: view.user.fullName,
+            profilePictureUrl: view.user.profilePictureUrl,
+            isVerified: view.user.isVerified || false
+          },
+          likedAt: view.viewedAt // Using viewedAt as likedAt since like happens during view
+        }));
+      
+      // Add reply details
+      storyObj.replies = story.replies.map(reply => ({
+        user: {
+          id: reply.user._id,
+          username: reply.user.username,
+          fullName: reply.user.fullName,
+          profilePictureUrl: reply.user.profilePictureUrl,
+          isVerified: reply.user.isVerified || false
+        },
+        content: reply.content,
+        repliedAt: reply.repliedAt,
+        isDirectMessage: reply.isDirectMessage || false
+      }));
+      
+      // Add mention details
+      storyObj.mentions = story.mentions.map(mention => ({
+        user: {
+          id: mention.user._id,
+          username: mention.user.username,
+          fullName: mention.user.fullName,
+          profilePictureUrl: mention.user.profilePictureUrl,
+          isVerified: mention.user.isVerified || false
+        },
+        position: mention.position,
+        notified: mention.notified || false
+      }));
+      
+      // Story status information
+      storyObj.isExpired = story.expiresAt < new Date();
+      storyObj.isActive = story.status === 'active' && !storyObj.isExpired;
+      
+      return storyObj;
+    });
+
+    console.log('[STORY] My stories retrieved successfully:', {
+      userId,
+      totalStories: formattedStories.length,
+      activeStories: formattedStories.filter(s => s.isActive).length,
+      expiredStories: formattedStories.filter(s => s.isExpired).length
+    });
+
+    return ApiResponse.success(res, {
+      stories: formattedStories,
+      totalStories: formattedStories.length,
+      activeStories: formattedStories.filter(s => s.isActive).length,
+      expiredStories: formattedStories.filter(s => s.isExpired).length,
+      summary: {
+        totalViews: formattedStories.reduce((sum, s) => sum + s.analytics.viewsCount, 0),
+        totalLikes: formattedStories.reduce((sum, s) => sum + s.analytics.likesCount, 0),
+        totalReplies: formattedStories.reduce((sum, s) => sum + s.analytics.repliesCount, 0)
+      }
+    }, 'My stories retrieved successfully');
+  } catch (error) {
+    console.error('[STORY] Get my stories error:', error);
+    return ApiResponse.serverError(res, 'Failed to get my stories');
+  }
+}
+
 module.exports = {
   // Basic CRUD
   createStory,
   getUserStories,
+  getMyStories,
   getStoriesFeed,
   getStory,
   deleteStory,
