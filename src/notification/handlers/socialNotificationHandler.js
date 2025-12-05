@@ -29,11 +29,12 @@ class SocialNotificationHandler {
       const notification = new Notification(notificationData);
       await notification.save();
 
-      // Deliver notification
+      // Deliver notification (includes in-app real-time emission via deliveryManager)
       await deliveryManager.deliver(notification);
 
-      // Emit real-time event
-      this.emitRealtimeEvent(notification);
+      // Note: Real-time event is emitted by deliveryManager.deliverInApp() to avoid duplicates
+      // Specific event types (e.g., social:post_liked) are still emitted for specialized handling
+      this.emitSpecificEvents(notification);
 
       return notification;
     } catch (error) {
@@ -43,40 +44,31 @@ class SocialNotificationHandler {
   }
 
   /**
-   * Emit real-time event for social notifications
+   * Emit specific event types for specialized handling (e.g., social:post_liked)
+   * Main notification event is emitted by deliveryManager to avoid duplicates
    * @param {Object} notification - Notification document
    */
-  emitRealtimeEvent(notification) {
+  emitSpecificEvents(notification) {
     try {
       if (enhancedRealtimeService && enhancedRealtimeService.io) {
         const recipientId = notification.recipient.toString ? notification.recipient.toString() : notification.recipient;
         
-        // Emit context-specific event
-        enhancedRealtimeService.io.to(`user:${recipientId}`).emit('social:notification', {
-          id: notification._id,
-          type: notification.type,
-          title: notification.title,
-          message: notification.message,
-          data: notification.data instanceof Map ? Object.fromEntries(notification.data) : (notification.data || {}),
-          relatedContent: notification.relatedContent,
-          priority: notification.priority,
-          createdAt: notification.createdAt
-        });
-
-        // Emit specific event based on type
+        // Emit specific event based on type for specialized handlers
+        // This is in addition to the main 'notification' event emitted by deliveryManager
         const eventType = this.getEventType(notification.type);
         if (eventType) {
           enhancedRealtimeService.io.to(`user:${recipientId}`).emit(`social:${eventType}`, {
+            notificationId: notification._id,
             notification: notification._id,
             data: notification.data instanceof Map ? Object.fromEntries(notification.data) : (notification.data || {}),
-            relatedContent: notification.relatedContent
+            relatedContent: notification.relatedContent,
+            context: notification.context,
+            type: notification.type
           });
         }
-      } else {
-        console.warn('[SOCIAL HANDLER] Socket.IO not initialized, skipping real-time event');
       }
     } catch (error) {
-      console.error('[SOCIAL HANDLER] Error emitting real-time event:', error);
+      console.error('[SOCIAL HANDLER] Error emitting specific events:', error);
     }
   }
 

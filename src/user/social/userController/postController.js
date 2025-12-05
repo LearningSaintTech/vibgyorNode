@@ -4,7 +4,7 @@ const FollowRequest = require('../userModel/followRequestModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const feedAlgorithmService = require('../../../services/feedAlgorithmService');
-// const notificationService = require('../../../services/notificationService');
+const notificationService = require('../../../notification/services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
 
 // Helper function to normalize location with all fields visible
@@ -608,6 +608,30 @@ async function toggleLike(req, res) {
       return ApiResponse.notFound(res, 'Post not found');
     }
 
+    // Get author ID - ensure we extract the actual ObjectId string
+    // post.author can be either an ObjectId or a populated User object
+    const mongoose = require('mongoose');
+    let authorId;
+    if (post.author instanceof mongoose.Types.ObjectId) {
+      // Unpopulated: direct ObjectId
+      authorId = post.author.toString();
+    } else if (post.author && post.author._id) {
+      // Populated: User object with _id
+      authorId = post.author._id.toString();
+    } else if (typeof post.author === 'string') {
+      // Already a string
+      authorId = post.author;
+    } else {
+      // Fallback: try to get ID from object
+      authorId = post.author?.id || post.author?._id?.toString() || String(post.author);
+    }
+    
+    // Validate it's a proper ObjectId string (24 hex characters)
+    if (!/^[0-9a-fA-F]{24}$/.test(authorId)) {
+      console.error('[POST] Invalid authorId extracted:', { authorId, authorType: typeof post.author, author: post.author });
+      throw new Error('Invalid post author ID');
+    }
+
     const existingLike = post.likes.find(like => like.user.toString() === userId);
     
     if (existingLike) {
@@ -616,12 +640,23 @@ async function toggleLike(req, res) {
     } else {
       await post.addLike(userId);
       
-      // Send notification for like
-      try {
-        await notificationService.notifyPostEngagement(postId, userId, 'like');
-      } catch (notificationError) {
-        console.error('[POST] Like notification error:', notificationError);
-        // Don't fail the like action if notification fails
+      // Send notification for like (only if user is not liking their own post)
+      if (authorId !== userId) {
+        try {
+          await notificationService.create({
+            context: 'social',
+            type: 'post_like',
+            recipientId: authorId,
+            senderId: userId,
+            data: {
+              postId: postId,
+              contentType: 'post'
+            }
+          });
+        } catch (notificationError) {
+          console.error('[POST] Like notification error:', notificationError);
+          // Don't fail the like action if notification fails
+        }
       }
       
       return ApiResponse.success(res, { liked: true, likesCount: post.likesCount }, 'Post liked');
@@ -840,14 +875,48 @@ async function addComment(req, res) {
     await post.populate(`comments.${commentIndex}.user`, 'username fullName profilePictureUrl');
     const newComment = post.comments[commentIndex];
 
-    // Send notification for comment
-    try {
-      await notificationService.notifyPostEngagement(postId, userId, 'comment', {
-        commentContent: content.trim()
-      });
-    } catch (notificationError) {
-      console.error('[POST] Comment notification error:', notificationError);
-      // Don't fail the comment action if notification fails
+    // Get author ID - ensure we extract the actual ObjectId string
+    // post.author can be either an ObjectId or a populated User object
+    const mongoose = require('mongoose');
+    let authorId;
+    if (post.author instanceof mongoose.Types.ObjectId) {
+      // Unpopulated: direct ObjectId
+      authorId = post.author.toString();
+    } else if (post.author && post.author._id) {
+      // Populated: User object with _id
+      authorId = post.author._id.toString();
+    } else if (typeof post.author === 'string') {
+      // Already a string
+      authorId = post.author;
+    } else {
+      // Fallback: try to get ID from object
+      authorId = post.author?.id || post.author?._id?.toString() || String(post.author);
+    }
+    
+    // Validate it's a proper ObjectId string (24 hex characters)
+    if (!/^[0-9a-fA-F]{24}$/.test(authorId)) {
+      console.error('[POST] Invalid authorId extracted:', { authorId, authorType: typeof post.author, author: post.author });
+      throw new Error('Invalid post author ID');
+    }
+
+    // Send notification for comment (only if user is not commenting on their own post)
+    if (authorId !== userId) {
+      try {
+        await notificationService.create({
+          context: 'social',
+          type: 'post_comment',
+          recipientId: authorId,
+          senderId: userId,
+          data: {
+            postId: postId,
+            commentContent: content.trim(),
+            contentType: 'post'
+          }
+        });
+      } catch (notificationError) {
+        console.error('[POST] Comment notification error:', notificationError);
+        // Don't fail the comment action if notification fails
+      }
     }
 
     console.log('[POST] Comment added successfully');

@@ -13,6 +13,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const { server } = require('./app'); // Import server from app.js
 const { connectToDatabase } = require('./dbConfig/db');
+const pushNotificationRetryQueue = require('./notification/services/pushNotificationRetryQueue');
 
 // Get port from environment variable (Render provides PORT automatically)
 const PORT = process.env.PORT || 3000;
@@ -29,6 +30,9 @@ console.log('');
 // Graceful shutdown handler
 const gracefulShutdown = (signal) => {
 	console.log(`\n🛑 Received ${signal}. Starting graceful shutdown...`);
+	
+	// Stop retry queue
+	pushNotificationRetryQueue.stop();
 	
 	server.close((err) => {
 		if (err) {
@@ -64,10 +68,14 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 (async () => {
-	try {
+		try {
 		// Connect to database
 		await connectToDatabase();
 		console.log('✅ Database connected successfully');
+		
+		// Start push notification retry queue
+		pushNotificationRetryQueue.start();
+		console.log('✅ Push notification retry queue started');
 		
 		// Start server with error handling
 		// Use localhost for development, 0.0.0.0 for production (Render)

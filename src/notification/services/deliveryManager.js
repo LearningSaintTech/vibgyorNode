@@ -2,6 +2,7 @@ const NotificationPreferences = require('../models/notificationPreferencesModel'
 const enhancedRealtimeService = require('../../services/enhancedRealtimeService');
 const emailService = require('../../services/emailService');
 const pushNotificationService = require('../../services/pushNotificationService');
+const pushNotificationRetryQueue = require('./pushNotificationRetryQueue');
 const User = require('../../user/auth/model/userAuthModel');
 
 /**
@@ -338,15 +339,40 @@ class DeliveryManager {
         await notification.updateDeliveryStatus('push', 'delivered');
         console.log(`[DELIVERY] ✅ Push notification sent to ${successCount} device(s)`);
       } else {
-        notification.deliveryChannels.push.delivered = false;
-        await notification.updateDeliveryStatus('push', 'failed');
-        console.log(`[DELIVERY] ❌ Failed to send push notification`);
+        // Check if error is retryable (not invalid tokens)
+        const hasRetryableErrors = results.some(r => 
+          r.error && 
+          !r.shouldRemove && 
+          r.code !== 'messaging/invalid-registration-token' &&
+          r.code !== 'messaging/registration-token-not-registered'
+        );
+
+        if (hasRetryableErrors) {
+          // Add to retry queue for transient failures
+          console.log(`[DELIVERY] ⏳ Adding notification ${notification._id} to retry queue`);
+          await pushNotificationRetryQueue.addToQueue(notification, 0);
+        } else {
+          // Permanent failure (all invalid tokens or other non-retryable errors)
+          notification.deliveryChannels.push.delivered = false;
+          await notification.updateDeliveryStatus('push', 'failed');
+          console.log(`[DELIVERY] ❌ Failed to send push notification (non-retryable)`);
+        }
       }
     } catch (error) {
       console.error('[DELIVERY] Error delivering push notification:', error);
-      notification.deliveryChannels.push.delivered = false;
-      await notification.updateDeliveryStatus('push', 'failed');
-      throw error;
+      
+      // Check if error is retryable
+      const isRetryable = !error.message?.includes('invalid') && 
+                         !error.message?.includes('not found') &&
+                         !error.message?.includes('not initialized');
+      
+      if (isRetryable) {
+        console.log(`[DELIVERY] ⏳ Adding notification ${notification._id} to retry queue due to error`);
+        await pushNotificationRetryQueue.addToQueue(notification, 0);
+      } else {
+        notification.deliveryChannels.push.delivered = false;
+        await notification.updateDeliveryStatus('push', 'failed');
+      }
     }
   }
 

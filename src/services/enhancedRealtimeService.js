@@ -12,7 +12,7 @@ const UserStatus = require('../user/social/userModel/userStatusModel');
 class EnhancedRealtimeService {
   constructor() {
     this.io = null;
-    this.connectedUsers = new Map(); // userId -> socketId
+    this.connectedUsers = new Map(); // userId -> Set of socketIds (supports multiple connections per user)
     this.userRooms = new Map(); // userId -> Set of room names
     this.activeCalls = new Map(); // callId -> call data
   }
@@ -65,7 +65,45 @@ class EnhancedRealtimeService {
           return next(new Error('Authentication token required'));
         }
 
-        const decoded = verifyAccessToken(token);
+        let decoded;
+        try {
+          decoded = verifyAccessToken(token);
+        } catch (error) {
+          // If token is expired, allow connection but emit token:expired event
+          if (error.name === 'TokenExpiredError' || error.message?.includes('expired')) {
+            // Decode without verification to get userId
+            const { decodeToken } = require('../utils/Jwt');
+            decoded = decodeToken(token);
+            
+            if (decoded && decoded.userId) {
+              const user = await User.findById(decoded.userId).select('_id username fullName isActive');
+              if (user && user.isActive !== false) {
+                // Allow connection but mark token as expired
+                socket.userId = user._id.toString();
+                socket.user = user;
+                socket.tokenExpired = true;
+                socket.userInfo = {
+                  _id: user._id,
+                  username: user.username,
+                  fullName: user.fullName,
+                  profilePictureUrl: user.profilePictureUrl
+                };
+                
+                // Emit token expired event after connection
+                setTimeout(() => {
+                  socket.emit('token:expired', {
+                    message: 'Token expired. Please refresh your token.',
+                    timestamp: new Date()
+                  });
+                }, 100);
+                
+                return next();
+              }
+            }
+          }
+          throw error; // Re-throw if not expired or can't decode
+        }
+        
         const user = await User.findById(decoded.userId).select('_id username fullName isActive');
         
         if (!user) {
@@ -136,6 +174,9 @@ class EnhancedRealtimeService {
       // Notification events
       this.setupNotificationEvents(socket);
       
+      // Token refresh events
+      this.setupTokenRefreshEvents(socket);
+      
       // Error handling
       this.setupErrorHandling(socket);
       
@@ -146,49 +187,52 @@ class EnhancedRealtimeService {
 
   /**
    * Handle user connection and setup
+   * Supports multiple connections per user (multiple devices/tabs)
    */
   handleUserConnection(socket) {
     const userId = socket.userId;
     
-    // Check if user already has a connection (multiple tabs)
-    const existingSocketId = this.connectedUsers.get(userId);
-    if (existingSocketId) {
-      console.log(`[CONNECTION] 🔄 User ${userId} already connected with socket ${existingSocketId}, replacing with ${socket.id}`);
-      // Update the connected users map FIRST to prevent disconnection handler from setting user offline
-      this.connectedUsers.set(userId, socket.id);
-      // Disconnect the old socket
-      const oldSocket = this.io.sockets.sockets.get(existingSocketId);
-      if (oldSocket) {
-        oldSocket.disconnect(true);
-      }
+    // Get or create Set of socket IDs for this user
+    if (!this.connectedUsers.has(userId)) {
+      this.connectedUsers.set(userId, new Set());
+    }
+    
+    const userSockets = this.connectedUsers.get(userId);
+    const isNewConnection = !userSockets.has(socket.id);
+    
+    if (isNewConnection) {
+      userSockets.add(socket.id);
+      console.log(`[CONNECTION] ➕ User ${userId} added new connection (socket ${socket.id}). Total connections: ${userSockets.size}`);
     } else {
-      // Store user connection
-      this.connectedUsers.set(userId, socket.id);
+      console.log(`[CONNECTION] 🔄 User ${userId} reconnected with existing socket ${socket.id}`);
     }
     
     // Join user's personal room
     socket.join(`user:${userId}`);
     
-    // Update user online status
-    this.updateUserStatus(userId, 'online');
+    // Update user online status (only if this is the first connection)
+    if (isNewConnection && userSockets.size === 1) {
+      this.updateUserStatus(userId, 'online');
+      
+      // Notify other users about online status (only once, not for each connection)
+      socket.broadcast.emit('user_online', {
+        userId: userId,
+        username: socket.user.username,
+        fullName: socket.user.fullName,
+        profilePictureUrl: socket.user.profilePictureUrl,
+        timestamp: new Date()
+      });
+    }
     
     // Emit connection success
     socket.emit('connection_success', {
       userId: userId,
       socketId: socket.id,
-      timestamp: new Date()
-    });
-
-    // Notify other users about online status
-    socket.broadcast.emit('user_online', {
-      userId: userId,
-      username: socket.user.username,
-      fullName: socket.user.fullName,
-      profilePictureUrl: socket.user.profilePictureUrl,
+      totalConnections: userSockets.size,
       timestamp: new Date()
     });
     
-    console.log(`[CONNECTION] ✅ User ${userId} (${socket.user.username}) connected successfully`);
+    console.log(`[CONNECTION] ✅ User ${userId} (${socket.user.username}) connected successfully (${userSockets.size} active connection(s))`);
   }
 
   /**
@@ -381,9 +425,9 @@ class EnhancedRealtimeService {
           return;
         }
 
-        // Check if target user is online
-        const targetSocketId = this.connectedUsers.get(targetUserId);
-        if (!targetSocketId) {
+        // Check if target user is online (has at least one connection)
+        const targetSockets = this.connectedUsers.get(targetUserId);
+        if (!targetSockets || targetSockets.size === 0) {
           socket.emit('call:error', { message: 'User is not available for calls' });
           return;
         }
@@ -720,61 +764,124 @@ class EnhancedRealtimeService {
   }
 
   /**
+   * Setup token refresh event handlers
+   */
+  setupTokenRefreshEvents(socket) {
+    // Handle token refresh request from client
+    socket.on('token:refresh', async (data) => {
+      try {
+        const { refreshToken } = data;
+        
+        if (!refreshToken) {
+          socket.emit('token:refresh_error', { message: 'Refresh token required' });
+          return;
+        }
+
+        const { verifyRefreshToken, signAccessToken } = require('../utils/Jwt');
+        
+        // Verify refresh token
+        const decoded = verifyRefreshToken(refreshToken);
+        const user = await User.findById(decoded.userId).select('_id username fullName isActive');
+        
+        if (!user || user.isActive === false) {
+          socket.emit('token:refresh_error', { message: 'Invalid refresh token or user not found' });
+          return;
+        }
+
+        // Generate new access token
+        const newAccessToken = signAccessToken({ userId: user._id.toString() });
+        
+        // Update socket with new token info
+        socket.tokenRefreshed = true;
+        socket.tokenRefreshedAt = new Date();
+        
+        // Emit new token to client
+        socket.emit('token:refresh_success', {
+          accessToken: newAccessToken,
+          timestamp: new Date()
+        });
+        
+        console.log(`[TOKEN REFRESH] ✅ Token refreshed for user ${socket.userId}`);
+      } catch (error) {
+        console.error(`[TOKEN REFRESH] ❌ Error refreshing token for user ${socket.userId}:`, error);
+        socket.emit('token:refresh_error', { 
+          message: 'Token refresh failed',
+          error: error.message 
+        });
+      }
+    });
+  }
+
+  /**
    * Setup error handling
    */
   setupErrorHandling(socket) {
     socket.on('error', (error) => {
       console.error(`Socket error for user ${socket.userId}:`, error);
+      
+      // Check if error is due to token expiration
+      if (error.message && error.message.includes('jwt expired')) {
+        socket.emit('token:expired', {
+          message: 'Token expired. Please refresh your token.',
+          timestamp: new Date()
+        });
+      }
     });
   }
 
   /**
    * Setup disconnection handling
+   * Handles multiple connections per user properly
    */
   setupDisconnectionHandling(socket) {
     socket.on('disconnect', async (reason) => {
       const userId = socket.userId;
       
-      console.log(`[CONNECTION] 🔌 User ${userId} disconnected: ${reason}`);
+      console.log(`[CONNECTION] 🔌 User ${userId} disconnected socket ${socket.id}: ${reason}`);
       
-      // Only process disconnection if this is the current active socket for the user
-      const currentSocketId = this.connectedUsers.get(userId);
-      if (currentSocketId !== socket.id) {
-        console.log(`[CONNECTION] ⚠️ Ignoring disconnection for ${userId} - different socket (${socket.id} vs ${currentSocketId})`);
+      // Get user's socket Set
+      const userSockets = this.connectedUsers.get(userId);
+      if (!userSockets) {
+        console.log(`[CONNECTION] ⚠️ User ${userId} not found in connected users`);
         return;
       }
       
-      // Remove user from connected users
-      this.connectedUsers.delete(userId);
+      // Remove this specific socket
+      userSockets.delete(socket.id);
       
-      // Update user status to offline
-      await this.updateUserStatus(userId, 'offline');
-      
-      // End any active calls for this user
-      for (const [callId, callData] of this.activeCalls.entries()) {
-        if (callData.participants.includes(userId)) {
-          // End the call
-          this.io.to(`user:${callData.initiator}`).emit('call:ended', {
-            callId: callId,
-            reason: 'user_disconnected',
-            timestamp: new Date()
-          });
-          
-          // Remove from active calls
-          this.activeCalls.delete(callId);
+      // If user has no more connections, mark as offline
+      if (userSockets.size === 0) {
+        this.connectedUsers.delete(userId);
+        await this.updateUserStatus(userId, 'offline');
+        
+        // End any active calls for this user
+        for (const [callId, callData] of this.activeCalls.entries()) {
+          if (callData.participants.includes(userId)) {
+            // End the call
+            this.io.to(`user:${callData.initiator}`).emit('call:ended', {
+              callId: callId,
+              reason: 'user_disconnected',
+              timestamp: new Date()
+            });
+            
+            // Remove from active calls
+            this.activeCalls.delete(callId);
+          }
         }
+        
+        // Notify other users about offline status (only when all connections are gone)
+        this.io.emit('user_offline', {
+          userId: userId,
+          username: socket.user?.username,
+          fullName: socket.user?.fullName,
+          profilePictureUrl: socket.user?.profilePictureUrl,
+          timestamp: new Date()
+        });
+        
+        console.log(`[CONNECTION] ✅ User ${userId} offline status broadcasted (all connections closed)`);
+      } else {
+        console.log(`[CONNECTION] ℹ️ User ${userId} still has ${userSockets.size} active connection(s)`);
       }
-      
-      // Notify other users about offline status
-      this.io.emit('user_offline', {
-        userId: userId,
-        username: socket.user?.username,
-        fullName: socket.user?.fullName,
-        profilePictureUrl: socket.user?.profilePictureUrl,
-        timestamp: new Date()
-      });
-      
-      console.log(`[CONNECTION] ✅ User ${userId} offline status broadcasted to all users`);
     });
   }
 
@@ -825,24 +932,36 @@ class EnhancedRealtimeService {
 
   /**
    * Cleanup stale connections
+   * Handles multiple connections per user
    */
   async cleanupStaleConnections() {
     const now = new Date();
     const staleTimeout = 5 * 60 * 1000; // 5 minutes
 
-    for (const [userId, socketId] of this.connectedUsers.entries()) {
-      const socket = this.io.sockets.sockets.get(socketId);
-      if (!socket || (now - socket.lastActivity) > staleTimeout) {
-        this.connectedUsers.delete(userId);
-        
-        // Update user status to offline
-        await this.updateUserStatus(userId, 'offline');
-        
-        if (socket) {
-          socket.disconnect(true);
+    for (const [userId, socketIds] of this.connectedUsers.entries()) {
+      const staleSockets = [];
+      
+      for (const socketId of socketIds) {
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (!socket || (now - socket.lastActivity) > staleTimeout) {
+          staleSockets.push(socketId);
+          
+          if (socket) {
+            socket.disconnect(true);
+          }
         }
-        
-        console.log(`[CLEANUP] 🧹 Cleaned up stale connection for user ${userId}`);
+      }
+      
+      // Remove stale sockets
+      staleSockets.forEach(socketId => socketIds.delete(socketId));
+      
+      // If no more connections, remove user and mark offline
+      if (socketIds.size === 0) {
+        this.connectedUsers.delete(userId);
+        await this.updateUserStatus(userId, 'offline');
+        console.log(`[CLEANUP] 🧹 Cleaned up all connections for user ${userId}`);
+      } else if (staleSockets.length > 0) {
+        console.log(`[CLEANUP] 🧹 Cleaned up ${staleSockets.length} stale connection(s) for user ${userId} (${socketIds.size} remaining)`);
       }
     }
   }
@@ -896,12 +1015,13 @@ class EnhancedRealtimeService {
   }
 
   /**
-   * Emit to specific user
+   * Emit to specific user (all their connections)
    */
   emitToUser(userId, event, data) {
-    const socketId = this.connectedUsers.get(userId);
-    if (socketId) {
-      this.io.to(socketId).emit(event, data);
+    const socketIds = this.connectedUsers.get(userId);
+    if (socketIds && socketIds.size > 0) {
+      // Emit to user's room (includes all their socket connections)
+      this.io.to(`user:${userId}`).emit(event, data);
     }
   }
 

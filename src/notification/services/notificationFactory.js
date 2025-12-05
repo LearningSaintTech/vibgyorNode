@@ -47,9 +47,27 @@ class NotificationFactory {
 
     const typeConfig = validation.typeConfig;
 
+    // Ensure recipientId is a valid ObjectId string
+    // Handle cases where recipientId might be a stringified object or invalid format
+    let validRecipientId = recipientId;
+    if (typeof recipientId === 'string') {
+      // Check if it's a valid 24-character hex string (ObjectId format)
+      if (!/^[0-9a-fA-F]{24}$/.test(recipientId)) {
+        // Try to extract ObjectId from stringified object
+        const objectIdMatch = recipientId.match(/ObjectId\(['"]([0-9a-fA-F]{24})['"]\)/);
+        if (objectIdMatch) {
+          validRecipientId = objectIdMatch[1];
+        } else {
+          throw new Error(`Invalid recipientId format: ${recipientId}`);
+        }
+      }
+    } else if (recipientId && recipientId.toString) {
+      validRecipientId = recipientId.toString();
+    }
+
     // Get recipient and sender info
     const [recipient, sender] = await Promise.all([
-      User.findById(recipientId).select('username fullName profilePictureUrl email phoneNumber'),
+      User.findById(validRecipientId).select('username fullName profilePictureUrl email phoneNumber'),
       senderId ? User.findById(senderId).select('username fullName profilePictureUrl email phoneNumber') : null
     ]);
 

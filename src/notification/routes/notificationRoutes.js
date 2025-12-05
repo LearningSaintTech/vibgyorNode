@@ -6,6 +6,31 @@ const ApiResponse = require('../../utils/apiResponse');
 const User = require('../../user/auth/model/userAuthModel');
 
 /**
+ * Validate FCM token format
+ * FCM tokens are typically 152-163 characters long and contain alphanumeric characters and colons
+ * @param {string} token - FCM token to validate
+ * @returns {boolean} True if valid format
+ */
+function validateFCMToken(token) {
+  if (!token || typeof token !== 'string') {
+    return false;
+  }
+  
+  // FCM tokens are typically 152-163 characters
+  if (token.length < 100 || token.length > 200) {
+    return false;
+  }
+  
+  // Should contain alphanumeric characters, colons, and hyphens
+  // Format: typically starts with a prefix and contains base64-like characters
+  const fcmTokenPattern = /^[A-Za-z0-9_\-:]+$/;
+  return fcmTokenPattern.test(token);
+}
+
+// Attach validation function to router for use in route handlers
+router.validateFCMToken = validateFCMToken;
+
+/**
  * @route   GET /api/v1/notifications
  * @desc    Get user notifications
  * @access  Private
@@ -147,6 +172,16 @@ router.delete('/:id', authorize(), async (req, res) => {
 });
 
 /**
+ * @route   GET /api/notification/test
+ * @desc    Test route to verify routing works
+ * @access  Public
+ */
+router.get('/test', (req, res) => {
+  console.log('[NOTIFICATION ROUTES] ✅ Test route hit!');
+  return ApiResponse.createResponse(res, { message: 'Notification routes are working!' }, 'Test successful');
+});
+
+/**
  * @route   POST /api/notification/save-fcm-token
  * @desc    Save FCM token for push notifications
  * @access  Private
@@ -197,6 +232,19 @@ router.post('/save-fcm-token', authorize(), async (req, res) => {
       return ApiResponse.createErrorResponse(res, 'FCM token and platform are required', 400);
     }
 
+    // Validate FCM token format
+    if (!validateFCMToken(fcmToken)) {
+      console.warn('[NOTIFICATION ROUTES] ⚠️ Invalid FCM token format:', fcmToken.substring(0, 30));
+      return ApiResponse.createErrorResponse(res, 'Invalid FCM token format', 400);
+    }
+
+    // Validate platform
+    const validPlatforms = ['ios', 'android', 'web'];
+    if (!validPlatforms.includes(platform.toLowerCase())) {
+      console.warn('[NOTIFICATION ROUTES] ⚠️ Invalid platform:', platform);
+      return ApiResponse.createErrorResponse(res, 'Invalid platform. Must be ios, android, or web', 400);
+    }
+
     const user = await User.findById(userId);
     if (!user) {
       console.error('[NOTIFICATION ROUTES] ❌ User not found:', userId);
@@ -205,7 +253,7 @@ router.post('/save-fcm-token', authorize(), async (req, res) => {
 
     // Add device token using User model method
     console.log('[NOTIFICATION ROUTES] 💾 Calling user.addDeviceToken...');
-    await user.addDeviceToken(fcmToken, platform, {
+    await user.addDeviceToken(fcmToken, platform.toLowerCase(), {
       deviceId: deviceId || `device_${Date.now()}`,
       deviceName: req.body.deviceName || 'Unknown Device',
       appVersion: req.body.appVersion || '1.0.0'
