@@ -1,0 +1,1109 @@
+{
+  "info": {
+    "name": "Vibgyor Dating APIs",
+    "description": "Complete Postman collection for Vibgyor Dating API endpoints.\n\n## Setup Instructions:\n1. Set `baseUrl` variable: `http://localhost:3000` (or your server URL)\n2. Set `token` variable: Your JWT authentication token\n3. All endpoints require Bearer token authentication\n\n## Base Path:\nAll dating endpoints are under `/user/dating/*`\n\n## Features:\n- Profile Media Management (Photos & Videos)\n- Dating Preferences & Discovery\n- Profile Interactions (Like/Dislike/Comments)\n- Matches & Connections\n- Safety Features (Report/Block)",
+    "_postman_id": "vibgyor-dating-api-2025",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2.0.0"
+  },
+  "item": [
+    {
+      "name": "Setup",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Health check passed', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check if the API server is running and authentication is valid"
+          }
+        }
+      ],
+      "description": "Setup and health check endpoints"
+    },
+    {
+      "name": "1. Profile Media Management",
+      "item": [
+        {
+          "name": "Get My Dating Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profile"]
+            },
+            "description": "Get current user's complete dating profile including photos, videos, preferences, and active status"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && json.data.datingProfile) {",
+                  "        const profile = json.data.datingProfile;",
+                  "        if (profile.photos && profile.photos.length > 0) {",
+                  "            pm.collectionVariables.set('hasPhotos', 'true');",
+                  "        }",
+                  "        if (profile.videos && profile.videos.length > 0) {",
+                  "            pm.collectionVariables.set('hasVideos', 'true');",
+                  "        }",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Dating Photos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Upload 1-5 photos (JPEG, PNG, WebP, GIF). Max 50MB each."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "photos"]
+            },
+            "description": "Upload dating profile photos. Supports 1-5 photos. Formats: JPEG, PNG, WebP, GIF. Max 50MB per photo."
+          }
+        },
+        {
+          "name": "Upload Dating Videos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "videos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Upload 1-5 videos (MP4, MOV, AVI, WebM). Max 50MB each."
+                },
+                {
+                  "key": "durations",
+                  "type": "text",
+                  "value": "12.5",
+                  "description": "Optional: Duration in seconds per video (comma-separated if multiple)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/videos",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "videos"]
+            },
+            "description": "Upload dating profile videos. Supports 1-5 videos. Formats: MP4, MOV, AVI, WebM. Max 50MB per video."
+          }
+        },
+        {
+          "name": "Delete Photo",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/photos/{{photoIndex}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "photos", "{{photoIndex}}"]
+            },
+            "description": "Delete a photo by index (0-based). Example: /photos/0 to delete first photo"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('photoIndex')) {",
+                  "    pm.variables.set('photoIndex', '0');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Video",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/videos/{{videoIndex}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "videos", "{{videoIndex}}"]
+            },
+            "description": "Delete a video by index (0-based). Example: /videos/0 to delete first video"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.variables.get('videoIndex')) {",
+                  "    pm.variables.set('videoIndex', '0');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Photo Order",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"photoIndex\": 0,\n  \"order\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/photos/order",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "photos", "order"]
+            },
+            "description": "Change the display order of a photo. photoIndex: current position, order: new position"
+          }
+        },
+        {
+          "name": "Update Video Order",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"videoIndex\": 1,\n  \"order\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/videos/order",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "videos", "order"]
+            },
+            "description": "Change the display order of a video. videoIndex: current position, order: new position"
+          }
+        },
+        {
+          "name": "Toggle Profile Active Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/toggle",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "toggle"]
+            },
+            "description": "Activate or deactivate your dating profile. When inactive, your profile won't appear in searches."
+          }
+        }
+      ],
+      "description": "Manage dating profile media (photos, videos) and profile status"
+    },
+    {
+      "name": "2. Preferences & Discovery",
+      "item": [
+        {
+          "name": "Get Dating Preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "preferences"]
+            },
+            "description": "Get current user's dating preferences including age range, location, languages, etc."
+          }
+        },
+        {
+          "name": "Update Dating Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hereTo\": \"Make New Friends\",\n  \"wantToMeet\": \"Woman\",\n  \"ageMin\": 20,\n  \"ageMax\": 35,\n  \"languages\": [\"English\", \"French\"],\n  \"location\": {\n    \"city\": \"Berlin\",\n    \"country\": \"Germany\",\n    \"coordinates\": {\n      \"lat\": 52.52,\n      \"lng\": 13.405\n    }\n  },\n  \"distanceMin\": 0,\n  \"distanceMax\": 25\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "preferences"]
+            },
+            "description": "Update dating preferences. All fields are optional. Only provided fields will be updated."
+          }
+        },
+        {
+          "name": "Search Profiles - Default",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?search=anna&hereTo=Make%20New%20Friends&wantToMeet=Man&ageMin=20&ageMax=35&languages=English,French&city=Berlin&country=Germany&distanceMax=25&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "anna",
+                  "description": "Search by name or username"
+                },
+                {
+                  "key": "hereTo",
+                  "value": "Make New Friends",
+                  "description": "Filter by 'hereTo' preference"
+                },
+                {
+                  "key": "wantToMeet",
+                  "value": "Man",
+                  "description": "Filter by gender preference"
+                },
+                {
+                  "key": "ageMin",
+                  "value": "20",
+                  "description": "Minimum age"
+                },
+                {
+                  "key": "ageMax",
+                  "value": "35",
+                  "description": "Maximum age"
+                },
+                {
+                  "key": "languages",
+                  "value": "English,French",
+                  "description": "Comma-separated languages"
+                },
+                {
+                  "key": "city",
+                  "value": "Berlin",
+                  "description": "Filter by city"
+                },
+                {
+                  "key": "country",
+                  "value": "Germany",
+                  "description": "Filter by country"
+                },
+                {
+                  "key": "distanceMax",
+                  "value": "25",
+                  "description": "Maximum distance in km"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page"
+                }
+              ]
+            },
+            "description": "Search dating profiles with various filters. All query parameters are optional."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && Array.isArray(json.data.profiles) && json.data.profiles.length > 0) {",
+                  "        const firstProfile = json.data.profiles[0];",
+                  "        pm.collectionVariables.set('targetUserId', firstProfile._id || firstProfile.userId || '');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Profiles - Nearby",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=near_by&distanceMax=10&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "near_by",
+                  "description": "Filter: near_by"
+                },
+                {
+                  "key": "distanceMax",
+                  "value": "10",
+                  "description": "Maximum distance in km"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Find profiles nearby based on location"
+          }
+        },
+        {
+          "name": "Search Profiles - Same Interests",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=same_interests&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "same_interests",
+                  "description": "Filter: same_interests"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Find profiles with similar interests"
+          }
+        },
+        {
+          "name": "Search Profiles - Liked You",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=liked_you&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "liked_you",
+                  "description": "Filter: liked_you - profiles that liked you"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get profiles that have liked your profile"
+          }
+        },
+        {
+          "name": "Search Profiles - Liked by You",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=liked_by_you&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "liked_by_you",
+                  "description": "Filter: liked_by_you - profiles you have liked"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get profiles that you have liked"
+          }
+        },
+        {
+          "name": "Search Profiles - New Daters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles?filter=new_dater&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles"],
+              "query": [
+                {
+                  "key": "filter",
+                  "value": "new_dater",
+                  "description": "Filter: new_dater - newly joined profiles"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Find newly joined dating profiles"
+          }
+        }
+      ],
+      "description": "Manage dating preferences and discover profiles"
+    },
+    {
+      "name": "3. Profile Interactions",
+      "item": [
+        {
+          "name": "Like Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Great profile!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "like"]
+            },
+            "description": "Like a profile. Optional: include a comment with the like. If mutual like, creates a match."
+          }
+        },
+        {
+          "name": "Dislike Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/dislike",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "dislike"]
+            },
+            "description": "Dislike/pass on a profile. This will hide the profile from future searches."
+          }
+        },
+        {
+          "name": "Get Likes for Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/likes?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "likes"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Results per page"
+                }
+              ]
+            },
+            "description": "Get list of users who liked a specific profile (if you're the profile owner)"
+          }
+        },
+        {
+          "name": "Get Likes for My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/me/likes?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "me", "likes"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get list of users who liked your profile"
+          }
+        },
+        {
+          "name": "Add Comment to Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Loved your travel photos!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "comments"]
+            },
+            "description": "Add a comment to a dating profile"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && json.data.comment) {",
+                  "        pm.collectionVariables.set('commentId', json.data.comment._id || '');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Profile Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/comments?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "comments"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get comments on a specific profile"
+          }
+        },
+        {
+          "name": "Get My Profile Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/me/comments?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "me", "comments"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get comments on your own profile"
+          }
+        },
+        {
+          "name": "Get Matches",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/matches?status=active&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "matches"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active",
+                  "description": "Filter by match status: active, archived"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Get all matches (mutual likes). Matches are created when both users like each other."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.data && Array.isArray(json.data.matches) && json.data.matches.length > 0) {",
+                  "        const firstMatch = json.data.matches[0];",
+                  "        pm.collectionVariables.set('matchId', firstMatch.matchId || firstMatch._id || '');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Interact with dating profiles - like, dislike, comment, and view matches"
+    },
+    {
+      "name": "4. Safety & Moderation",
+      "item": [
+        {
+          "name": "Report Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Fake profile or inappropriate content\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/report",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "report"]
+            },
+            "description": "Report a profile for inappropriate content or behavior"
+          }
+        },
+        {
+          "name": "Block Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "block"]
+            },
+            "description": "Block a user. Blocked users won't appear in your searches and can't interact with you."
+          }
+        },
+        {
+          "name": "Unblock Profile",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/user/dating/profiles/{{targetUserId}}/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["user", "dating", "profiles", "{{targetUserId}}", "block"]
+            },
+            "description": "Unblock a previously blocked user"
+          }
+        }
+      ],
+      "description": "Safety features to report and block inappropriate profiles"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-set variables if not set",
+          "if (!pm.collectionVariables.get('baseUrl')) {",
+          "    pm.collectionVariables.set('baseUrl', 'http://localhost:3000');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script - extracts IDs from responses",
+          "let json;",
+          "try {",
+          "    json = pm.response.json();",
+          "} catch (err) {",
+          "    return;",
+          "}",
+          "",
+          "const data = json?.data || {};",
+          "",
+          "// Extract targetUserId from various response formats",
+          "if (data.datingProfile?._id) {",
+          "    pm.collectionVariables.set('targetUserId', data.datingProfile._id);",
+          "}",
+          "if (Array.isArray(data.profiles) && data.profiles.length > 0) {",
+          "    const firstProfile = data.profiles[0];",
+          "    pm.collectionVariables.set('targetUserId', firstProfile._id || firstProfile.userId || '');",
+          "}",
+          "if (data.profile?._id) {",
+          "    pm.collectionVariables.set('targetUserId', data.profile._id);",
+          "}",
+          "",
+          "// Extract matchId",
+          "if (data.matchId) {",
+          "    pm.collectionVariables.set('matchId', data.matchId);",
+          "}",
+          "if (data.matches && Array.isArray(data.matches) && data.matches.length > 0) {",
+          "    const firstMatch = data.matches[0];",
+          "    pm.collectionVariables.set('matchId', firstMatch.matchId || firstMatch._id || '');",
+          "}",
+          "",
+          "// Extract commentId",
+          "if (data.comment?._id) {",
+          "    pm.collectionVariables.set('commentId', data.comment._id);",
+          "}",
+          "if (data.comments && Array.isArray(data.comments) && data.comments.length > 0) {",
+          "    const firstComment = data.comments[0];",
+          "    pm.collectionVariables.set('commentId', firstComment._id || firstComment.id || '');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string",
+      "description": "JWT authentication token. Get this from login endpoint."
+    },
+    {
+      "key": "targetUserId",
+      "value": "",
+      "type": "string",
+      "description": "Target user ID for interactions (auto-set from search results)"
+    },
+    {
+      "key": "photoIndex",
+      "value": "0",
+      "type": "string",
+      "description": "Photo index for delete/update operations (0-based)"
+    },
+    {
+      "key": "videoIndex",
+      "value": "0",
+      "type": "string",
+      "description": "Video index for delete/update operations (0-based)"
+    },
+    {
+      "key": "matchId",
+      "value": "",
+      "type": "string",
+      "description": "Match ID (auto-set from matches response)"
+    },
+    {
+      "key": "commentId",
+      "value": "",
+      "type": "string",
+      "description": "Comment ID (auto-set from comment responses)"
+    }
+  ]
+}
+

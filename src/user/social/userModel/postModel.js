@@ -492,6 +492,7 @@ PostSchema.statics.searchPosts = function(query, page = 1, limit = 20, blockedUs
 
   return this.find(searchQuery)
     .populate('author', 'username fullName profilePictureUrl isVerified')
+    .populate('comments.user', 'username fullName profilePictureUrl')
     .sort({ publishedAt: -1 })
     .skip((page - 1) * limit)
     .limit(limit);
