@@ -26,7 +26,7 @@ const ContentModeration = require('./user/social/userModel/contentModerationMode
 // Database connection
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/vib';
+    const mongoURI =  'mongodb+srv://anjaliiisharma007_db_user:cz3RtrACrqm4cTd7@vibgyor.orsritv.mongodb.net/?retryWrites=true&w=majority&appName=vibgyor';
     await mongoose.connect(mongoURI);
     console.log('✅ Connected to MongoDB');
   } catch (error) {
@@ -343,7 +343,7 @@ const demoData = {
 const seedAdmins = async () => {
   console.log('🌱 Seeding Admins...');
   
-  const admins = [
+  const adminData = [
     {
       phoneNumber: '9999999999',
       countryCode: '+91',
@@ -364,15 +364,27 @@ const seedAdmins = async () => {
     }
   ];
   
-  const createdAdmins = await Admin.insertMany(admins);
-  console.log(`✅ Created ${createdAdmins.length} admins`);
+  // Use upsert to avoid duplicate key errors
+  const createdAdmins = [];
+  for (const admin of adminData) {
+    const existingAdmin = await Admin.findOne({ phoneNumber: admin.phoneNumber });
+    if (existingAdmin) {
+      console.log(`⚠️  Admin with phone ${admin.phoneNumber} already exists, skipping...`);
+      createdAdmins.push(existingAdmin);
+    } else {
+      const newAdmin = await Admin.create(admin);
+      createdAdmins.push(newAdmin);
+    }
+  }
+  
+  console.log(`✅ Created/Found ${createdAdmins.length} admins`);
   return createdAdmins;
 };
 
 const seedSubAdmins = async (admins) => {
   console.log('🌱 Seeding SubAdmins...');
   
-  const subAdmins = [
+  const subAdminData = [
     {
       phoneNumber: '8888888888',
       countryCode: '+91',
@@ -412,8 +424,20 @@ const seedSubAdmins = async (admins) => {
     }
   ];
   
-  const createdSubAdmins = await SubAdmin.insertMany(subAdmins);
-  console.log(`✅ Created ${createdSubAdmins.length} subadmins`);
+  // Use upsert to avoid duplicate key errors
+  const createdSubAdmins = [];
+  for (const subAdmin of subAdminData) {
+    const existingSubAdmin = await SubAdmin.findOne({ phoneNumber: subAdmin.phoneNumber });
+    if (existingSubAdmin) {
+      console.log(`⚠️  SubAdmin with phone ${subAdmin.phoneNumber} already exists, skipping...`);
+      createdSubAdmins.push(existingSubAdmin);
+    } else {
+      const newSubAdmin = await SubAdmin.create(subAdmin);
+      createdSubAdmins.push(newSubAdmin);
+    }
+  }
+  
+  console.log(`✅ Created/Found ${createdSubAdmins.length} subadmins`);
   return createdSubAdmins;
 };
 

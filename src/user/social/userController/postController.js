@@ -66,12 +66,58 @@ function addIsLiked(post, userId) {
   return post;
 }
 
+// Helper function to add lastComment field to a post
+function addLastComment(post) {
+  const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
+  
+  if (postObj.comments && postObj.comments.length > 0) {
+    // Sort comments by createdAt descending to get the newest first
+    const sortedComments = [...postObj.comments].sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+      const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+      return dateB - dateA;
+    });
+    
+    const newestComment = sortedComments[0];
+    
+    // Ensure user info is populated (fullName and profilePictureUrl)
+    if (newestComment.user) {
+      const user = newestComment.user;
+      postObj.lastComment = {
+        _id: newestComment._id,
+        content: newestComment.content,
+        createdAt: newestComment.createdAt,
+        user: {
+          _id: user._id || user,
+          username: user.username,
+          fullName: user.fullName,
+          profilePictureUrl: user.profilePictureUrl
+        }
+      };
+    } else {
+      postObj.lastComment = {
+        _id: newestComment._id,
+        content: newestComment.content,
+        createdAt: newestComment.createdAt,
+        user: null
+      };
+    }
+  } else {
+    postObj.lastComment = null;
+  }
+  
+  return postObj;
+}
+
 // Helper function to transform post media into a cleaner structure
 function transformPostMedia(post, userId = null) {
   const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
   
   // Add isLiked field
   addIsLiked(postObj, userId);
+  
+  // Add lastComment field
+  addLastComment(postObj);
   
   // Separate images and videos
   const images = [];
@@ -364,27 +410,11 @@ async function getUserPosts(req, res) {
 
     const totalPosts = await Post.countDocuments(query);
 
-    // Add lastComment field and transform media for each post
-    const postsWithLastComment = posts.map(post => {
-      const postObj = post.toObject();
-      
-      // Get the newest comment (comments are sorted by createdAt descending in the model)
-      if (postObj.comments && postObj.comments.length > 0) {
-        // Sort comments by createdAt descending to get the newest first
-        const sortedComments = [...postObj.comments].sort((a, b) => 
-          new Date(b.createdAt) - new Date(a.createdAt)
-        );
-        postObj.lastComment = sortedComments[0];
-      } else {
-        postObj.lastComment = null;
-      }
-      
-      // Transform media into organized structure (includes isLiked)
-      return transformPostMedia(postObj, currentUserId);
-    });
+    // Transform media for each post (includes isLiked and lastComment)
+    const transformedPosts = posts.map(post => transformPostMedia(post, currentUserId));
 
     return ApiResponse.success(res, {
-      posts: postsWithLastComment,
+      posts: transformedPosts,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalPosts / limit),
@@ -486,20 +516,8 @@ async function getPost(req, res) {
       await post.addView(userId);
     }
 
-    // Add lastComment field (showing only the newest comment)
-    const postObj = post.toObject();
-    if (postObj.comments && postObj.comments.length > 0) {
-      // Sort comments by createdAt descending to get the newest first
-      const sortedComments = [...postObj.comments].sort((a, b) => 
-        new Date(b.createdAt) - new Date(a.createdAt)
-      );
-      postObj.lastComment = sortedComments[0];
-    } else {
-      postObj.lastComment = null;
-    }
-
-    // Transform media into organized structure (includes isLiked)
-    const transformedPost = transformPostMedia(postObj, userId);
+    // Transform media into organized structure (includes isLiked and lastComment)
+    const transformedPost = transformPostMedia(post, userId);
 
     return ApiResponse.success(res, transformedPost, 'Post retrieved successfully');
   } catch (error) {
@@ -1198,7 +1216,7 @@ async function searchPosts(req, res) {
 
     const posts = await Post.searchPosts(query, parseInt(page), parseInt(limit), allBlockedIds);
 
-    // Transform media for all search results (includes isLiked)
+    // Transform media for all search results (includes isLiked and lastComment)
     const transformedPosts = posts.map(post => {
       const postObj = post.toObject ? post.toObject() : post;
       return transformPostMedia(postObj, userId);
@@ -1624,16 +1642,14 @@ module.exports = {
       const savedIds = user.savedPosts || [];
       const posts = await Post.find({ _id: { $in: savedIds }, status: { $ne: 'deleted' } })
         .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
+        .populate('comments.user', 'username fullName profilePictureUrl')
         .populate('likes.user', 'username fullName')
         .sort({ publishedAt: -1 })
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      // Transform media for all saved posts (includes isLiked)
-      const transformedPosts = posts.map(post => {
-        const postObj = post.toObject();
-        return transformPostMedia(postObj, userId);
-      });
+      // Transform media for all saved posts (includes isLiked and lastComment)
+      const transformedPosts = posts.map(post => transformPostMedia(post, userId));
 
       const totalPosts = await Post.countDocuments({ _id: { $in: savedIds }, status: { $ne: 'deleted' } });
 
@@ -1712,22 +1728,8 @@ module.exports = {
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      // Transform media for all archived posts (includes isLiked)
-      const transformedPosts = posts.map(post => {
-        const postObj = post.toObject();
-        
-        // Add lastComment field
-        if (postObj.comments && postObj.comments.length > 0) {
-          const sortedComments = [...postObj.comments].sort((a, b) => 
-            new Date(b.createdAt) - new Date(a.createdAt)
-          );
-          postObj.lastComment = sortedComments[0];
-        } else {
-          postObj.lastComment = null;
-        }
-        
-        return transformPostMedia(postObj, userId);
-      });
+      // Transform media for all archived posts (includes isLiked and lastComment)
+      const transformedPosts = posts.map(post => transformPostMedia(post, userId));
 
       const totalPosts = await Post.countDocuments({
         author: userId,
