@@ -241,13 +241,24 @@ UserSchema.methods.updateProfileStep = function updateProfileStep() {
 
 // Device token methods for push notifications
 UserSchema.methods.addDeviceToken = async function addDeviceToken(token, platform, deviceInfo = {}) {
+	console.log('[USER MODEL] 🔔 addDeviceToken called:', {
+		userId: this._id,
+		token: token ? `${token.substring(0, 20)}...` : 'MISSING',
+		platform,
+		deviceInfo,
+		currentTokensCount: this.deviceTokens?.length || 0
+	});
+	
 	// Remove existing token if present
+	const beforeFilter = this.deviceTokens?.length || 0;
 	this.deviceTokens = this.deviceTokens.filter(
 		dt => dt.token !== token
 	);
+	const afterFilter = this.deviceTokens?.length || 0;
+	console.log('[USER MODEL] 🔍 Filtered existing tokens:', { beforeFilter, afterFilter, removed: beforeFilter - afterFilter });
 	
 	// Add new token
-	this.deviceTokens.push({
+	const newToken = {
 		token,
 		platform,
 		deviceId: deviceInfo.deviceId || '',
@@ -256,9 +267,29 @@ UserSchema.methods.addDeviceToken = async function addDeviceToken(token, platfor
 		isActive: true,
 		lastUsedAt: new Date(),
 		createdAt: new Date()
-	});
+	};
 	
-	return this.save();
+	this.deviceTokens.push(newToken);
+	console.log('[USER MODEL] ➕ Added new token to array. Total tokens now:', this.deviceTokens.length);
+	console.log('[USER MODEL] 💾 Calling save()...');
+	
+	try {
+		const savedUser = await this.save();
+		console.log('[USER MODEL] ✅ Save successful!');
+		console.log('[USER MODEL] 📊 Saved user deviceTokens count:', savedUser.deviceTokens?.length || 0);
+		console.log('[USER MODEL] 📋 Saved tokens:', savedUser.deviceTokens?.map(dt => ({
+			token: dt.token ? `${dt.token.substring(0, 20)}...` : 'MISSING',
+			platform: dt.platform,
+			isActive: dt.isActive
+		})) || []);
+		return savedUser;
+	} catch (saveError) {
+		console.error('[USER MODEL] ❌ Save failed:', saveError);
+		console.error('[USER MODEL] ❌ Save error name:', saveError.name);
+		console.error('[USER MODEL] ❌ Save error message:', saveError.message);
+		console.error('[USER MODEL] ❌ Save error stack:', saveError.stack);
+		throw saveError;
+	}
 };
 
 UserSchema.methods.removeDeviceToken = async function removeDeviceToken(token) {

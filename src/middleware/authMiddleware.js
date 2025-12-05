@@ -73,6 +73,7 @@ function authorize(allowedRoles = AllRoles) {
 				}
 			}
 
+			console.log('[AUTH] ✅ Auth successful, calling next()');
 			return next();
 		} catch (err) {
 			// Token errors: TokenExpiredError, JsonWebTokenError, NotBeforeError

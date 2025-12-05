@@ -98,11 +98,30 @@ app.use('/user/dating', datingMediaRoutes);
 app.use('/user/dating', datingProfileRoutes);
 app.use('/user/dating', datingInteractionRoutes);
 
-// // Notification routes (new architecture)
-// const notificationRoutes = require('./notification/routes/notificationRoutes');
-// const notificationPreferencesRoutes = require('./notification/routes/notificationPreferencesRoutes');
-// app.use('/api/v1/notifications', notificationRoutes);
-// app.use('/api/v1/notification-preferences', notificationPreferencesRoutes);
+// Notification routes (new architecture)
+const notificationRoutes = require('./notification/routes/notificationRoutes');
+const notificationPreferencesRoutes = require('./notification/routes/notificationPreferencesRoutes');
+
+// Debug middleware to log ALL requests to /api/notification (BEFORE routes)
+app.use('/api/notification', (req, res, next) => {
+  console.log('[APP] 🔍 Request to /api/notification:', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    originalUrl: req.originalUrl,
+    hasBody: !!req.body,
+    bodyKeys: req.body ? Object.keys(req.body) : [],
+    hasAuth: !!req.headers.authorization,
+    authHeader: req.headers.authorization ? `${req.headers.authorization.substring(0, 30)}...` : 'MISSING'
+  });
+  console.log('[APP] 🔍 Will route to notificationRoutes with path:', req.path);
+  next();
+});
+
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/notification-preferences', notificationPreferencesRoutes);
+// Also register for /api/notification (without v1) for FCM token endpoints
+app.use('/api/notification', notificationRoutes);
 
 // // Device token routes for push notifications
 // const deviceTokenRoutes = require('./user/auth/routes/deviceTokenRoutes');

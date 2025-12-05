@@ -397,38 +397,55 @@ async function createUsers(count) {
   
   const users = [];
   
+  // Ensure first 2 users have completed profiles for testing
+  const guaranteedCompleteProfiles = 2;
+  
   for (let i = 0; i < count; i++) {
     const name = SAMPLE_NAMES[i] || faker.person.fullName();
     const username = SAMPLE_USERNAMES[i] || faker.internet.username();
     const phoneNumber = SAMPLE_PHONE_NUMBERS[i] || faker.phone.number().replace(/\D/g, '').slice(0, 10);
     const email = SAMPLE_EMAILS[i] || faker.internet.email();
     
-    // Create some users with incomplete profiles for realistic testing
-    const profileCompleteness = Math.random();
+    // First 2 users get guaranteed complete profiles, others are random
+    const isGuaranteedComplete = i < guaranteedCompleteProfiles;
+    const profileCompleteness = isGuaranteedComplete ? 1.0 : Math.random();
     const primaryLanguage = getRandomElement(SAMPLE_LANGUAGES);
     const secondaryLanguage = getRandomElement(SAMPLE_LANGUAGES.filter(lang => lang !== primaryLanguage));
+
+    // For guaranteed complete profiles, ensure all fields are populated
+    const hasFullName = isGuaranteedComplete || profileCompleteness > 0.1;
+    const hasEmail = isGuaranteedComplete || profileCompleteness > 0.2;
+    const hasBio = isGuaranteedComplete || profileCompleteness > 0.4;
+    const hasDob = isGuaranteedComplete || profileCompleteness > 0.5;
+    const hasGender = isGuaranteedComplete || profileCompleteness > 0.6;
+    const hasPronouns = isGuaranteedComplete || profileCompleteness > 0.7;
+    const hasInterests = isGuaranteedComplete || profileCompleteness > 0.8;
+    const hasLikes = isGuaranteedComplete || profileCompleteness > 0.8;
+    const hasLocation = isGuaranteedComplete || profileCompleteness > 0.9;
+    const hasIdProof = isGuaranteedComplete || Math.random() > 0.7;
 
     let userData = {
       phoneNumber: phoneNumber,
       countryCode: '+91',
       username: username,
       usernameNorm: username.toLowerCase(),
-      fullName: profileCompleteness > 0.1 ? name : '', // 90% have names
-      email: profileCompleteness > 0.2 ? email : '', // 80% have emails
-      emailVerified: profileCompleteness > 0.3 && Math.random() > 0.3, // 70% verified if they have email
-      bio: profileCompleteness > 0.4 ? faker.lorem.sentence() : '', // 60% have bio
-      dob: profileCompleteness > 0.5 ? faker.date.past({ years: 30, refDate: '2000-01-01' }) : null, // 50% have DOB
-      gender: profileCompleteness > 0.6 ? getRandomElement(SAMPLE_GENDERS) : '', // 40% have gender
-      pronouns: profileCompleteness > 0.7 ? getRandomElement(SAMPLE_PRONOUNS) : '', // 30% have pronouns
-      interests: profileCompleteness > 0.8 ? getRandomElements(SAMPLE_INTERESTS, Math.floor(Math.random() * 5) + 1) : [], // 20% have interests
-      likes: profileCompleteness > 0.8 ? getRandomElements(SAMPLE_LIKES, Math.floor(Math.random() * 5) + 1) : [], // 20% have likes
-      location: profileCompleteness > 0.9 ? {
+      fullName: hasFullName ? name : '', // Guaranteed for first 2 users
+      email: hasEmail ? email : '', // Guaranteed for first 2 users
+      emailVerified: hasEmail && (isGuaranteedComplete || Math.random() > 0.3), // Always verified for guaranteed complete
+      bio: hasBio ? faker.lorem.sentence() : '', // Guaranteed for first 2 users
+      dob: hasDob ? faker.date.past({ years: 30, refDate: '2000-01-01' }) : null, // Guaranteed for first 2 users
+      gender: hasGender ? getRandomElement(SAMPLE_GENDERS) : '', // Guaranteed for first 2 users
+      pronouns: hasPronouns ? getRandomElement(SAMPLE_PRONOUNS) : '', // Guaranteed for first 2 users
+      interests: hasInterests ? getRandomElements(SAMPLE_INTERESTS, Math.floor(Math.random() * 5) + 1) : [], // Guaranteed for first 2 users
+      likes: hasLikes ? getRandomElements(SAMPLE_LIKES, Math.floor(Math.random() * 5) + 1) : [], // Guaranteed for first 2 users
+      location: hasLocation ? {
         lat: parseFloat(faker.location.latitude()),
         lng: parseFloat(faker.location.longitude()),
         city: faker.location.city(),
         country: faker.location.country()
-      } : { lat: null, lng: null, city: '', country: '' }, // 10% have location
-      profilePictureUrl: profileCompleteness > 0.3 ? VIDEO_URL : '',
+      } : { lat: null, lng: null, city: '', country: '' }, // Guaranteed for first 2 users
+      profilePictureUrl: (isGuaranteedComplete || profileCompleteness > 0.3) ? VIDEO_URL : '',
+      idProofUrl: hasIdProof ? `https://example.com/documents/id_proof_${i}.pdf` : '',
       isActive: Math.random() > 0.1, // 90% active
       isProfileCompleted: false, // Will be calculated based on actual data
       profileCompletionStep: 'basic_info', // Will be calculated based on actual data
@@ -461,10 +478,10 @@ async function createUsers(count) {
         primaryLanguage,
         secondaryLanguage,
         location: {
-          city: profileCompleteness > 0.9 ? faker.location.city() : '',
-          country: profileCompleteness > 0.9 ? faker.location.country() : '',
-          lat: profileCompleteness > 0.9 ? parseFloat(faker.location.latitude()) : null,
-          lng: profileCompleteness > 0.9 ? parseFloat(faker.location.longitude()) : null
+          city: hasLocation ? faker.location.city() : '',
+          country: hasLocation ? faker.location.country() : '',
+          lat: hasLocation ? parseFloat(faker.location.latitude()) : null,
+          lng: hasLocation ? parseFloat(faker.location.longitude()) : null
         }
       },
       dating: {
@@ -481,11 +498,11 @@ async function createUsers(count) {
           },
           languages: getRandomElements(SAMPLE_LANGUAGES, 2),
           location: {
-            city: profileCompleteness > 0.9 ? faker.location.city() : '',
-            country: profileCompleteness > 0.9 ? faker.location.country() : '',
+            city: hasLocation ? faker.location.city() : '',
+            country: hasLocation ? faker.location.country() : '',
             coordinates: {
-              lat: profileCompleteness > 0.9 ? parseFloat(faker.location.latitude()) : null,
-              lng: profileCompleteness > 0.9 ? parseFloat(faker.location.longitude()) : null
+              lat: hasLocation ? parseFloat(faker.location.latitude()) : null,
+              lng: hasLocation ? parseFloat(faker.location.longitude()) : null
             }
           },
           distanceRange: {
@@ -1848,6 +1865,10 @@ async function seedDatabase(config) {
     console.log('   Admin: +91-9998887777 (OTP: 123456)');
     console.log('   SubAdmin: +91-7776665555 (OTP: 123456)');
     console.log('   Users: +91-7776665555, +91-8887776666, etc. (OTP: 123456)');
+    console.log('\n✅ Users with COMPLETED Profiles (Ready for Testing):');
+    console.log('   User 1: +91-7776665555 (Profile: COMPLETED)');
+    console.log('   User 2: +91-8887776666 (Profile: COMPLETED)');
+    console.log('   Note: First 2 users are guaranteed to have completed profiles');
     
     console.log('\n🚀 You can now test all the enhanced features!');
     
