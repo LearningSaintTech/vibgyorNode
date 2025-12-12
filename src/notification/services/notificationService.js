@@ -4,6 +4,7 @@ const notificationRegistry = require('./notificationRegistry');
 const notificationFactory = require('./notificationFactory');
 const deliveryManager = require('./deliveryManager');
 const socialNotificationHandler = require('../handlers/socialNotificationHandler');
+const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../middleware/cacheMiddleware');
 
 /**
  * Notification Service
@@ -159,7 +160,16 @@ class NotificationService {
    */
   async getUnreadCount(userId, context = 'all') {
     try {
-      return await Notification.getUnreadCount(userId, context);
+      // OPTIMIZED: Cache unread count for 30 seconds (frequently accessed)
+      const cacheKey = `notifications:unread:${context}`;
+      let count = getCachedUserData(userId, cacheKey);
+      
+      if (count === null) {
+        count = await Notification.getUnreadCount(userId, context);
+        cacheUserData(userId, cacheKey, count, 30); // Cache for 30 seconds
+      }
+      
+      return count;
     } catch (error) {
       console.error('[NOTIFICATION SERVICE] Error getting unread count:', error);
       throw error;
@@ -184,6 +194,10 @@ class NotificationService {
       }
 
       await notification.markAsRead();
+      
+      // OPTIMIZED: Invalidate unread count cache when notification is marked as read
+      invalidateUserCache(notification.recipient.toString(), 'notifications:*');
+      
       return notification;
     } catch (error) {
       console.error('[NOTIFICATION SERVICE] Error marking notification as read:', error);
@@ -199,7 +213,12 @@ class NotificationService {
    */
   async markAllAsRead(userId, context = 'all') {
     try {
-      return await Notification.markAllAsRead(userId, context);
+      const result = await Notification.markAllAsRead(userId, context);
+      
+      // OPTIMIZED: Invalidate unread count cache
+      invalidateUserCache(userId, 'notifications:*');
+      
+      return result;
     } catch (error) {
       console.error('[NOTIFICATION SERVICE] Error marking all as read:', error);
       throw error;

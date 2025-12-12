@@ -75,12 +75,15 @@ const UserSchema = new mongoose.Schema(
 			photos: [{
 				url: { type: String, default: '' },
 				thumbnailUrl: { type: String, default: '' },
+				blurhash: { type: String, default: null }, // BlurHash for instant placeholders
+				responsiveUrls: { type: mongoose.Schema.Types.Mixed, default: null }, // Multiple sizes (thumbnail, small, medium, large, original)
 				order: { type: Number, default: 0 },
 				uploadedAt: { type: Date, default: Date.now }
 			}],
 			videos: [{
 				url: { type: String, default: '' },
 				thumbnailUrl: { type: String, default: '' },
+				blurhash: { type: String, default: null }, // BlurHash for video thumbnail (if thumbnail is an image)
 				duration: { type: Number, default: 0 }, // in seconds
 				order: { type: Number, default: 0 },
 				uploadedAt: { type: Date, default: Date.now }
@@ -334,7 +337,9 @@ UserSchema.methods.addDatingPhoto = async function addDatingPhoto(photoData) {
 	
 	this.dating.photos.push({
 		url: photoData.url || '',
-		thumbnailUrl: photoData.thumbnailUrl || '',
+		thumbnailUrl: photoData.thumbnailUrl || photoData.url || '',
+		blurhash: photoData.blurhash || null,
+		responsiveUrls: photoData.responsiveUrls || null,
 		order: order,
 		uploadedAt: new Date()
 	});
@@ -454,6 +459,17 @@ const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
 // Ensure unique index on normalized username (optional when empty)
 UserSchema.index({ usernameNorm: 1 }, { unique: true, partialFilterExpression: { usernameNorm: { $type: 'string', $ne: '' } } });
+
+// CRITICAL: Performance indexes for dating and social queries (Phase 1 Optimization)
+UserSchema.index({ 'dating.isDatingProfileActive': 1, isActive: 1 }); // Dating profile queries
+UserSchema.index({ 'location.coordinates': '2dsphere' }); // Geospatial for distance-based queries
+UserSchema.index({ fullName: 'text', username: 'text' }); // Text search index
+UserSchema.index({ dob: 1 }); // Age filtering for dating
+UserSchema.index({ gender: 1, 'dating.isDatingProfileActive': 1 }); // Gender + dating filter
+UserSchema.index({ isActive: 1, 'dating.isDatingProfileActive': 1 }); // Active dating profiles
+UserSchema.index({ 'preferences.hereFor': 1, 'dating.isDatingProfileActive': 1 }); // HereTo filter
+UserSchema.index({ 'location.city': 1, 'location.country': 1 }); // Location search
+UserSchema.index({ createdAt: -1 }); // New user sorting
 
 module.exports = User;
 

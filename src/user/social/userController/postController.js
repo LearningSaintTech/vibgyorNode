@@ -6,6 +6,7 @@ const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const feedAlgorithmService = require('../../../services/feedAlgorithmService');
 const notificationService = require('../../../notification/services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
+const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 
 // Helper function to normalize location with all fields visible
 function normalizeLocation(location) {
@@ -299,6 +300,12 @@ async function createPost(req, res) {
     const post = new Post(postData);
     await post.save();
 
+    // OPTIMIZED: Calculate engagement score on post creation (Phase 3)
+    if (post.updateEngagementScore) {
+      post.updateEngagementScore();
+      await post.save();
+    }
+
     // Populate author information
     await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
 
@@ -354,13 +361,23 @@ async function getUserPosts(req, res) {
       }
     }
 
+    // OPTIMIZED: Limit populate fields and use lean for better performance
     const posts = await Post.find(query)
-      .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
-      .populate('comments.user', 'username fullName profilePictureUrl')
-      .populate('likes.user', 'username fullName')
+      .populate('author', 'username fullName profilePictureUrl isVerified')
+      .populate({
+        path: 'comments.user',
+        select: 'username fullName profilePictureUrl',
+        options: { limit: 5 } // Only populate first 5 comments for list view
+      })
+      .populate({
+        path: 'likes.user',
+        select: 'username fullName',
+        options: { limit: 10 } // Only populate first 10 likes for list view
+      })
       .sort({ publishedAt: -1 })
       .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean(); // Use lean for better performance
 
     const totalPosts = await Post.countDocuments(query);
 
@@ -405,18 +422,35 @@ async function getFeedPosts(req, res) {
     const { page = 1, limit = 20 } = req.query;
     const userId = req.user?.userId;
 
-    // Use the smart feed algorithm service
-    const feedPosts = await feedAlgorithmService.generatePersonalizedFeed(
-      userId, 
-      parseInt(page), 
-      parseInt(limit)
-    );
+    // OPTIMIZED: Cache feed results for 2 minutes (feed changes frequently) - Phase 3
+    let feedPosts = getCachedUserData(userId, `feed:posts:${page}:${limit}`);
+    
+    if (!feedPosts) {
+      // Use the smart feed algorithm service (now optimized with pre-calculated scores)
+      feedPosts = await feedAlgorithmService.generatePersonalizedFeed(
+        userId, 
+        parseInt(page), 
+        parseInt(limit)
+      );
+      
+      // Cache feed posts for 2 minutes
+      cacheUserData(userId, `feed:posts:${page}:${limit}`, feedPosts, 120);
+    }
 
     // Transform media for all feed posts (includes isLiked)
     const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId));
 
-    // Get total count for pagination (excluding own posts and blocked users)
-    const user = await User.findById(userId).select('following blockedUsers blockedBy');
+    // OPTIMIZED: Cache user data (blocked users, following) for 5 minutes
+    const cacheKey = 'feed:userData';
+    let user = getCachedUserData(userId, cacheKey);
+    
+    if (!user) {
+      user = await User.findById(userId).select('following blockedUsers blockedBy').lean();
+      if (user) {
+        cacheUserData(userId, cacheKey, user, 300); // Cache for 5 minutes
+      }
+    }
+    
     const followingIds = user?.following || [];
     const blockedUserIds = user?.blockedUsers || [];
     const blockedByIds = user?.blockedBy || [];
@@ -428,9 +462,8 @@ async function getFeedPosts(req, res) {
       userId // Exclude own posts
     ])];
 
-    // Count total posts matching feed algorithm logic:
-    // - All public posts (excluding blocked users and self)
-    // - Followers-only posts from people you follow
+    // OPTIMIZED: Use estimatedDocumentCount for faster approximate count, or cache count
+    // For exact count, use countDocuments but consider caching the result
     const totalPosts = await Post.countDocuments({
       status: 'published',
       author: { $nin: excludedUserIds },
@@ -462,10 +495,19 @@ async function getPost(req, res) {
     const { postId } = req.params;
     const userId = req.user?.userId;
 
+    // OPTIMIZED: Limit populate fields for single post view
     const post = await Post.findById(postId)
       .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
-      .populate('comments.user', 'username fullName profilePictureUrl')
-      .populate('likes.user', 'username fullName');
+      .populate({
+        path: 'comments.user',
+        select: 'username fullName profilePictureUrl',
+        options: { limit: 50 } // Limit comments for single post
+      })
+      .populate({
+        path: 'likes.user',
+        select: 'username fullName',
+        options: { limit: 20 } // Limit likes for single post
+      });
 
     if (!post) {
       return ApiResponse.notFound(res, 'Post not found');
@@ -695,6 +737,8 @@ async function toggleLike(req, res) {
     
     if (existingLike) {
       await post.removeLike(userId);
+      // OPTIMIZED: Invalidate feed cache when post is unliked
+      invalidateUserCache(userId, 'feed:*');
       return ApiResponse.success(res, { liked: false, likesCount: post.likesCount }, 'Post unliked');
     } else {
       await post.addLike(userId);
@@ -718,6 +762,8 @@ async function toggleLike(req, res) {
         }
       }
       
+      // OPTIMIZED: Invalidate feed cache when post is liked
+      invalidateUserCache(userId, 'feed:*');
       return ApiResponse.success(res, { liked: true, likesCount: post.likesCount }, 'Post liked');
     }
   } catch (error) {
@@ -1552,6 +1598,8 @@ async function getSuggestedUsers(req, res) {
 }
 
 module.exports = {
+  // Helper functions
+  transformPostMedia,
   // Basic CRUD
   createPost,
   getUserPosts,

@@ -5,6 +5,7 @@ const DatingMatch = require('../models/datingMatchModel');
 const DatingProfileComment = require('../models/datingProfileCommentModel');
 const FollowRequest = require('../../social/userModel/followRequestModel');
 const Report = require('../../social/userModel/userReportModel');
+const { invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 
 async function loadUsers(currentUserId, targetUserId) {
 	console.log('[DATING][INTERACTION] loadUsers payload', { currentUserId, targetUserId });
@@ -139,6 +140,10 @@ async function likeProfile(req, res) {
 		}
 
 		console.log('[DATING][LIKE] response', { isMatch, matchId: match?._id });
+		
+		// OPTIMIZED: Invalidate dating cache when interaction occurs
+		invalidateUserCache(currentUserId, 'dating:*');
+		
 		return ApiResponse.success(res, {
 			liked: true,
 			isMatch,
@@ -200,6 +205,10 @@ async function dislikeProfile(req, res) {
 		await DatingMatch.endMatch(currentUserId, targetUserId, 'ended');
 
 		console.log('[DATING][DISLIKE] success', { currentUserId, targetUserId });
+		
+		// OPTIMIZED: Invalidate dating cache when interaction occurs
+		invalidateUserCache(currentUserId, 'dating:*');
+		
 		return ApiResponse.success(res, { liked: false }, 'Profile disliked');
 	} catch (error) {
 		console.error('[DATING][DISLIKE] Error:', error);

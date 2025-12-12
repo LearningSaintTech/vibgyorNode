@@ -3,6 +3,7 @@ const User = require('../../auth/model/userAuthModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const contentModeration = require('../userModel/contentModerationModel');
+const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 
 // Create a new story
 async function createStory(req, res) {
@@ -48,7 +49,10 @@ async function createStory(req, res) {
           mimeType: file.mimetype,
           duration: uploadResult.duration || null,
           dimensions: uploadResult.dimensions || null,
-          s3Key: uploadResult.key
+          s3Key: uploadResult.key,
+          // OPTIMIZED: Add BlurHash and responsive URLs for better frontend performance
+          blurhash: uploadResult.blurhash || null, // BlurHash for instant placeholders
+          responsiveUrls: uploadResult.responsiveUrls || null // Multiple sizes for images
         };
       } catch (uploadError) {
         console.error('[STORY] Media upload error:', uploadError);
@@ -125,6 +129,9 @@ async function createStory(req, res) {
       // Don't fail the story creation if moderation fails
     }
 
+    // OPTIMIZED: Invalidate feed cache when new story is created
+    invalidateUserCache(userId, 'feed:stories:*');
+    
     console.log('[STORY] Story created successfully:', story._id);
     return ApiResponse.success(res, story, 'Story created successfully');
   } catch (error) {
@@ -234,53 +241,192 @@ async function getStoriesFeed(req, res) {
 
     console.log('[STORY] Get stories feed - START:', { userId });
 
-    // Get user's following list
-    const user = await User.findById(userId).select('following');
-    if (!user) {
-      console.log('[STORY] User not found');
-      return ApiResponse.notFound(res, 'User not found');
-    }
+    // OPTIMIZED: Cache feed results for 2 minutes (feed changes frequently)
+    let storiesFeedResult = getCachedUserData(userId, `feed:stories:${page}:${limit}`);
+    
+    if (!storiesFeedResult) {
+      // OPTIMIZED: Cache user data (following list) for 5 minutes
+      const cacheKey = 'feed:userData';
+      let user = getCachedUserData(userId, cacheKey);
+      
+      if (!user) {
+        user = await User.findById(userId).select('following blockedUsers blockedBy').lean();
+        if (user) {
+          cacheUserData(userId, cacheKey, user, 300); // Cache for 5 minutes
+        }
+      }
 
-    const followingIds = user.following || [];
-    console.log('[STORY] Following count:', followingIds.length);
+      if (!user) {
+        console.log('[STORY] User not found');
+        return ApiResponse.notFound(res, 'User not found');
+      }
 
-    // If not following anyone, return empty feed
-    if (followingIds.length === 0) {
-      console.log('[STORY] User is not following anyone');
-      return ApiResponse.success(res, {
-        storiesFeed: [],
-        totalAuthors: 0
-      }, 'No stories available - not following anyone');
-    }
+      const followingIds = user.following || [];
+      console.log('[STORY] Following count:', followingIds.length);
 
-    // Instagram-like behavior: Get ONLY stories from people the user is following
-    // Account privacy is checked when viewing individual stories, not in feed query
-    const stories = await Story.find({
-      status: 'active',
-      expiresAt: { $gt: new Date() },
-      author: { $in: followingIds }  // Simple: Only from followed users
-    })
-    .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
-    .populate('mentions.user', 'username fullName profilePictureUrl isVerified')
-    .populate('views.user', 'username fullName profilePictureUrl isVerified')
-    .populate('replies.user', 'username fullName profilePictureUrl isVerified')
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(parseInt(limit));
+      // If not following anyone, return empty feed
+      if (followingIds.length === 0) {
+        console.log('[STORY] User is not following anyone');
+        const emptyResult = {
+          storiesFeed: [],
+          totalAuthors: 0,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: 0,
+            totalStories: 0,
+            hasNext: false,
+            hasPrev: false
+          }
+        };
+        // Cache empty result for shorter time (30 seconds)
+        cacheUserData(userId, `feed:stories:${page}:${limit}`, emptyResult, 30);
+        return ApiResponse.success(res, emptyResult, 'No stories available - not following anyone');
+      }
+
+      // Exclude blocked users
+      const blockedUserIds = user?.blockedUsers || [];
+      const blockedByIds = user?.blockedBy || [];
+      const excludedUserIds = [...new Set([
+        ...blockedUserIds.map(id => id.toString()),
+        ...blockedByIds.map(id => id.toString())
+      ])];
+
+      // Get total count for pagination (before pagination)
+      const totalStoriesCount = await Story.countDocuments({
+        status: 'active',
+        expiresAt: { $gt: new Date() },
+        author: { 
+          $in: followingIds,
+          $nin: excludedUserIds.length > 0 ? excludedUserIds : []
+        }
+      });
+
+      // Instagram-like behavior: Get ONLY stories from people the user is following
+      // Account privacy is checked when viewing individual stories, not in feed query
+      // OPTIMIZED: Use aggregation instead of multiple populates for better performance
+      const stories = await Story.aggregate([
+        {
+          $match: {
+            status: 'active',
+            expiresAt: { $gt: new Date() },
+            author: { 
+              $in: followingIds,
+              $nin: excludedUserIds.length > 0 ? excludedUserIds : []
+            }
+          }
+        },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'author',
+          foreignField: '_id',
+          as: 'author',
+          pipeline: [
+            {
+              $project: {
+                username: 1,
+                fullName: 1,
+                profilePictureUrl: 1,
+                isVerified: 1,
+                privacySettings: 1
+              }
+            }
+          ]
+        }
+      },
+      {
+        $unwind: '$author'
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'mentions.user',
+          foreignField: '_id',
+          as: 'mentions.user',
+          pipeline: [
+            {
+              $project: {
+                username: 1,
+                fullName: 1,
+                profilePictureUrl: 1,
+                isVerified: 1
+              }
+            }
+          ]
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'views.user',
+          foreignField: '_id',
+          as: 'views.user',
+          pipeline: [
+            {
+              $project: {
+                username: 1,
+                fullName: 1,
+                profilePictureUrl: 1,
+                isVerified: 1
+              }
+            },
+            {
+              $limit: 20 // OPTIMIZED: Limit views to 20 for feed performance
+            }
+          ]
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'replies.user',
+          foreignField: '_id',
+          as: 'replies.user',
+          pipeline: [
+            {
+              $project: {
+                username: 1,
+                fullName: 1,
+                profilePictureUrl: 1,
+                isVerified: 1
+              }
+            }
+          ]
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $skip: (parseInt(page) - 1) * parseInt(limit)
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]);
 
     console.log('[STORY] Stories found from followed users:', stories.length);
 
     // Add hasViewed flag to each story and group by author
     const groupedStories = {};
     stories.forEach(story => {
-      const storyObj = story.toObject();
+      // Aggregation results are already plain objects, not Mongoose documents
+      // So we don't need toObject(), just create a copy
+      const storyObj = { ...story };
       
       // Check if current user has viewed this story
-      // Handle both populated and unpopulated view.user cases
-      const hasViewed = story.views.some(view => {
-        const viewUserId = (view.user._id || view.user).toString();
-        return viewUserId === userId.toString();
-      });
+      // Handle aggregation lookup structure where views.user might be an array or object
+      let hasViewed = false;
+      if (story.views && Array.isArray(story.views)) {
+        hasViewed = story.views.some(view => {
+          if (!view || !view.user) return false;
+          // Handle both array (from lookup) and object (direct reference) cases
+          const viewUser = Array.isArray(view.user) ? view.user[0] : view.user;
+          if (!viewUser) return false;
+          const viewUserId = (viewUser._id || viewUser).toString();
+          return viewUserId === userId.toString();
+        });
+      }
       storyObj.hasViewed = hasViewed;
       
       const authorId = story.author._id.toString();
@@ -300,15 +446,40 @@ async function getStoriesFeed(req, res) {
       }
     });
 
-    console.log('[STORY] Stories feed ready:', {
-      totalAuthors: Object.keys(groupedStories).length,
-      authors: Object.keys(groupedStories).map(id => groupedStories[id].author.username)
-    });
+      console.log('[STORY] Stories feed ready:', {
+        totalAuthors: Object.keys(groupedStories).length,
+        authors: Object.keys(groupedStories).map(id => groupedStories[id].author.username)
+      });
 
-    return ApiResponse.success(res, {
-      storiesFeed: Object.values(groupedStories),
-      totalAuthors: Object.keys(groupedStories).length
-    }, 'Stories feed retrieved successfully');
+      // Sort stories feed: unviewed stories first (Instagram-like behavior)
+      // Priority: 1. Authors with unviewed stories (hasUnviewedStories = true)
+      //           2. Authors with only viewed stories (hasUnviewedStories = false)
+      // Within each group, maintain original order (newest first from aggregation)
+      const sortedStoriesFeed = Object.values(groupedStories).sort((a, b) => {
+        // Authors with unviewed stories come first
+        if (a.hasUnviewedStories && !b.hasUnviewedStories) return -1;
+        if (!a.hasUnviewedStories && b.hasUnviewedStories) return 1;
+        // If both have same unviewed status, maintain original order (newest first)
+        return 0;
+      });
+
+      storiesFeedResult = {
+        storiesFeed: sortedStoriesFeed,
+        totalAuthors: Object.keys(groupedStories).length,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalStoriesCount / limit),
+          totalStories: totalStoriesCount,
+          hasNext: page * limit < totalStoriesCount,
+          hasPrev: page > 1
+        }
+      };
+
+      // Cache feed results for 2 minutes
+      cacheUserData(userId, `feed:stories:${page}:${limit}`, storiesFeedResult, 120);
+    }
+
+    return ApiResponse.success(res, storiesFeedResult, 'Stories feed retrieved successfully');
   } catch (error) {
     console.error('[STORY] Get stories feed error:', error);
     return ApiResponse.serverError(res, 'Failed to get stories feed');
@@ -410,6 +581,9 @@ async function deleteStory(req, res) {
     // Hard delete from database
     await Story.findByIdAndDelete(storyId);
 
+    // OPTIMIZED: Invalidate feed cache when story is deleted
+    invalidateUserCache(userId, 'feed:stories:*');
+
     console.log('[STORY] Story deleted from database successfully:', storyId);
     return ApiResponse.success(res, null, 'Story deleted successfully');
   } catch (error) {
@@ -443,6 +617,9 @@ async function replyToStory(req, res) {
     // Fetch story again with populated replies
     const updatedStory = await Story.findById(storyId)
       .populate('replies.user', 'username fullName profilePictureUrl isVerified');
+
+    // OPTIMIZED: Invalidate feed cache when story is replied to
+    invalidateUserCache(userId, 'feed:stories:*');
 
     console.log('[STORY] Reply added successfully');
     return ApiResponse.success(res, {
@@ -634,6 +811,9 @@ async function trackStoryView(req, res) {
     // Add view (this automatically checks for duplicates and updates count)
     await story.addView(userId);
 
+    // OPTIMIZED: Invalidate feed cache when story is viewed (hasViewed changes)
+    invalidateUserCache(userId, 'feed:stories:*');
+
     console.log('[STORY] Story view tracked successfully:', {
       storyId: story._id,
       storyAuthor: story.author.username,
@@ -699,6 +879,9 @@ async function toggleLikeStory(req, res) {
 
     // Toggle like status
     await story.toggleLike(userId);
+    
+    // OPTIMIZED: Invalidate feed cache when story is liked/unliked
+    invalidateUserCache(userId, 'feed:stories:*');
 
     // Find the updated view to check isLiked status
     // Handle both populated and unpopulated view.user cases

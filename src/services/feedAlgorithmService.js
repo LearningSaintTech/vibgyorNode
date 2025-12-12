@@ -165,6 +165,7 @@ class FeedAlgorithmService {
       // Add current user to excluded list (users shouldn't see their own posts in feed)
       const excludedUserIds = [...allBlockedIds, new mongoose.Types.ObjectId(userId)];
 
+      // OPTIMIZED: Use pre-calculated engagementScore from Post document (Phase 3)
       // Get posts that user can see (excluding blocked users and own posts)
       const posts = await Post.aggregate([
         {
@@ -179,13 +180,10 @@ class FeedAlgorithmService {
         },
         {
           $addFields: {
-            // Calculate all scores
-            engagementScore: {
-              $add: [
-                { $multiply: ['$likesCount', 1] },
-                { $multiply: ['$commentsCount', 2] },
-                { $multiply: ['$sharesCount', 3] }
-              ]
+            // OPTIMIZED: Use pre-calculated engagementScore from Post document (Phase 3)
+            // engagementScore is already calculated and stored in Post document
+            calculatedEngagementScore: {
+              $ifNull: ['$engagementScore', 0] // Fallback to 0 if not calculated yet
             },
             recencyScore: {
               $divide: [
@@ -205,19 +203,11 @@ class FeedAlgorithmService {
             // Calculate final weighted score
             finalScore: {
               $add: [
-                // Engagement component (40%)
+                // Engagement component (40%) - Use pre-calculated score (Phase 3)
                 {
                   $multiply: [
                     {
-                      $min: [
-                        100,
-                        {
-                          $multiply: [
-                            { $divide: ['$engagementScore', { $max: ['$viewsCount', 1] }] },
-                            100
-                          ]
-                        }
-                      ]
+                      $ifNull: ['$calculatedEngagementScore', 0] // Use pre-calculated score
                     },
                     0.4
                   ]
@@ -279,7 +269,12 @@ class FeedAlgorithmService {
           }
         },
         {
-          $sort: { finalScore: -1, publishedAt: -1 }
+          // OPTIMIZED: Sort by finalScore and engagementScore for better performance (Phase 3)
+          $sort: { 
+            finalScore: -1, 
+            engagementScore: -1, // Use pre-calculated score
+            publishedAt: -1 
+          }
         },
         {
           $skip: (page - 1) * limit

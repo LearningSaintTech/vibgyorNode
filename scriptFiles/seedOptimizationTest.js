@@ -83,6 +83,9 @@ const SAMPLE_HASHTAGS = [
   'nature', 'sunset', 'sunrise', 'beach', 'mountains'
 ];
 
+// Parallel processing configuration
+const BATCH_SIZE = 50; // Process 50 items at a time
+
 // Utility functions
 const getRandomElement = (array) => array[Math.floor(Math.random() * array.length)];
 const getRandomElements = (array, count) => {
@@ -97,15 +100,34 @@ const getRandomDate = (daysAgo = 30) => {
 };
 
 /**
+ * Process items in parallel batches
+ */
+async function processInBatches(items, batchSize, processor) {
+  const results = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map((item, index) => processor(item, i + index))
+    );
+    results.push(...batchResults.filter(r => r !== null));
+    
+    if ((i + batchSize) % (batchSize * 5) === 0 || i + batchSize >= items.length) {
+      console.log(`   ✅ Processed ${Math.min(i + batchSize, items.length)}/${items.length} items...`);
+    }
+  }
+  return results;
+}
+
+/**
  * Upload media file to S3 and get upload result
  */
-async function uploadMediaFile(userId, mediaFile, category = 'posts') {
+async function uploadMediaFile(userId, mediaFile, category = 'posts', verbose = false) {
   try {
     const filePath = path.join(MEDIA_FOLDER, mediaFile.filename);
     
     // Check if file exists
     if (!fs.existsSync(filePath)) {
-      console.warn(`⚠️ Media file not found: ${filePath}`);
+      if (verbose) console.warn(`⚠️ Media file not found: ${filePath}`);
       return null;
     }
 
@@ -113,7 +135,9 @@ async function uploadMediaFile(userId, mediaFile, category = 'posts') {
     const buffer = fs.readFileSync(filePath);
     const fileStats = fs.statSync(filePath);
 
-    console.log(`📤 Uploading ${mediaFile.filename} (${(fileStats.size / 1024 / 1024).toFixed(2)} MB) for user ${userId}...`);
+    if (verbose) {
+      console.log(`📤 Uploading ${mediaFile.filename} (${(fileStats.size / 1024 / 1024).toFixed(2)} MB) for user ${userId}...`);
+    }
 
     // Upload to S3 (this will automatically:
     // - Generate blurhash for images
@@ -133,10 +157,11 @@ async function uploadMediaFile(userId, mediaFile, category = 'posts') {
       }
     });
 
-    console.log(`✅ Uploaded ${mediaFile.filename}: ${uploadResult.url.substring(0, 60)}...`);
-    
-    if (uploadResult.blurhash) {
-      console.log(`   📸 BlurHash: ${uploadResult.blurhash.substring(0, 20)}...`);
+    if (verbose) {
+      console.log(`✅ Uploaded ${mediaFile.filename}: ${uploadResult.url.substring(0, 60)}...`);
+      if (uploadResult.blurhash) {
+        console.log(`   📸 BlurHash: ${uploadResult.blurhash.substring(0, 20)}...`);
+      }
     }
 
     return uploadResult;
@@ -148,73 +173,172 @@ async function uploadMediaFile(userId, mediaFile, category = 'posts') {
 
 
 /**
- * Create users
+ * Create a single user
+ */
+async function createSingleUser(index) {
+  const firstName = faker.person.firstName();
+  const lastName = faker.person.lastName();
+  const username = faker.internet.username({ firstName, lastName }).toLowerCase();
+  const email = faker.internet.email({ firstName, lastName });
+  const phoneNumber = faker.phone.number('##########');
+
+  const userData = {
+    phoneNumber: phoneNumber,
+    countryCode: '+91',
+    email: email,
+    username: username,
+    fullName: `${firstName} ${lastName}`,
+    bio: faker.person.bio(),
+    dateOfBirth: faker.date.birthdate({ min: 18, max: 65, mode: 'age' }),
+    gender: getRandomElement(['male', 'female', 'other']),
+    pronouns: getRandomElement(['he/him', 'she/her', 'they/them', 'other']),
+    location: {
+      city: faker.location.city(),
+      state: faker.location.state(),
+      country: 'India',
+      coordinates: {
+        lat: parseFloat(faker.location.latitude()),
+        lng: parseFloat(faker.location.longitude())
+      }
+    },
+    interests: getRandomElements(['music', 'travel', 'photography', 'food', 'sports', 'art', 'technology', 'fashion'], 3),
+    likes: getRandomElements(['pizza', 'coffee', 'books', 'movies', 'gaming', 'fitness'], 3),
+    isVerified: Math.random() > 0.9, // 10% verified
+    verificationStatus: Math.random() > 0.9 ? 'approved' : 'pending',
+    privacySettings: {
+      profileVisibility: getRandomElement(['public', 'followers', 'private']),
+      allowCommenting: Math.random() > 0.2, // 80% allow commenting
+      allowMentions: true,
+      allowTags: true
+    }
+  };
+
+  try {
+    const user = new User(userData);
+    await user.save();
+    return user;
+  } catch (error) {
+    console.error(`❌ Error creating user ${index + 1}:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Create users in parallel batches
  */
 async function createUsers(count = 500) {
-  console.log(`\n👥 Creating ${count} users...`);
-  const users = [];
-
-  for (let i = 0; i < count; i++) {
-    const firstName = faker.person.firstName();
-    const lastName = faker.person.lastName();
-    const username = faker.internet.username({ firstName, lastName }).toLowerCase();
-    const email = faker.internet.email({ firstName, lastName });
-    const phoneNumber = faker.phone.number('##########');
-
-    const userData = {
-      phoneNumber: phoneNumber,
-      countryCode: '+91',
-      email: email,
-      username: username,
-      fullName: `${firstName} ${lastName}`,
-      bio: faker.person.bio(),
-      dateOfBirth: faker.date.birthdate({ min: 18, max: 65, mode: 'age' }),
-      gender: getRandomElement(['male', 'female', 'other']),
-      pronouns: getRandomElement(['he/him', 'she/her', 'they/them', 'other']),
-      location: {
-        city: faker.location.city(),
-        state: faker.location.state(),
-        country: 'India',
-        coordinates: {
-          lat: parseFloat(faker.location.latitude()),
-          lng: parseFloat(faker.location.longitude())
-        }
-      },
-      interests: getRandomElements(['music', 'travel', 'photography', 'food', 'sports', 'art', 'technology', 'fashion'], 3),
-      likes: getRandomElements(['pizza', 'coffee', 'books', 'movies', 'gaming', 'fitness'], 3),
-      isVerified: Math.random() > 0.9, // 10% verified
-      verificationStatus: Math.random() > 0.9 ? 'approved' : 'pending',
-      privacySettings: {
-        profileVisibility: getRandomElement(['public', 'followers', 'private']),
-        allowCommenting: Math.random() > 0.2, // 80% allow commenting
-        allowMentions: true,
-        allowTags: true
-      }
-    };
-
-    try {
-      const user = new User(userData);
-      await user.save();
-      users.push(user);
-      
-      if ((i + 1) % 50 === 0) {
-        console.log(`   ✅ Created ${i + 1}/${count} users...`);
-      }
-    } catch (error) {
-      console.error(`❌ Error creating user ${i + 1}:`, error.message);
-    }
-  }
+  console.log(`\n👥 Creating ${count} users in parallel batches...`);
+  
+  const userIndices = Array.from({ length: count }, (_, i) => i);
+  const users = await processInBatches(userIndices, BATCH_SIZE, createSingleUser);
 
   console.log(`✅ Created ${users.length} users`);
   return users;
 }
 
 /**
- * Create posts with real media
+ * Create a single post with media
+ */
+async function createSinglePost({ author, mediaFile, users, mediaCache }) {
+  const cacheKey = `${author._id}_${mediaFile.filename}`;
+  
+  // Upload media if not cached (with thread-safe check)
+  let uploadResult;
+  if (!mediaCache[cacheKey]) {
+    uploadResult = await uploadMediaFile(author._id, mediaFile, 'posts');
+    if (uploadResult) {
+      mediaCache[cacheKey] = uploadResult;
+    } else {
+      return null; // Skip if upload failed
+    }
+  } else {
+    uploadResult = mediaCache[cacheKey];
+  }
+
+  const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
+  const visibility = getRandomElement(['public', 'followers', 'public']);
+  const publishedAt = getRandomDate(30);
+
+  // Create media array for post
+  const media = [{
+    type: uploadResult.type,
+    url: uploadResult.url,
+    thumbnail: uploadResult.thumbnail || null,
+    filename: uploadResult.filename,
+    fileSize: uploadResult.size,
+    mimeType: uploadResult.contentType,
+    duration: uploadResult.duration || null,
+    dimensions: uploadResult.dimensions || null,
+    s3Key: uploadResult.key,
+    blurhash: uploadResult.blurhash || null,
+    responsiveUrls: uploadResult.responsiveUrls || null
+  }];
+
+  // Add some likes and comments
+  const numLikes = Math.floor(Math.random() * 100);
+  const likes = [];
+  for (let k = 0; k < numLikes && k < users.length; k++) {
+    const liker = getRandomElement(users);
+    if (liker._id.toString() !== author._id.toString()) {
+      likes.push({
+        user: liker._id,
+        likedAt: getRandomDate(7)
+      });
+    }
+  }
+
+  const numComments = Math.floor(Math.random() * 20);
+  const comments = [];
+  for (let k = 0; k < numComments && k < users.length; k++) {
+    const commenter = getRandomElement(users);
+    if (commenter._id.toString() !== author._id.toString()) {
+      comments.push({
+        user: commenter._id,
+        content: getRandomElement(['Amazing!', 'Love this!', 'So beautiful!', 'Great post!', 'Awesome!']),
+        createdAt: getRandomDate(7)
+      });
+    }
+  }
+
+  const post = {
+    author: author._id,
+    media: media,
+    hashtags: hashtags,
+    visibility: visibility,
+    commentVisibility: getRandomElement(['everyone', 'followers', 'none']),
+    status: 'published',
+    publishedAt: publishedAt,
+    likes: likes,
+    comments: comments,
+    shares: [],
+    views: [],
+    likesCount: likes.length,
+    commentsCount: comments.length,
+    sharesCount: Math.floor(Math.random() * 10),
+    viewsCount: Math.floor(Math.random() * 500),
+    isReported: false,
+    reports: [],
+    analytics: {
+      reach: Math.floor(Math.random() * 1000),
+      impressions: Math.floor(Math.random() * 1500),
+      engagement: likes.length + comments.length
+    }
+  };
+
+  try {
+    const createdPost = await Post.create(post);
+    return createdPost;
+  } catch (error) {
+    console.error(`❌ Error creating post:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Create posts with real media in parallel
  */
 async function createPosts(users, count = 2000) {
-  console.log(`\n📝 Creating ${count} posts with real media...`);
-  const posts = [];
+  console.log(`\n📝 Creating ${count} posts with real media in parallel...`);
   const mediaCache = {}; // Cache uploaded media to reuse
 
   // Ensure at least 4 posts per user (one for each media file)
@@ -222,218 +346,115 @@ async function createPosts(users, count = 2000) {
   const totalMinimumPosts = users.length * minPostsPerUser;
   const actualPostCount = Math.max(count, totalMinimumPosts);
 
-  let postIndex = 0;
+  // Prepare post creation tasks
+  const postTasks = [];
 
   // First pass: Create minimum posts for each user with all media files
-  for (let i = 0; i < users.length && postIndex < actualPostCount; i++) {
+  for (let i = 0; i < users.length; i++) {
     const author = users[i];
-    
-    // Create posts with each media file
-    for (let j = 0; j < MEDIA_FILES.length && postIndex < actualPostCount; j++) {
-      const mediaFile = MEDIA_FILES[j];
-      const cacheKey = `${author._id}_${mediaFile.filename}`;
-
-      // Upload media if not cached
-      if (!mediaCache[cacheKey]) {
-        const uploadResult = await uploadMediaFile(author._id, mediaFile, 'posts');
-        if (uploadResult) {
-          mediaCache[cacheKey] = uploadResult;
-        } else {
-          continue; // Skip if upload failed
-        }
-      }
-
-      const uploadResult = mediaCache[cacheKey];
-      const content = getRandomElement(SAMPLE_POST_CONTENT);
-      const caption = getRandomElement(SAMPLE_CAPTIONS);
-      const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
-      const visibility = getRandomElement(['public', 'followers', 'public']);
-      const publishedAt = getRandomDate(30);
-
-      // Create media array for post
-      // Store blurhash and responsiveUrls in database (MongoDB allows flexible schema)
-      const media = [{
-        type: uploadResult.type,
-        url: uploadResult.url,
-        thumbnail: uploadResult.thumbnail || null,
-        filename: uploadResult.filename,
-        fileSize: uploadResult.size,
-        mimeType: uploadResult.contentType,
-        duration: uploadResult.duration || null,
-        dimensions: uploadResult.dimensions || null,
-        s3Key: uploadResult.key,
-        blurhash: uploadResult.blurhash || null, // Store BlurHash in database
-        responsiveUrls: uploadResult.responsiveUrls || null // Store responsive URLs in database
-      }];
-
-      // Add some likes and comments
-      const numLikes = Math.floor(Math.random() * 100);
-      const likes = [];
-      for (let k = 0; k < numLikes && k < users.length; k++) {
-        const liker = getRandomElement(users);
-        if (liker._id.toString() !== author._id.toString()) {
-          likes.push({
-            user: liker._id,
-            likedAt: getRandomDate(7)
-          });
-        }
-      }
-
-      const numComments = Math.floor(Math.random() * 20);
-      const comments = [];
-      for (let k = 0; k < numComments && k < users.length; k++) {
-        const commenter = getRandomElement(users);
-        if (commenter._id.toString() !== author._id.toString()) {
-          comments.push({
-            user: commenter._id,
-            content: getRandomElement(['Amazing!', 'Love this!', 'So beautiful!', 'Great post!', 'Awesome!']),
-            createdAt: getRandomDate(7)
-          });
-        }
-      }
-
-      const post = {
-        author: author._id,
-        content: content,
-        caption: caption,
-        media: media,
-        hashtags: hashtags,
-        visibility: visibility,
-        commentVisibility: getRandomElement(['everyone', 'followers', 'none']),
-        status: 'published',
-        publishedAt: publishedAt,
-        likes: likes,
-        comments: comments,
-        shares: [],
-        views: [],
-        likesCount: likes.length,
-        commentsCount: comments.length,
-        sharesCount: Math.floor(Math.random() * 10),
-        viewsCount: Math.floor(Math.random() * 500),
-        isReported: false,
-        reports: [],
-        analytics: {
-          reach: Math.floor(Math.random() * 1000),
-          impressions: Math.floor(Math.random() * 1500),
-          engagement: likes.length + comments.length
-        }
-      };
-
-      try {
-        const createdPost = await Post.create(post);
-        posts.push(createdPost);
-        postIndex++;
-
-        if (postIndex % 100 === 0) {
-          console.log(`   ✅ Created ${postIndex}/${actualPostCount} posts...`);
-        }
-      } catch (error) {
-        console.error(`❌ Error creating post ${postIndex}:`, error.message);
-      }
+    for (let j = 0; j < MEDIA_FILES.length; j++) {
+      if (postTasks.length >= actualPostCount) break;
+      postTasks.push({ author, mediaFile: MEDIA_FILES[j], users, mediaCache });
     }
+    if (postTasks.length >= actualPostCount) break;
   }
 
   // Second pass: Create additional random posts
-  while (postIndex < actualPostCount) {
+  while (postTasks.length < actualPostCount) {
     const author = getRandomElement(users);
     const mediaFile = getRandomElement(MEDIA_FILES);
-    const cacheKey = `${author._id}_${mediaFile.filename}`;
-
-    // Upload media if not cached
-    if (!mediaCache[cacheKey]) {
-      const uploadResult = await uploadMediaFile(author._id, mediaFile, 'posts');
-      if (uploadResult) {
-        mediaCache[cacheKey] = uploadResult;
-      } else {
-        postIndex++;
-        continue;
-      }
-    }
-
-    const uploadResult = mediaCache[cacheKey];
-    const content = getRandomElement(SAMPLE_POST_CONTENT);
-    const caption = getRandomElement(SAMPLE_CAPTIONS);
-    const hashtags = getRandomElements(SAMPLE_HASHTAGS, Math.floor(Math.random() * 5) + 1);
-    const visibility = getRandomElement(['public', 'followers']);
-    const publishedAt = getRandomDate(30);
-
-    const media = [{
-      type: uploadResult.type,
-      url: uploadResult.url,
-      thumbnail: uploadResult.thumbnail || null,
-      filename: uploadResult.filename,
-      fileSize: uploadResult.size,
-      mimeType: uploadResult.contentType,
-      duration: uploadResult.duration || null,
-      dimensions: uploadResult.dimensions || null,
-      s3Key: uploadResult.key,
-      blurhash: uploadResult.blurhash || null, // Store BlurHash in database
-      responsiveUrls: uploadResult.responsiveUrls || null // Store responsive URLs in database
-    }];
-
-    const numLikes = Math.floor(Math.random() * 50);
-    const likes = [];
-    for (let k = 0; k < numLikes && k < users.length; k++) {
-      const liker = getRandomElement(users);
-      if (liker._id.toString() !== author._id.toString() && !likes.find(l => l.user.toString() === liker._id.toString())) {
-        likes.push({
-          user: liker._id,
-          likedAt: getRandomDate(7)
-        });
-      }
-    }
-
-    const post = {
-      author: author._id,
-      content: content,
-      caption: caption,
-      media: media,
-      hashtags: hashtags,
-      visibility: visibility,
-      commentVisibility: getRandomElement(['everyone', 'followers']),
-      status: 'published',
-      publishedAt: publishedAt,
-      likes: likes,
-      comments: [],
-      shares: [],
-      views: [],
-      likesCount: likes.length,
-      commentsCount: 0,
-      sharesCount: Math.floor(Math.random() * 5),
-      viewsCount: Math.floor(Math.random() * 200),
-      isReported: false,
-      reports: [],
-      analytics: {
-        reach: Math.floor(Math.random() * 500),
-        impressions: Math.floor(Math.random() * 800),
-        engagement: likes.length
-      }
-    };
-
-    try {
-      const createdPost = await Post.create(post);
-      posts.push(createdPost);
-      postIndex++;
-
-      if (postIndex % 100 === 0) {
-        console.log(`   ✅ Created ${postIndex}/${actualPostCount} posts...`);
-      }
-    } catch (error) {
-      console.error(`❌ Error creating post ${postIndex}:`, error.message);
-      postIndex++;
-    }
+    postTasks.push({ author, mediaFile, users, mediaCache });
   }
+
+  // Process posts in parallel batches
+  const posts = await processInBatches(postTasks, BATCH_SIZE, createSinglePost);
 
   console.log(`✅ Created ${posts.length} posts`);
   return posts;
 }
 
 /**
- * Create stories with real media
+ * Create a single story with media
+ */
+async function createSingleStory({ author, mediaFile, users, mediaCache }) {
+  const cacheKey = `${author._id}_story_${mediaFile.filename}`;
+
+  // Upload media if not cached
+  let uploadResult;
+  if (!mediaCache[cacheKey]) {
+    uploadResult = await uploadMediaFile(author._id, mediaFile, 'stories');
+    if (uploadResult) {
+      mediaCache[cacheKey] = uploadResult;
+    } else {
+      return null; // Skip if upload failed
+    }
+  } else {
+    uploadResult = mediaCache[cacheKey];
+  }
+
+  const content = Math.random() > 0.7 ? getRandomElement(SAMPLE_POST_CONTENT) : null;
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
+
+  const media = {
+    type: uploadResult.type,
+    url: uploadResult.url,
+    thumbnail: uploadResult.thumbnail || null,
+    filename: uploadResult.filename,
+    fileSize: uploadResult.size,
+    mimeType: uploadResult.contentType,
+    duration: uploadResult.duration || null,
+    dimensions: uploadResult.dimensions || null,
+    s3Key: uploadResult.key,
+    blurhash: uploadResult.blurhash || null
+  };
+
+  // Add some views
+  const numViews = Math.floor(Math.random() * 50);
+  const views = [];
+  for (let j = 0; j < numViews && j < users.length; j++) {
+    const viewer = getRandomElement(users);
+    if (viewer._id.toString() !== author._id.toString() && !views.find(v => v.user.toString() === viewer._id.toString())) {
+      views.push({
+        user: viewer._id,
+        viewedAt: getRandomDate(1)
+      });
+    }
+  }
+
+  const story = {
+    author: author._id,
+    content: content,
+    media: media,
+    privacy: getRandomElement(['public', 'followers', 'close_friends']),
+    status: 'active',
+    expiresAt: expiresAt,
+    views: views,
+    reactions: [],
+    analytics: {
+      viewsCount: views.length,
+      reactionsCount: 0,
+      repliesCount: 0,
+      sharesCount: 0,
+      reach: Math.floor(Math.random() * 100),
+      impressions: Math.floor(Math.random() * 150)
+    },
+    createdAt: getRandomDate(1)
+  };
+
+  try {
+    const createdStory = await Story.create(story);
+    return createdStory;
+  } catch (error) {
+    console.error(`❌ Error creating story:`, error.message);
+    return null;
+  }
+}
+
+/**
+ * Create stories with real media in parallel
  */
 async function createStories(users, count = 500) {
-  console.log(`\n📖 Creating ${count} stories with real media...`);
-  const stories = [];
+  console.log(`\n📖 Creating ${count} stories with real media in parallel...`);
   const mediaCache = {};
 
   // Ensure at least 1 story per user
@@ -441,86 +462,16 @@ async function createStories(users, count = 500) {
   const totalMinimumStories = users.length * minStoriesPerUser;
   const actualStoryCount = Math.max(count, totalMinimumStories);
 
-  let storyIndex = 0;
-
-  // Create stories for each user
-  for (let i = 0; i < users.length && storyIndex < actualStoryCount; i++) {
+  // Prepare story creation tasks
+  const storyTasks = [];
+  for (let i = 0; i < users.length && storyTasks.length < actualStoryCount; i++) {
     const author = users[i];
     const mediaFile = getRandomElement(MEDIA_FILES);
-    const cacheKey = `${author._id}_story_${mediaFile.filename}`;
-
-    // Upload media if not cached
-    if (!mediaCache[cacheKey]) {
-      const uploadResult = await uploadMediaFile(author._id, mediaFile, 'stories');
-      if (uploadResult) {
-        mediaCache[cacheKey] = uploadResult;
-      } else {
-        continue;
-      }
-    }
-
-    const uploadResult = mediaCache[cacheKey];
-    const content = Math.random() > 0.7 ? getRandomElement(SAMPLE_POST_CONTENT) : null;
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
-
-    const media = {
-      type: uploadResult.type,
-      url: uploadResult.url,
-      thumbnail: uploadResult.thumbnail || null,
-      filename: uploadResult.filename,
-      fileSize: uploadResult.size,
-      mimeType: uploadResult.contentType,
-      duration: uploadResult.duration || null,
-      dimensions: uploadResult.dimensions || null,
-      s3Key: uploadResult.key,
-      blurhash: uploadResult.blurhash || null // Store BlurHash in database
-    };
-
-    // Add some views
-    const numViews = Math.floor(Math.random() * 50);
-    const views = [];
-    for (let j = 0; j < numViews && j < users.length; j++) {
-      const viewer = getRandomElement(users);
-      if (viewer._id.toString() !== author._id.toString() && !views.find(v => v.user.toString() === viewer._id.toString())) {
-        views.push({
-          user: viewer._id,
-          viewedAt: getRandomDate(1)
-        });
-      }
-    }
-
-    const story = {
-      author: author._id,
-      content: content,
-      media: media,
-      privacy: getRandomElement(['public', 'followers', 'close_friends']),
-      status: 'active',
-      expiresAt: expiresAt,
-      views: views,
-      reactions: [],
-      analytics: {
-        viewsCount: views.length,
-        reactionsCount: 0,
-        repliesCount: 0,
-        sharesCount: 0,
-        reach: Math.floor(Math.random() * 100),
-        impressions: Math.floor(Math.random() * 150)
-      },
-      createdAt: getRandomDate(1)
-    };
-
-    try {
-      const createdStory = await Story.create(story);
-      stories.push(createdStory);
-      storyIndex++;
-
-      if (storyIndex % 50 === 0) {
-        console.log(`   ✅ Created ${storyIndex}/${actualStoryCount} stories...`);
-      }
-    } catch (error) {
-      console.error(`❌ Error creating story ${storyIndex}:`, error.message);
-    }
+    storyTasks.push({ author, mediaFile, users, mediaCache });
   }
+
+  // Process stories in parallel batches
+  const stories = await processInBatches(storyTasks, BATCH_SIZE, createSingleStory);
 
   console.log(`✅ Created ${stories.length} stories`);
   return stories;
@@ -530,7 +481,9 @@ async function createStories(users, count = 500) {
  * Main seed function
  */
 async function seedOptimizationTest() {
-  console.log('🚀 Starting Optimization Test Seeding...');
+  const startTime = Date.now();
+  console.log('🚀 Starting Optimization Test Seeding (Parallel Processing)...');
+  console.log(`⚡ Batch size: ${BATCH_SIZE} (processing ${BATCH_SIZE} items in parallel)`);
   console.log('📁 Media folder:', MEDIA_FOLDER);
   console.log('📦 Media files:', MEDIA_FILES.map(f => f.filename).join(', '));
 
@@ -560,23 +513,35 @@ async function seedOptimizationTest() {
       process.exit(1);
     }
 
-    console.log('✅ All media files found');
+    console.log('✅ All media files found\n');
 
     // Create users
+    const userStartTime = Date.now();
     const users = await createUsers(500);
+    const userTime = ((Date.now() - userStartTime) / 1000).toFixed(2);
+    console.log(`⏱️  Users created in ${userTime}s\n`);
 
     // Create posts (at least 2000)
+    const postStartTime = Date.now();
     const posts = await createPosts(users, 2000);
+    const postTime = ((Date.now() - postStartTime) / 1000).toFixed(2);
+    console.log(`⏱️  Posts created in ${postTime}s\n`);
 
     // Create stories (at least 500, one per user minimum)
+    const storyStartTime = Date.now();
     const stories = await createStories(users, 500);
+    const storyTime = ((Date.now() - storyStartTime) / 1000).toFixed(2);
+    console.log(`⏱️  Stories created in ${storyTime}s\n`);
+
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
     // Print summary
     console.log('\n🎉 Optimization Test Seeding Completed!');
     console.log('═══════════════════════════════════════════════════════');
-    console.log(`✅ Users created: ${users.length}`);
-    console.log(`✅ Posts created: ${posts.length}`);
-    console.log(`✅ Stories created: ${stories.length}`);
+    console.log(`✅ Users created: ${users.length} (${userTime}s)`);
+    console.log(`✅ Posts created: ${posts.length} (${postTime}s)`);
+    console.log(`✅ Stories created: ${stories.length} (${storyTime}s)`);
+    console.log(`⏱️  Total time: ${totalTime}s`);
     console.log('═══════════════════════════════════════════════════════');
     console.log('\n📊 Optimization Features Tested:');
     console.log('   ✅ Image compression (via uploadToS3)');
@@ -585,6 +550,7 @@ async function seedOptimizationTest() {
     console.log('   ✅ Responsive image URLs');
     console.log('   ✅ Video uploads');
     console.log('   ✅ S3 storage');
+    console.log('   ✅ Parallel processing (faster seeding)');
     console.log('\n🧪 Next Steps:');
     console.log('   1. Check backend logs for BlurHash generation');
     console.log('   2. Check API responses include blurhash');

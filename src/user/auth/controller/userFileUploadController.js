@@ -385,10 +385,12 @@ async function uploadDatingPhotos(req, res) {
 						}
 					});
 
-					// For images, thumbnail is same as URL (can be enhanced later with image processing)
+					// Store photo data with blurhash and responsive URLs
 					const photoData = {
 						url: uploadResult.url,
-						thumbnailUrl: uploadResult.url,
+						thumbnailUrl: uploadResult.responsiveUrls?.thumbnail || uploadResult.url,
+						blurhash: uploadResult.blurhash || null, // BlurHash for instant placeholders
+						responsiveUrls: uploadResult.responsiveUrls || null, // Multiple sizes for images
 						order: existingPhotosCount + i,
 						uploadedAt: new Date()
 					};
@@ -398,6 +400,8 @@ async function uploadDatingPhotos(req, res) {
 					uploadedPhotos.push({
 						url: photoData.url,
 						thumbnailUrl: photoData.thumbnailUrl,
+						blurhash: photoData.blurhash,
+						responsiveUrls: photoData.responsiveUrls,
 						order: photoData.order,
 						uploadedAt: photoData.uploadedAt
 					});
@@ -501,9 +505,22 @@ async function uploadDatingVideos(req, res) {
 					const durations = req.body.durations ? (Array.isArray(req.body.durations) ? req.body.durations : [req.body.durations]) : [];
 					const duration = durations[i] ? parseFloat(durations[i]) : 0;
 
+					// Handle video thumbnail (if provided in request)
+					let thumbnailUrl = uploadResult.url; // Default to video URL
+					let thumbnailBlurhash = null;
+					
+					// Check if thumbnail was uploaded separately (from frontend compression)
+					// Thumbnails are sent as separate files in FormData with key 'thumbnails[]'
+					if (req.body.thumbnails && Array.isArray(req.body.thumbnails)) {
+						// Note: Thumbnails are handled as separate files in multer
+						// For now, we'll use the video URL as thumbnail
+						// In future, can enhance to handle separate thumbnail uploads
+					}
+
 					const videoData = {
 						url: uploadResult.url,
-						thumbnailUrl: uploadResult.url,
+						thumbnailUrl: thumbnailUrl,
+						blurhash: thumbnailBlurhash,
 						duration: duration,
 						order: existingVideosCount + i,
 						uploadedAt: new Date()
@@ -514,6 +531,7 @@ async function uploadDatingVideos(req, res) {
 					uploadedVideos.push({
 						url: videoData.url,
 						thumbnailUrl: videoData.thumbnailUrl,
+						blurhash: videoData.blurhash,
 						duration: videoData.duration,
 						order: videoData.order,
 						uploadedAt: videoData.uploadedAt

@@ -258,6 +258,19 @@ const PostSchema = new mongoose.Schema(
       min: 0
     },
     
+    // OPTIMIZED: Pre-calculated engagement score for feed algorithm (Phase 3)
+    engagementScore: {
+      type: Number,
+      default: 0,
+      min: 0,
+      index: true // Index for faster sorting
+    },
+    // OPTIMIZED: Last time engagement score was calculated
+    engagementScoreUpdatedAt: {
+      type: Date,
+      default: Date.now
+    },
+    
     // Moderation
     isReported: {
       type: Boolean,
@@ -327,8 +340,19 @@ PostSchema.index({ status: 1, publishedAt: -1 });
 PostSchema.index({ hashtags: 1 });
 PostSchema.index({ mentions: 1 });
 PostSchema.index({ 'likes.user': 1 });
+
+// CRITICAL: Compound indexes for feed queries (Phase 1 Optimization)
+PostSchema.index({ status: 1, visibility: 1, publishedAt: -1 }); // Feed queries
+PostSchema.index({ author: 1, status: 1, visibility: 1 }); // User posts with visibility
+PostSchema.index({ hashtags: 1, status: 1, publishedAt: -1 }); // Hashtag search with status
+PostSchema.index({ 'location.coordinates': '2dsphere' }); // Geospatial for location-based queries
+PostSchema.index({ publishedAt: -1, status: 1 }); // General feed sorting
+PostSchema.index({ 'mentions.user': 1, status: 1 }); // Mention queries
 PostSchema.index({ 'comments.user': 1 });
 PostSchema.index({ isReported: 1 });
+// OPTIMIZED: Phase 3 indexes
+PostSchema.index({ engagementScore: -1, publishedAt: -1 }); // Feed algorithm sorting
+PostSchema.index({ content: 'text', caption: 'text' }); // Text search index
 
 // Virtual for engagement rate
 PostSchema.virtual('engagementRate').get(function() {

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../../auth/model/userAuthModel');
 const Post = require('../userModel/postModel');
 const ApiResponse = require('../../../utils/apiResponse');
+const { transformPostMedia } = require('./postController');
 
 // Helper function to add isLiked field to a post
 function addIsLiked(post, userId) {
@@ -221,8 +222,15 @@ async function searchPosts(req, res) {
 					{ author: { $nin: excludedUserIds } },
 					{
 						$or: [
-							{ content: { $regex: keyword, $options: 'i' } },
-							{ caption: { $regex: keyword, $options: 'i' } },
+							// OPTIMIZED: Use text search if available, fallback to regex
+							...(keyword.trim().length > 0 ? [
+								{ $text: { $search: keyword } }, // Text index search (faster)
+								{ content: { $regex: keyword, $options: 'i' } }, // Fallback regex
+								{ caption: { $regex: keyword, $options: 'i' } }
+							] : [
+								{ content: { $regex: keyword, $options: 'i' } },
+								{ caption: { $regex: keyword, $options: 'i' } }
+							]),
 							{ hashtags: { $in: [new RegExp(keyword, 'i')] } },
 							{ 'location.name': { $regex: keyword, $options: 'i' } },
 							...(mentionedUserIds.length > 0 ? [{ 'mentions.user': { $in: mentionedUserIds } }] : [])
@@ -254,18 +262,21 @@ async function searchPosts(req, res) {
 			total: total
 		});
 
-		// Add isLiked field to each post
-		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+		// OPTIMIZED: Transform posts with optimized media structure (images/videos separation, blurhash, responsiveUrls)
+		const transformedPosts = results.map(post => transformPostMedia(post, currentUserId));
 
 		const responseData = {
 			type: 'posts',
-			results: resultsWithIsLiked,
-			count: resultsWithIsLiked.length,
+			results: transformedPosts,
+			count: transformedPosts.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
 				total: total,
-				pages: Math.ceil(total / parseInt(limit))
+				pages: Math.ceil(total / parseInt(limit)),
+				hasMore: parseInt(page) * parseInt(limit) < total,
+				hasNext: parseInt(page) * parseInt(limit) < total,
+				hasPrev: parseInt(page) > 1
 			}
 		};
 
@@ -439,18 +450,21 @@ async function searchHashtags(req, res) {
 			console.log('[USER][SEARCH] Sample hashtags from results:', results[0].hashtags);
 		}
 
-		// Add isLiked field to each post
-		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+		// OPTIMIZED: Transform posts with optimized media structure (images/videos separation, blurhash, responsiveUrls)
+		const transformedPosts = results.map(post => transformPostMedia(post, currentUserId));
 
 		const responseData = {
 			type: 'hashtags',
-			results: resultsWithIsLiked,
-			count: resultsWithIsLiked.length,
+			results: transformedPosts,
+			count: transformedPosts.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
 				total: total,
-				pages: Math.ceil(total / parseInt(limit))
+				pages: Math.ceil(total / parseInt(limit)),
+				hasMore: parseInt(page) * parseInt(limit) < total,
+				hasNext: parseInt(page) * parseInt(limit) < total,
+				hasPrev: parseInt(page) > 1
 			}
 		};
 
@@ -542,18 +556,21 @@ async function searchLocation(req, res) {
 			total: total
 		});
 
-		// Add isLiked field to each post
-		const resultsWithIsLiked = results.map(post => addIsLiked(post, currentUserId));
+		// OPTIMIZED: Transform posts with optimized media structure (images/videos separation, blurhash, responsiveUrls)
+		const transformedPosts = results.map(post => transformPostMedia(post, currentUserId));
 
 		const responseData = {
 			type: 'location',
-			results: resultsWithIsLiked,
-			count: resultsWithIsLiked.length,
+			results: transformedPosts,
+			count: transformedPosts.length,
 			pagination: {
 				page: parseInt(page),
 				limit: parseInt(limit),
 				total: total,
-				pages: Math.ceil(total / parseInt(limit))
+				pages: Math.ceil(total / parseInt(limit)),
+				hasMore: parseInt(page) * parseInt(limit) < total,
+				hasNext: parseInt(page) * parseInt(limit) < total,
+				hasPrev: parseInt(page) > 1
 			}
 		};
 
@@ -637,18 +654,21 @@ async function searchAll(req, res) {
 				total: total
 			});
 			
-			// Add isLiked field to each post
-			const postsWithIsLiked = posts.map(post => addIsLiked(post, currentUserId));
+			// OPTIMIZED: Transform posts with optimized media structure (images/videos separation, blurhash, responsiveUrls)
+			const transformedPosts = posts.map(post => transformPostMedia(post, currentUserId));
 			
 			const responseData = {
 				type: 'posts',
-				results: postsWithIsLiked,
-				count: postsWithIsLiked.length,
+				results: transformedPosts,
+				count: transformedPosts.length,
 				pagination: {
 					page: parseInt(page),
 					limit: parseInt(limit),
 					total: total,
-					pages: Math.ceil(total / parseInt(limit))
+					pages: Math.ceil(total / parseInt(limit)),
+					hasMore: parseInt(page) * parseInt(limit) < total,
+					hasNext: parseInt(page) * parseInt(limit) < total,
+					hasPrev: parseInt(page) > 1
 				}
 			};
 			
@@ -809,10 +829,10 @@ async function searchAll(req, res) {
 		
 		console.log('[USER][SEARCH] Total results across all categories:', totalResults);
 
-		// Add isLiked field to all post results
-		const postsWithIsLiked = posts.map(post => addIsLiked(post, currentUserId));
-		const hashtagPostsWithIsLiked = hashtagPosts.map(post => addIsLiked(post, currentUserId));
-		const locationPostsWithIsLiked = locationPosts.map(post => addIsLiked(post, currentUserId));
+		// OPTIMIZED: Transform all post results with optimized media structure (images/videos separation, blurhash, responsiveUrls)
+		const postsWithIsLiked = posts.map(post => transformPostMedia(post, currentUserId));
+		const hashtagPostsWithIsLiked = hashtagPosts.map(post => transformPostMedia(post, currentUserId));
+		const locationPostsWithIsLiked = locationPosts.map(post => transformPostMedia(post, currentUserId));
 
 		const responseData = {
 			people: {
