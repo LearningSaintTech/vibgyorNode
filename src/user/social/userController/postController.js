@@ -74,29 +74,171 @@ function transformPostMedia(post, userId = null) {
   // Add isLiked field
   addIsLiked(postObj, userId);
   
+  // DEBUG: Log original post media structure
+  const postId = postObj._id || postObj.id || 'unknown';
+  console.log(`[POST][TRANSFORM] Post ID: ${postId}`);
+  console.log(`[POST][TRANSFORM] Original media type:`, typeof postObj.media);
+  console.log(`[POST][TRANSFORM] Is media array:`, Array.isArray(postObj.media));
+  console.log(`[POST][TRANSFORM] Media length:`, postObj.media?.length || 0);
+  
+  // Check if media is already in transformed format (has images/videos arrays)
+  const isAlreadyTransformed = postObj.media && 
+    typeof postObj.media === 'object' && 
+    !Array.isArray(postObj.media) &&
+    (Array.isArray(postObj.media.images) || Array.isArray(postObj.media.videos));
+  
+  if (isAlreadyTransformed) {
+    console.log(`[POST][TRANSFORM] ⚠️ Media is already transformed, preserving existing structure`);
+    console.log(`[POST][TRANSFORM] Existing structure:`, {
+      imagesCount: postObj.media.images?.length || 0,
+      videosCount: postObj.media.videos?.length || 0,
+      hasImages: postObj.media.hasImages,
+      hasVideos: postObj.media.hasVideos,
+      totalCount: postObj.media.totalCount
+    });
+    
+    // Media is already transformed, just ensure structure is correct and return
+    if (!postObj.media.images) postObj.media.images = [];
+    if (!postObj.media.videos) postObj.media.videos = [];
+    postObj.media.totalCount = (postObj.media.images?.length || 0) + (postObj.media.videos?.length || 0);
+    postObj.media.hasImages = (postObj.media.images?.length || 0) > 0;
+    postObj.media.hasVideos = (postObj.media.videos?.length || 0) > 0;
+    
+    return postObj;
+  }
+  
+  if (postObj.media && Array.isArray(postObj.media) && postObj.media.length > 0) {
+    console.log(`[POST][TRANSFORM] First media item structure:`, JSON.stringify(postObj.media[0], null, 2));
+    console.log(`[POST][TRANSFORM] All media items keys:`, postObj.media.map((item, idx) => ({
+      index: idx,
+      hasType: !!item.type,
+      type: item.type,
+      hasMimeType: !!item.mimeType,
+      mimeType: item.mimeType,
+      hasUrl: !!item.url,
+      url: item.url?.substring(0, 100) || 'no url',
+      keys: Object.keys(item)
+    })));
+  } else if (postObj.media) {
+    console.log(`[POST][TRANSFORM] Media is not array, structure:`, JSON.stringify(postObj.media, null, 2));
+  } else {
+    console.log(`[POST][TRANSFORM] No media found in post`);
+  }
+  
   // Separate images and videos
   const images = [];
   const videos = [];
   
   if (postObj.media && Array.isArray(postObj.media)) {
-    postObj.media.forEach(mediaItem => {
-      if (mediaItem.type === 'image') {
-        images.push({
+    postObj.media.forEach((mediaItem, index) => {
+      console.log(`[POST][TRANSFORM] Processing media item ${index}:`, {
+        hasUrl: !!mediaItem?.url,
+        url: mediaItem?.url?.substring(0, 100) || 'no url',
+        hasType: !!mediaItem?.type,
+        type: mediaItem?.type,
+        hasMimeType: !!mediaItem?.mimeType,
+        mimeType: mediaItem?.mimeType,
+        allKeys: mediaItem ? Object.keys(mediaItem) : []
+      });
+
+      if (!mediaItem || !mediaItem.url) {
+        console.log(`[POST][TRANSFORM] ⚠️ Skipping media item ${index} - no url or invalid item`);
+        return; // Skip invalid media items
+      }
+
+      // Determine media type: check explicit type, then mimeType, then infer from URL
+      let mediaType = mediaItem.type;
+      let typeSource = 'explicit';
+      
+      if (!mediaType && mediaItem.mimeType) {
+        // Infer from mimeType
+        if (mediaItem.mimeType.startsWith('image/')) {
+          mediaType = 'image';
+          typeSource = 'mimeType';
+        } else if (mediaItem.mimeType.startsWith('video/')) {
+          mediaType = 'video';
+          typeSource = 'mimeType';
+        }
+      }
+      
+      if (!mediaType && mediaItem.url) {
+        // Infer from URL extension as fallback
+        const url = mediaItem.url.toLowerCase();
+        if (url.match(/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/)) {
+          mediaType = 'image';
+          typeSource = 'url-extension';
+        } else if (url.match(/\.(mp4|mov|avi|webm|mkv|flv|wmv)(\?|$)/)) {
+          mediaType = 'video';
+          typeSource = 'url-extension';
+        }
+      }
+
+      console.log(`[POST][TRANSFORM] Media item ${index} determined type:`, {
+        mediaType,
+        typeSource,
+        willProcess: !!mediaType
+      });
+
+      // Process based on determined type
+      if (mediaType === 'image') {
+        const imageData = {
           url: mediaItem.url,
           thumbnail: mediaItem.thumbnail,
           thumbnailUrl: mediaItem.thumbnailUrl || mediaItem.thumbnail,
           dimensions: mediaItem.dimensions,
           blurhash: mediaItem.blurhash || null, // BlurHash for instant placeholders
           responsiveUrls: mediaItem.responsiveUrls || null, // Multiple sizes for images
+        };
+        images.push(imageData);
+        console.log(`[POST][TRANSFORM] ✅ Added image ${index}:`, {
+          url: imageData.url?.substring(0, 100),
+          hasThumbnail: !!imageData.thumbnail,
+          hasBlurhash: !!imageData.blurhash
         });
-      } else if (mediaItem.type === 'video') {
-        videos.push({
+      } else if (mediaType === 'video') {
+        const videoData = {
           url: mediaItem.url,
           thumbnail: mediaItem.thumbnail,
           thumbnailUrl: mediaItem.thumbnailUrl || mediaItem.thumbnail,
           duration: mediaItem.duration,
           dimensions: mediaItem.dimensions
+        };
+        videos.push(videoData);
+        console.log(`[POST][TRANSFORM] ✅ Added video ${index}:`, {
+          url: videoData.url,
+          urlLength: videoData.url?.length,
+          urlIsVideo: videoData.url?.includes('.mp4') || videoData.url?.includes('video') || videoData.url?.includes('s3.amazonaws.com'),
+          thumbnail: videoData.thumbnail,
+          thumbnailLength: videoData.thumbnail?.length,
+          thumbnailIsImage: videoData.thumbnail?.includes('unsplash') || videoData.thumbnail?.includes('placeholder'),
+          hasThumbnail: !!videoData.thumbnail,
+          duration: videoData.duration,
+          originalMediaItem: {
+            url: mediaItem.url,
+            thumbnail: mediaItem.thumbnail,
+            type: mediaItem.type,
+            mimeType: mediaItem.mimeType
+          }
         });
+      } else {
+        // If we still can't determine type but have a URL, default to image
+        // This handles edge cases where media exists but type info is missing
+        console.warn(`[POST][TRANSFORM] ⚠️ Media item ${index} has no type, defaulting to image:`, {
+          url: mediaItem.url?.substring(0, 100),
+          hasMimeType: !!mediaItem.mimeType,
+          mimeType: mediaItem.mimeType,
+          allKeys: Object.keys(mediaItem)
+        });
+        const imageData = {
+          url: mediaItem.url,
+          thumbnail: mediaItem.thumbnail,
+          thumbnailUrl: mediaItem.thumbnailUrl || mediaItem.thumbnail,
+          dimensions: mediaItem.dimensions,
+          blurhash: mediaItem.blurhash || null,
+          responsiveUrls: mediaItem.responsiveUrls || null,
+        };
+        images.push(imageData);
+        console.log(`[POST][TRANSFORM] ✅ Added as image (fallback) ${index}`);
       }
     });
   }
@@ -109,6 +251,17 @@ function transformPostMedia(post, userId = null) {
     hasImages: images.length > 0,
     hasVideos: videos.length > 0
   };
+  
+  // DEBUG: Log final transformed structure
+  console.log(`[POST][TRANSFORM] Final transformed media for post ${postId}:`, {
+    imagesCount: images.length,
+    videosCount: videos.length,
+    totalCount: postObj.media.totalCount,
+    hasImages: postObj.media.hasImages,
+    hasVideos: postObj.media.hasVideos,
+    firstImageUrl: images[0]?.url?.substring(0, 100) || 'none',
+    firstVideoUrl: videos[0]?.url?.substring(0, 100) || 'none'
+  });
   
   // Normalize location to ensure all fields are visible
   postObj.location = normalizeLocation(postObj.location);
@@ -382,8 +535,10 @@ async function getUserPosts(req, res) {
     const totalPosts = await Post.countDocuments(query);
 
     // Add lastComment field and transform media for each post
+    console.log(`[POST][USER] Transforming ${posts.length} posts for user ${userId}`);
     const postsWithLastComment = posts.map(post => {
-      const postObj = post.toObject();
+      // `posts` is already lean() (plain objects), so avoid calling toObject()
+      const postObj = { ...post };
       
       // Get the newest comment (comments are sorted by createdAt descending in the model)
       if (postObj.comments && postObj.comments.length > 0) {
@@ -398,6 +553,16 @@ async function getUserPosts(req, res) {
       
       // Transform media into organized structure (includes isLiked)
       return transformPostMedia(postObj, currentUserId);
+    });
+
+    // DEBUG: Log summary
+    const postsWithMedia = postsWithLastComment.filter(p => p.media && (p.media.images?.length > 0 || p.media.videos?.length > 0));
+    console.log(`[POST][USER] Transformation summary:`, {
+      totalPosts: postsWithLastComment.length,
+      postsWithMedia: postsWithMedia.length,
+      postsWithoutMedia: postsWithLastComment.length - postsWithMedia.length,
+      totalImages: postsWithLastComment.reduce((sum, p) => sum + (p.media?.images?.length || 0), 0),
+      totalVideos: postsWithLastComment.reduce((sum, p) => sum + (p.media?.videos?.length || 0), 0),
     });
 
     return ApiResponse.success(res, {
@@ -424,6 +589,42 @@ async function getFeedPosts(req, res) {
 
     // OPTIMIZED: Cache feed results for 2 minutes (feed changes frequently) - Phase 3
     let feedPosts = getCachedUserData(userId, `feed:posts:${page}:${limit}`);
+    let isFromCache = !!feedPosts;
+    
+    // Check if cached posts are already transformed (shouldn't happen, but handle it)
+    if (feedPosts && feedPosts.length > 0) {
+      const firstPost = feedPosts[0];
+      const isAlreadyTransformed = firstPost.media && 
+        typeof firstPost.media === 'object' && 
+        !Array.isArray(firstPost.media) &&
+        (Array.isArray(firstPost.media.images) || Array.isArray(firstPost.media.videos));
+      
+      if (isAlreadyTransformed) {
+        console.log(`[POST][FEED] ⚠️ Cached posts are already transformed, invalidating cache and fetching fresh`);
+        // Invalidate the corrupted cache entry
+        invalidateUserCache(userId, `feed:posts:${page}:${limit}`);
+        // Clear cache and fetch fresh
+        feedPosts = null;
+        isFromCache = false;
+      } else {
+        // Validate all cached posts are raw (media should be array)
+        const transformedCount = feedPosts.filter(post => {
+          return post.media && 
+            typeof post.media === 'object' && 
+            !Array.isArray(post.media) &&
+            (Array.isArray(post.media.images) || Array.isArray(post.media.videos));
+        }).length;
+        
+        if (transformedCount > 0) {
+          console.log(`[POST][FEED] ⚠️ Found ${transformedCount} transformed posts in cache, invalidating and fetching fresh`);
+          invalidateUserCache(userId, `feed:posts:${page}:${limit}`);
+          feedPosts = null;
+          isFromCache = false;
+        } else {
+          console.log(`[POST][FEED] ✅ Cached posts are raw (media is array format)`);
+        }
+      }
+    }
     
     if (!feedPosts) {
       // Use the smart feed algorithm service (now optimized with pre-calculated scores)
@@ -433,12 +634,114 @@ async function getFeedPosts(req, res) {
         parseInt(limit)
       );
       
-      // Cache feed posts for 2 minutes
-      cacheUserData(userId, `feed:posts:${page}:${limit}`, feedPosts, 120);
+      // Validate that posts are raw (media should be array, not transformed object)
+      const transformedPosts = feedPosts.filter(post => {
+        return post.media && 
+          typeof post.media === 'object' && 
+          !Array.isArray(post.media) &&
+          (Array.isArray(post.media.images) || Array.isArray(post.media.videos));
+      });
+      
+      if (transformedPosts.length > 0) {
+        console.log(`[POST][FEED] ⚠️ Feed algorithm returned ${transformedPosts.length} already-transformed posts, skipping cache`);
+        console.log(`[POST][FEED] Sample transformed post media:`, JSON.stringify(transformedPosts[0].media).substring(0, 200));
+        // Don't cache transformed posts - they should be raw from the database
+      } else {
+        // Validate media format before caching
+        const postsWithArrayMedia = feedPosts.filter(post => Array.isArray(post.media)).length;
+        const postsWithNoMedia = feedPosts.filter(post => !post.media).length;
+        const postsWithObjectMedia = feedPosts.filter(post => 
+          post.media && typeof post.media === 'object' && !Array.isArray(post.media) && 
+          !Array.isArray(post.media.images) && !Array.isArray(post.media.videos)
+        ).length;
+        
+        console.log(`[POST][FEED] ✅ Validating posts before cache:`, {
+          total: feedPosts.length,
+          withArrayMedia: postsWithArrayMedia,
+          withNoMedia: postsWithNoMedia,
+          withObjectMedia: postsWithObjectMedia
+        });
+        
+        // Cache feed posts for 2 minutes (only cache raw posts, not transformed)
+        cacheUserData(userId, `feed:posts:${page}:${limit}`, feedPosts, 120);
+        console.log(`[POST][FEED] ✅ Cached ${feedPosts.length} raw posts`);
+      }
     }
 
     // Transform media for all feed posts (includes isLiked)
+    console.log(`[POST][FEED] Transforming ${feedPosts.length} posts for feed (fromCache: ${isFromCache})`);
+    
+    // DEBUG: Log raw media structure BEFORE transformation (first 3 posts with videos)
+    const postsWithRawVideos = feedPosts
+      .filter(post => post.media && Array.isArray(post.media) && post.media.some(m => m.type === 'video'))
+      .slice(0, 3);
+    postsWithRawVideos.forEach((post, idx) => {
+      const videoItems = post.media.filter(m => m.type === 'video');
+      console.log(`[POST][FEED] Raw post ${idx} (${post._id || post.id}) BEFORE transformation:`, {
+        mediaType: typeof post.media,
+        isArray: Array.isArray(post.media),
+        mediaLength: post.media?.length || 0,
+        videoItemsCount: videoItems.length,
+        firstVideoItem: videoItems[0] ? {
+          url: videoItems[0].url,
+          urlLength: videoItems[0].url?.length,
+          urlIsVideo: videoItems[0].url ? (videoItems[0].url.includes('.mp4') || videoItems[0].url.includes('video') || videoItems[0].url.includes('s3.amazonaws.com')) : false,
+          thumbnail: videoItems[0].thumbnail,
+          thumbnailLength: videoItems[0].thumbnail?.length,
+          thumbnailIsImage: videoItems[0].thumbnail ? (videoItems[0].thumbnail.includes('unsplash') || videoItems[0].thumbnail.includes('placeholder')) : false,
+          type: videoItems[0].type,
+          mimeType: videoItems[0].mimeType,
+          allKeys: Object.keys(videoItems[0])
+        } : null
+      });
+    });
+    
     const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId));
+
+    // DEBUG: Log summary of transformed posts
+    const postsWithMedia = transformedFeedPosts.filter(p => p.media && (p.media.images?.length > 0 || p.media.videos?.length > 0));
+    const postsWithoutMedia = transformedFeedPosts.filter(p => !p.media || (p.media.images?.length === 0 && p.media.videos?.length === 0));
+    console.log(`[POST][FEED] Transformation summary:`, {
+      totalPosts: transformedFeedPosts.length,
+      postsWithMedia: postsWithMedia.length,
+      postsWithoutMedia: postsWithoutMedia.length,
+      totalImages: transformedFeedPosts.reduce((sum, p) => sum + (p.media?.images?.length || 0), 0),
+      totalVideos: transformedFeedPosts.reduce((sum, p) => sum + (p.media?.videos?.length || 0), 0),
+    });
+
+    // DEBUG: Log first 3 posts' media structure with FULL video URLs
+    transformedFeedPosts.slice(0, 3).forEach((post, idx) => {
+      const firstVideo = post.media?.videos?.[0];
+      const firstImage = post.media?.images?.[0];
+      console.log(`[POST][FEED] Post ${idx} (${post._id || post.id}):`, {
+        hasMedia: !!post.media,
+        imagesCount: post.media?.images?.length || 0,
+        videosCount: post.media?.videos?.length || 0,
+        firstImageUrl: firstImage?.url || 'none',
+        firstVideoUrl: firstVideo?.url || 'none',
+        firstVideoThumbnail: firstVideo?.thumbnail || 'none',
+        firstVideoUrlLength: firstVideo?.url?.length || 0,
+        firstVideoThumbnailLength: firstVideo?.thumbnail?.length || 0,
+        firstVideoIsVideoUrl: firstVideo?.url ? (firstVideo.url.includes('.mp4') || firstVideo.url.includes('video') || firstVideo.url.includes('s3.amazonaws.com')) : false,
+        firstVideoThumbnailIsImage: firstVideo?.thumbnail ? (firstVideo.thumbnail.includes('unsplash') || firstVideo.thumbnail.includes('placeholder')) : false,
+        firstVideoFull: firstVideo ? JSON.stringify(firstVideo) : 'none',
+        mediaStructure: JSON.stringify(post.media).substring(0, 500)
+      });
+    });
+    
+    // DEBUG: Log ALL video URLs to check if they're correct
+    const allVideos = transformedFeedPosts
+      .flatMap(post => (post.media?.videos || []).map(v => ({ postId: post._id || post.id, video: v })))
+      .slice(0, 5); // Log first 5 videos
+    console.log(`[POST][FEED] Sample video URLs (first 5):`, allVideos.map(({ postId, video }) => ({
+      postId,
+      url: video.url,
+      urlLength: video.url?.length,
+      urlIsVideo: video.url ? (video.url.includes('.mp4') || video.url.includes('video') || video.url.includes('s3.amazonaws.com')) : false,
+      thumbnail: video.thumbnail,
+      thumbnailLength: video.thumbnail?.length,
+      thumbnailIsImage: video.thumbnail ? (video.thumbnail.includes('unsplash') || video.thumbnail.includes('placeholder')) : false
+    })));
 
     // OPTIMIZED: Cache user data (blocked users, following) for 5 minutes
     const cacheKey = 'feed:userData';
@@ -471,6 +774,29 @@ async function getFeedPosts(req, res) {
         { visibility: 'public' },
         { visibility: 'followers', author: { $in: followingIds } }
       ]
+    });
+
+    // DEBUG: Log final response structure with video URLs
+    const finalVideos = transformedFeedPosts
+      .flatMap(post => (post.media?.videos || []).map(v => ({ postId: post._id || post.id, video: v })))
+      .slice(0, 3);
+    console.log(`[POST][FEED] Final response video URLs (first 3):`, finalVideos.map(({ postId, video }) => ({
+      postId,
+      url: video.url,
+      thumbnail: video.thumbnail,
+      urlIsVideo: video.url ? (video.url.includes('.mp4') || video.url.includes('video') || video.url.includes('s3.amazonaws.com')) : false,
+      thumbnailIsImage: video.thumbnail ? (video.thumbnail.includes('unsplash') || video.thumbnail.includes('placeholder')) : false
+    })));
+    
+    console.log(`[POST][FEED] Sending response with:`, {
+      postsCount: transformedFeedPosts.length,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalPosts / limit),
+        totalPosts,
+        hasNext: page * limit < totalPosts,
+        hasPrev: page > 1
+      }
     });
 
     return ApiResponse.success(res, {
@@ -1052,8 +1378,19 @@ async function getPostComments(req, res) {
       return ApiResponse.notFound(res, 'Post no found');
     }
 
-    // Sort comments by createdAt (most recent first) and paginate
-    const sortedComments = post.comments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Sort comments: current user's comments first, then by createdAt (most recent first)
+    const sortedComments = post.comments.sort((a, b) => {
+      const aIsCurrentUser = a.user.toString() === currentUserId;
+      const bIsCurrentUser = b.user.toString() === currentUserId;
+      
+      // Current user's comments first
+      if (aIsCurrentUser && !bIsCurrentUser) return -1;
+      if (!aIsCurrentUser && bIsCurrentUser) return 1;
+      
+      // Then sort by createdAt (most recent first)
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+    
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + parseInt(limit);
     const paginatedComments = sortedComments.slice(startIndex, endIndex);
@@ -1156,6 +1493,81 @@ async function toggleCommentLike(req, res) {
   }
 }
 
+// Edit a comment
+async function editComment(req, res) {
+  try {
+    const { postId, commentId } = req.params;
+    const { content } = req.body;
+    const userId = req.user?.userId;
+
+    if (!content || content.trim().length === 0) {
+      return ApiResponse.badRequest(res, 'Comment content is required');
+    }
+
+    if (content.length > 500) {
+      return ApiResponse.badRequest(res, 'Comment cannot exceed 500 characters');
+    }
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return ApiResponse.notFound(res, 'Post not found');
+    }
+
+    // Find the comment
+    const comment = post.comments.id(commentId);
+    if (!comment) {
+      return ApiResponse.notFound(res, 'Comment not found');
+    }
+
+    // Check if user is the comment author (only comment author can edit their own comment)
+    const isCommentAuthor = comment.user.toString() === userId;
+
+    if (!isCommentAuthor) {
+      return ApiResponse.forbidden(res, 'You can only edit your own comments');
+    }
+
+    // Update the comment
+    comment.content = content.trim();
+    comment.isEdited = true;
+    comment.editedAt = new Date();
+    await post.save();
+
+    // Populate the updated comment
+    await post.populate({
+      path: 'comments.user',
+      select: 'username fullName profilePictureUrl isVerified'
+    });
+
+    const updatedComment = post.comments.id(commentId);
+    const commentObj = updatedComment.toObject ? updatedComment.toObject() : updatedComment;
+
+    // Check if current user liked this comment
+    const userLike = commentObj.likes?.find(like => like.user.toString() === userId);
+    const isLiked = !!userLike;
+
+    console.log('[POST] Comment edited successfully');
+    return ApiResponse.success(res, {
+      comment: {
+        _id: commentObj._id,
+        user: commentObj.user,
+        content: commentObj.content,
+        parentComment: commentObj.parentComment,
+        likes: commentObj.likes || [],
+        likesCount: commentObj.likes?.length || 0,
+        isLiked: isLiked,
+        isEdited: true,
+        createdAt: commentObj.createdAt,
+        editedAt: commentObj.editedAt,
+        commentedAgo: formatTimeAgo(commentObj.createdAt)
+      },
+      commentsCount: post.comments.length
+    }, 'Comment edited successfully');
+  } catch (error) {
+    console.error('[POST] Edit comment error:', error);
+    return ApiResponse.serverError(res, 'Failed to edit comment');
+  }
+}
+
 // Delete a comment
 async function deleteComment(req, res) {
   try {
@@ -1173,18 +1585,20 @@ async function deleteComment(req, res) {
       return ApiResponse.notFound(res, 'Comment not found');
     }
 
-    // Check if user is the post owner (ONLY post owner can delete comments)
+    // Check if user is the post owner OR the comment author (both can delete)
     const isPostOwner = post.author.toString() === userId;
+    const isCommentAuthor = comment.user.toString() === userId;
 
-    if (!isPostOwner) {
-      return ApiResponse.forbidden(res, 'Only the post owner can delete comments');
+    if (!isPostOwner && !isCommentAuthor) {
+      return ApiResponse.forbidden(res, 'Only the post owner or comment author can delete comments');
     }
 
     // Remove the comment
     comment.deleteOne();
     await post.save();
 
-    console.log('[POST] Comment deleted successfully by post owner');
+    const deletedBy = isPostOwner ? 'post owner' : 'comment author';
+    console.log(`[POST] Comment deleted successfully by ${deletedBy}`);
     return ApiResponse.success(res, {
       commentsCount: post.comments.length
     }, 'Comment deleted successfully');
@@ -1804,6 +2218,7 @@ module.exports = {
   addComment,
   getPostComments,
   toggleCommentLike,
+  editComment,
   deleteComment,
   sharePost,
   

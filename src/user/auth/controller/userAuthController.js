@@ -557,7 +557,7 @@ async function getUserProfile(req, res) {
 		}
 
 		// Fetch current user to check relationships
-		const currentUser = await User.findById(currentUserId);
+		const currentUser = await User.findById(currentUserId).select('following followers blockedUsers blockedBy');
 		if (!currentUser) {
 			return ApiResponse.unauthorized(res, 'Current user not found');
 		}
@@ -572,6 +572,34 @@ async function getUserProfile(req, res) {
 		const mutualFollowers = user.followers.filter(f => 
 			currentUser.following.some(cf => cf.toString() === f.toString())
 		).length;
+
+		// Filter out blocked users from followers/following counts (if viewing another user's profile)
+		let followersCount = user.followers?.length || 0;
+		let followingCount = user.following?.length || 0;
+		
+		if (currentUserId && currentUserId !== userId) {
+			// Get current user's blocked users list (same logic as getFollowers/getFollowing)
+			const blockedUserIds = [
+				...(currentUser.blockedUsers || []).map(id => id.toString()),
+				...(currentUser.blockedBy || []).map(id => id.toString())
+			];
+			
+			// Filter followers count - exclude users that current user has blocked or who have blocked current user
+			if (blockedUserIds.length > 0) {
+				followersCount = user.followers?.filter(f => {
+					const followerId = f.toString();
+					return !blockedUserIds.includes(followerId);
+				}).length || 0;
+			}
+			
+			// Filter following count - exclude users that current user has blocked or who have blocked current user
+			if (blockedUserIds.length > 0) {
+				followingCount = user.following?.filter(f => {
+					const followingId = f.toString();
+					return !blockedUserIds.includes(followingId);
+				}).length || 0;
+			}
+		}
 
 	// Get dating statistics for other user
 	const [datingCommentsReceived, datingLikesReceived] = await Promise.all([
@@ -647,8 +675,8 @@ async function getUserProfile(req, res) {
 		} : null,
 		isVerified: user.verificationStatus === 'approved',
 		isPrivate: user.privacySettings?.isPrivate || false,
-		followersCount: user.followers?.length || 0,
-		followingCount: user.following?.length || 0,
+		followersCount: followersCount,
+		followingCount: followingCount,
 		createdAt: user.createdAt,
 		// Relationship flags
 		isFollowing: isFollowing,

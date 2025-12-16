@@ -215,26 +215,39 @@ async function searchPosts(req, res) {
 			const mentionedUserIds = await getMentionedUserIds(keyword);
 			console.log('[USER][SEARCH] Mentioned user IDs:', mentionedUserIds.length);
 			
+			// Process hashtags similar to searchHashtags function
+			const trimmedKeyword = keyword.trim().toLowerCase();
+			const hashtagVariants = [
+				trimmedKeyword,
+				`#${trimmedKeyword}`
+			];
+			
+			// Build search conditions - avoid combining $text with complex $or that includes regex
+			// This prevents MongoDB query planner errors
+			const searchConditions = [
+				{ content: { $regex: keyword, $options: 'i' } },
+				{ caption: { $regex: keyword, $options: 'i' } },
+				{ hashtags: { $elemMatch: { $regex: keyword, $options: 'i' } } }, // Fixed: Use $elemMatch for array field
+				{ 'location.name': { $regex: keyword, $options: 'i' } }
+			];
+			
+			// Add hashtag string matching (exact match for better performance)
+			if (hashtagVariants.length > 0) {
+				searchConditions.push({ hashtags: { $in: hashtagVariants } });
+			}
+			
+			// Add mentions if found
+			if (mentionedUserIds.length > 0) {
+				searchConditions.push({ 'mentions.user': { $in: mentionedUserIds } });
+			}
+			
 			searchQuery = {
 				$and: [
 					{ status: 'published' },
 					{ visibility: 'public' },
 					{ author: { $nin: excludedUserIds } },
 					{
-						$or: [
-							// OPTIMIZED: Use text search if available, fallback to regex
-							...(keyword.trim().length > 0 ? [
-								{ $text: { $search: keyword } }, // Text index search (faster)
-								{ content: { $regex: keyword, $options: 'i' } }, // Fallback regex
-								{ caption: { $regex: keyword, $options: 'i' } }
-							] : [
-								{ content: { $regex: keyword, $options: 'i' } },
-								{ caption: { $regex: keyword, $options: 'i' } }
-							]),
-							{ hashtags: { $in: [new RegExp(keyword, 'i')] } },
-							{ 'location.name': { $regex: keyword, $options: 'i' } },
-							...(mentionedUserIds.length > 0 ? [{ 'mentions.user': { $in: mentionedUserIds } }] : [])
-						]
+						$or: searchConditions
 					}
 				]
 			};

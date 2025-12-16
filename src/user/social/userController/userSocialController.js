@@ -418,39 +418,254 @@ async function removeFollower(req, res) {
 	}
 }
 
-// Get followers list
+// Get followers list (search + accurate pagination, optional includeFollowing)
 async function getFollowers(req, res) {
 	try {
 		console.log('[USER][SOCIAL] getFollowers request');
-		const { page = 1, limit = 20 } = req.query || {};
-		const currentUserId = req.user?.userId;
+		let { page = 1, limit = 20, search = '', includeFollowing = false, userId } = req.query || {};
+		
+		// Use provided userId or default to current logged-in user
+		const targetUserId = userId || req.user?.userId;
+		const currentUserId = req.user?.userId; // Current logged-in user (for blocking filter)
+		
+		// IMPORTANT: Only allow includeFollowing for current user's own followers (not when viewing other users)
+		// This prevents showing following users in other users' followers lists
+		// Check if viewing another user's followers (userId is provided and different from current user)
+		// Convert to strings for reliable comparison
+		const userIdProvided = !!userId;
+		const isViewingOtherUser = userIdProvided && String(userId) !== String(currentUserId);
+		
+		// Convert string 'true'/'false' to boolean first
+		if (includeFollowing === 'true' || includeFollowing === true) includeFollowing = true;
+		else if (includeFollowing === 'false' || includeFollowing === false) includeFollowing = false;
+		else includeFollowing = false;
+		
+		// Force disable includeFollowing when viewing other users' followers
+		if (isViewingOtherUser) {
+			includeFollowing = false;
+			console.log('[USER][SOCIAL] Disabling includeFollowing - viewing other user\'s followers');
+		}
+		
+		console.log('[USER][SOCIAL] getFollowers params:', {
+			targetUserId,
+			currentUserId,
+			page,
+			limit,
+			search,
+			includeFollowing,
+			isViewingOtherUser: Boolean(isViewingOtherUser),
+			userIdProvided,
+			userIdFromQuery: userId
+		});
 
-		const user = await User.findById(currentUserId)
-			.populate({
-				path: 'followers',
-				select: 'username fullName profilePictureUrl verificationStatus isActive',
-				options: {
-					limit: parseInt(limit),
-					skip: (parseInt(page) - 1) * parseInt(limit),
-					sort: { createdAt: -1 }
-				}
-			});
+		const user = await User.findById(targetUserId).select('followers following');
 
 		if (!user) {
 			return ApiResponse.notFound(res, 'User not found');
 		}
 
-		const total = user.followers.length;
-		const followers = user.followers;
+		// Get current user's blocked users list (if viewing another user's followers)
+		let blockedUserIds = [];
+		if (currentUserId && currentUserId !== targetUserId) {
+			const currentUser = await User.findById(currentUserId).select('blockedUsers blockedBy');
+			if (currentUser) {
+				// Exclude users that current user has blocked or who have blocked current user
+				blockedUserIds = [
+					...(currentUser.blockedUsers || []).map(id => id.toString()),
+					...(currentUser.blockedBy || []).map(id => id.toString())
+				];
+			}
+		}
 
-		console.log('[USER][SOCIAL] Followers fetched successfully');
+		const followerIds = user.followers || [];
+		const followingIds = user.following || [];
+
+		// Build base match for followers - exclude blocked users
+		const matchStage = {
+			_id: { $in: followerIds }
+		};
+
+		// Exclude blocked users if current user is viewing
+		if (blockedUserIds.length > 0) {
+			matchStage._id = {
+				$in: followerIds.filter(id => !blockedUserIds.includes(id.toString()))
+			};
+		}
+
+		// Add search filter if provided
+		if (search && search.trim()) {
+			const searchRegex = new RegExp(search.trim(), 'i');
+			matchStage.$or = [
+				{ username: searchRegex },
+				{ fullName: searchRegex }
+			];
+		}
+
+		const itemsPerPage = parseInt(limit);
+		const currentPage = parseInt(page);
+
+		// Aggregate followers with accurate total (after search) and pagination
+		const followersAgg = await User.aggregate([
+			{ $match: matchStage },
+			{ $sort: { createdAt: -1 } },
+			{
+				$facet: {
+					data: [
+						{ $skip: (currentPage - 1) * itemsPerPage },
+						{ $limit: itemsPerPage },
+						{ $project: { username: 1, fullName: 1, profilePictureUrl: 1, verificationStatus: 1, isActive: 1 } }
+					],
+					totalCount: [
+						{ $count: 'count' }
+					]
+				}
+			}
+		]);
+
+		const followersData = followersAgg?.[0]?.data || [];
+		const totalFiltered = followersAgg?.[0]?.totalCount?.[0]?.count || 0;
+
+		// Optional: include up to 500 following users (deduped) in the followers response
+		// DOUBLE CHECK: Ensure includeFollowing is false when viewing other users (safety check)
+		if (isViewingOtherUser) {
+			includeFollowing = false;
+		}
+		
+		let includedFollowing = [];
+		if (includeFollowing === 'true' || includeFollowing === true) {
+			let followingIdsFiltered = followingIds;
+			// Exclude blocked users from following list
+			if (blockedUserIds.length > 0) {
+				followingIdsFiltered = followingIds.filter(id => !blockedUserIds.includes(id.toString()));
+			}
+
+			const followingMatch = {
+				_id: { $in: followingIdsFiltered }
+			};
+			if (search && search.trim()) {
+				const searchRegex = new RegExp(search.trim(), 'i');
+				followingMatch.$or = [
+					{ username: searchRegex },
+					{ fullName: searchRegex }
+				];
+			}
+
+			includedFollowing = await User.find(followingMatch)
+				.select('username fullName profilePictureUrl verificationStatus isActive')
+				.limit(500)
+				.lean();
+
+			// Dedupe against existing followers
+			const followerIdSet = new Set(followersData.map(f => String(f._id)));
+			includedFollowing = includedFollowing.filter(f => !followerIdSet.has(String(f._id)));
+		}
+
+		// Combine followers + includedFollowing (not re-paginated)
+		const combinedFollowers = [...followersData, ...includedFollowing];
+
+		// Get follow status for each user (if current user is viewing)
+		let followersWithStatus = combinedFollowers;
+		if (currentUserId && currentUserId !== targetUserId) {
+			// Get current user's following/followers and follow requests
+			const currentUser = await User.findById(currentUserId).select('following followers');
+			const currentUserFollowing = currentUser?.following?.map(id => id.toString()) || [];
+			const currentUserFollowers = currentUser?.followers?.map(id => id.toString()) || [];
+
+			// Get follow requests
+			const followerUserIds = combinedFollowers.map(f => f._id || f.id);
+			const followRequests = await FollowRequest.find({
+				$or: [
+					{ requester: currentUserId, recipient: { $in: followerUserIds } },
+					{ requester: { $in: followerUserIds }, recipient: currentUserId }
+				]
+			}).lean();
+
+			// Create map for follow requests
+			const followRequestMap = new Map();
+			followRequests.forEach(request => {
+				const key = `${request.requester.toString()}_${request.recipient.toString()}`;
+				followRequestMap.set(key, request);
+			});
+
+			// Add follow status to each follower
+			followersWithStatus = combinedFollowers.map(follower => {
+				const followerId = (follower._id || follower.id).toString();
+				const isCurrentUser = followerId === currentUserId;
+				const isFollowing = currentUserFollowing.includes(followerId);
+				const isFollower = currentUserFollowers.includes(followerId);
+
+				// Check follow request status
+				const outgoingRequestKey = `${currentUserId}_${followerId}`;
+				const incomingRequestKey = `${followerId}_${currentUserId}`;
+				
+				const outgoingRequest = followRequestMap.get(outgoingRequestKey);
+				const incomingRequest = followRequestMap.get(incomingRequestKey);
+				
+				let followRequestStatus = null;
+				if (outgoingRequest) {
+					followRequestStatus = outgoingRequest.status; // 'pending', 'accepted', 'rejected'
+				} else if (incomingRequest) {
+					followRequestStatus = `incoming_${incomingRequest.status}`;
+				}
+
+				// Determine follow status
+				let followStatus = 'not_following';
+				if (isCurrentUser) {
+					followStatus = 'self';
+				} else if (isFollowing && isFollower) {
+					followStatus = 'mutual';
+				} else if (isFollowing) {
+					followStatus = 'following';
+				} else if (isFollower) {
+					followStatus = 'follower';
+				} else if (followRequestStatus === 'pending') {
+					followStatus = 'requested';
+				}
+
+				return {
+					...follower,
+					isFollowing: isFollowing,
+					isFollower: isFollower,
+					followStatus: followStatus,
+					followRequestStatus: followRequestStatus
+				};
+			});
+		}
+		const appendedCount = includedFollowing.length;
+		const combinedTotal = totalFiltered + appendedCount;
+		const totalPages = Math.ceil(totalFiltered / itemsPerPage);
+		const hasMore = currentPage < totalPages;
+		const hasPrev = currentPage > 1;
+
+		console.log('[USER][SOCIAL] Followers fetched successfully', {
+			targetUserId,
+			currentUserId,
+			totalFiltered,
+			appendedCount,
+			includeFollowing,
+			actualFollowersCount: followersData.length,
+			includedFollowingCount: includedFollowing.length,
+			combinedCount: combinedFollowers.length,
+			finalCount: followersWithStatus.length,
+			currentPage,
+			totalPages,
+			hasMore
+		});
+
 		return ApiResponse.success(res, {
-			followers,
+			followers: followersWithStatus,
 			pagination: {
-				page: parseInt(page),
-				limit: parseInt(limit),
-				total,
-				pages: Math.ceil(total / parseInt(limit))
+				page: currentPage,
+				currentPage,
+				limit: itemsPerPage,
+				total: combinedTotal,
+				totalFollowers: totalFiltered,
+				appendedFollowingCount: appendedCount,
+				pages: totalPages,
+				totalPages,
+				hasMore,
+				hasNext: hasMore,
+				hasPrev
 			}
 		});
 	} catch (e) {
@@ -463,35 +678,185 @@ async function getFollowers(req, res) {
 async function getFollowing(req, res) {
 	try {
 		console.log('[USER][SOCIAL] getFollowing request');
-		const { page = 1, limit = 20 } = req.query || {};
-		const currentUserId = req.user?.userId;
+		const { page = 1, limit = 20, search = '', userId } = req.query || {};
+		
+		// Use provided userId or default to current logged-in user
+		const targetUserId = userId || req.user?.userId;
+		const currentUserId = req.user?.userId; // Current logged-in user (for blocking filter)
+		
+		// Check if viewing another user's following (userId is provided and different from current user)
+		const userIdProvided = !!userId;
+		const isViewingOtherUser = userIdProvided && String(userId) !== String(currentUserId);
+		
+		console.log('[USER][SOCIAL] getFollowing params:', {
+			targetUserId,
+			currentUserId,
+			page,
+			limit,
+			search,
+			isViewingOtherUser: Boolean(isViewingOtherUser),
+			userIdProvided,
+			userIdFromQuery: userId
+		});
 
-		const user = await User.findById(currentUserId)
-			.populate({
-				path: 'following',
-				select: 'username fullName profilePictureUrl verificationStatus isActive',
-				options: {
-					limit: parseInt(limit),
-					skip: (parseInt(page) - 1) * parseInt(limit),
-					sort: { createdAt: -1 }
-				}
-			});
-
+		// Get user with following IDs (not populated yet)
+		const user = await User.findById(targetUserId).select('following');
+		
 		if (!user) {
 			return ApiResponse.notFound(res, 'User not found');
 		}
 
-		const total = user.following.length;
-		const following = user.following;
+		// Get current user's blocked users list (if viewing another user's following)
+		let blockedUserIds = [];
+		if (currentUserId && currentUserId !== targetUserId) {
+			const currentUser = await User.findById(currentUserId).select('blockedUsers blockedBy');
+			if (currentUser) {
+				// Exclude users that current user has blocked or who have blocked current user
+				blockedUserIds = [
+					...(currentUser.blockedUsers || []).map(id => id.toString()),
+					...(currentUser.blockedBy || []).map(id => id.toString())
+				];
+			}
+		}
 
-		console.log('[USER][SOCIAL] Following fetched successfully');
+		// Filter out blocked users from following IDs before populating
+		let totalFollowingIds = user.following || [];
+		if (blockedUserIds.length > 0) {
+			totalFollowingIds = totalFollowingIds.filter(id => !blockedUserIds.includes(id.toString()));
+		}
+		const total = totalFollowingIds.length;
+
+		// Temporarily update user's following array to filtered list for population
+		user.following = totalFollowingIds;
+
+		// Build query for populating following with optional search
+		let populateQuery = {
+			path: 'following',
+			select: 'username fullName profilePictureUrl verificationStatus isActive',
+			options: {
+				sort: { createdAt: -1 }
+			}
+		};
+
+		// Add search filter if provided
+		if (search && search.trim()) {
+			const searchRegex = new RegExp(search.trim(), 'i');
+			populateQuery.match = {
+				$or: [
+					{ username: searchRegex },
+					{ fullName: searchRegex }
+				]
+			};
+		}
+
+		// Apply pagination
+		const itemsPerPage = parseInt(limit);
+		const currentPage = parseInt(page);
+		populateQuery.options.limit = itemsPerPage;
+		populateQuery.options.skip = (currentPage - 1) * itemsPerPage;
+
+		// Populate following with search and pagination
+		await user.populate(populateQuery);
+
+		let following = user.following || [];
+
+		// Get follow status for each user (if current user is viewing)
+		let followingWithStatus = following;
+		if (currentUserId && currentUserId !== targetUserId) {
+			// Get current user's following/followers and follow requests
+			const currentUser = await User.findById(currentUserId).select('following followers');
+			const currentUserFollowing = currentUser?.following?.map(id => id.toString()) || [];
+			const currentUserFollowers = currentUser?.followers?.map(id => id.toString()) || [];
+
+			// Get follow requests
+			const followingUserIds = following.map(f => (f._id || f.id).toString());
+			const followRequests = await FollowRequest.find({
+				$or: [
+					{ requester: currentUserId, recipient: { $in: followingUserIds } },
+					{ requester: { $in: followingUserIds }, recipient: currentUserId }
+				]
+			}).lean();
+
+			// Create map for follow requests
+			const followRequestMap = new Map();
+			followRequests.forEach(request => {
+				const key = `${request.requester.toString()}_${request.recipient.toString()}`;
+				followRequestMap.set(key, request);
+			});
+
+			// Add follow status to each following user
+			followingWithStatus = following.map(followingUser => {
+				const followingUserId = (followingUser._id || followingUser.id).toString();
+				const isCurrentUser = followingUserId === currentUserId;
+				const isFollowing = currentUserFollowing.includes(followingUserId);
+				const isFollower = currentUserFollowers.includes(followingUserId);
+
+				// Check follow request status
+				const outgoingRequestKey = `${currentUserId}_${followingUserId}`;
+				const incomingRequestKey = `${followingUserId}_${currentUserId}`;
+				
+				const outgoingRequest = followRequestMap.get(outgoingRequestKey);
+				const incomingRequest = followRequestMap.get(incomingRequestKey);
+				
+				let followRequestStatus = null;
+				if (outgoingRequest) {
+					followRequestStatus = outgoingRequest.status; // 'pending', 'accepted', 'rejected'
+				} else if (incomingRequest) {
+					followRequestStatus = `incoming_${incomingRequest.status}`;
+				}
+
+				// Determine follow status
+				let followStatus = 'not_following';
+				if (isCurrentUser) {
+					followStatus = 'self';
+				} else if (isFollowing && isFollower) {
+					followStatus = 'mutual';
+				} else if (isFollowing) {
+					followStatus = 'following';
+				} else if (isFollower) {
+					followStatus = 'follower';
+				} else if (followRequestStatus === 'pending') {
+					followStatus = 'requested';
+				}
+
+				// Convert Mongoose document to plain object if needed
+				const userObj = followingUser.toObject ? followingUser.toObject() : (followingUser._doc || followingUser);
+				
+				return {
+					...userObj,
+					isFollowing: isFollowing,
+					isFollower: isFollower,
+					followStatus: followStatus,
+					followRequestStatus: followRequestStatus
+				};
+			});
+		}
+
+		// Calculate pagination metadata
+		const totalPages = Math.ceil(total / itemsPerPage);
+		const hasMore = currentPage < totalPages;
+		const hasPrev = currentPage > 1;
+
+		console.log('[USER][SOCIAL] Following fetched successfully', {
+			total,
+			currentPage,
+			totalPages,
+			returned: followingWithStatus.length,
+			hasMore
+		});
+
 		return ApiResponse.success(res, {
-			following,
+			following: followingWithStatus,
 			pagination: {
-				page: parseInt(page),
-				limit: parseInt(limit),
+				page: currentPage,
+				currentPage: currentPage,
+				limit: itemsPerPage,
 				total,
-				pages: Math.ceil(total / parseInt(limit))
+				totalPages,
+				pages: totalPages,
+				hasMore,
+				hasNext: hasMore,
+				hasPrev
 			}
 		});
 	} catch (e) {

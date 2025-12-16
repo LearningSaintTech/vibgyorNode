@@ -15,6 +15,7 @@ const {
   addComment,
   getPostComments,
   toggleCommentLike,
+  editComment,
   deleteComment,
   sharePost,
   searchPosts,
@@ -195,6 +196,12 @@ router.get('/:postId/comments',
 router.post('/:postId/comments/:commentId/like',
   authorize([Roles.USER]),
   toggleCommentLike
+);
+
+router.put('/:postId/comments/:commentId',
+  authorize([Roles.USER]),
+  validateComment,
+  editComment
 );
 
 router.delete('/:postId/comments/:commentId',
