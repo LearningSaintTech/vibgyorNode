@@ -67,40 +67,50 @@ const uploadVideos = multer({
  */
 async function uploadDatingPhotos(req, res) {
 	try {
-		console.log('[DATING][UPLOAD] uploadDatingPhotos');
+		console.log('[DATING][UPLOAD][PHOTOS] 📥 Request received');
+		console.log('[DATING][UPLOAD][PHOTOS] User ID:', req.user?.userId);
+		console.log('[DATING][UPLOAD][PHOTOS] Files count:', req.files?.length || 0);
 
 		uploadPhotos(req, res, async (err) => {
 			if (err) {
-				console.error('[DATING][UPLOAD] Multer error:', err.message);
+				console.error('[DATING][UPLOAD][PHOTOS] ❌ Multer error:', err.message);
 				return ApiResponse.badRequest(res, err.message);
 			}
 
 			if (!req.files || req.files.length === 0) {
+				console.log('[DATING][UPLOAD][PHOTOS] ❌ No photos uploaded');
 				return ApiResponse.badRequest(res, 'No photos uploaded. Please upload at least 1 photo (max 5).');
 			}
 
 			if (req.files.length > MAX_PHOTOS) {
+				console.log('[DATING][UPLOAD][PHOTOS] ❌ Too many photos:', req.files.length);
 				return ApiResponse.badRequest(res, `Maximum ${MAX_PHOTOS} photos allowed`);
 			}
 
 			try {
+				console.log('[DATING][UPLOAD][PHOTOS] Finding user...');
 				const user = await User.findById(req.user?.userId);
 				if (!user) {
+					console.log('[DATING][UPLOAD][PHOTOS] ❌ User not found');
 					return ApiResponse.notFound(res, 'User not found');
 				}
+				console.log('[DATING][UPLOAD][PHOTOS] ✅ User found:', { userId: user._id, username: user.username });
 
 				// Check existing photos count
 				const existingPhotosCount = user.dating?.photos?.length || 0;
 				const totalPhotos = existingPhotosCount + req.files.length;
+				
+				console.log('[DATING][UPLOAD][PHOTOS] Photo count check:', { existing: existingPhotosCount, new: req.files.length, total: totalPhotos, max: MAX_PHOTOS });
 
 				if (totalPhotos > MAX_PHOTOS) {
+					console.log('[DATING][UPLOAD][PHOTOS] ❌ Photo limit exceeded');
 					return ApiResponse.badRequest(
 						res,
 						`You can only have ${MAX_PHOTOS} photos total. You currently have ${existingPhotosCount} photo(s).`
 					);
 				}
 
-				console.log(`[DATING][UPLOAD] Uploading ${req.files.length} photo(s) to S3`);
+				console.log(`[DATING][UPLOAD][PHOTOS] 📤 Uploading ${req.files.length} photo(s) to S3`);
 
 				// Upload all photos to S3
 				const uploadedPhotos = [];
@@ -150,7 +160,9 @@ async function uploadDatingPhotos(req, res) {
 				const updatedUser = await User.findById(user._id);
 				const datingProfile = updatedUser.getDatingProfile();
 
-				console.log(`[DATING][UPLOAD] ${req.files.length} photo(s) uploaded successfully`);
+				console.log(`[DATING][UPLOAD][PHOTOS] ✅ ${req.files.length} photo(s) uploaded successfully`);
+				console.log(`[DATING][UPLOAD][PHOTOS] Total photos now: ${datingProfile.photos.length}`);
+				console.log(`[DATING][UPLOAD][PHOTOS] 📤 Sending success response to frontend`);
 
 				return ApiResponse.success(
 					res,
@@ -163,13 +175,15 @@ async function uploadDatingPhotos(req, res) {
 				);
 
 			} catch (uploadError) {
-				console.error('[DATING][UPLOAD] Upload error:', uploadError.message);
+				console.error('[DATING][UPLOAD][PHOTOS] ❌ Upload error:', uploadError.message);
+				console.error('[DATING][UPLOAD][PHOTOS] Stack:', uploadError.stack);
 				return ApiResponse.serverError(res, `Failed to upload photos: ${uploadError.message}`);
 			}
 		});
 
 	} catch (e) {
-		console.error('[DATING][UPLOAD] uploadDatingPhotos error:', e?.message || e);
+		console.error('[DATING][UPLOAD][PHOTOS] ❌ uploadDatingPhotos error:', e?.message || e);
+		console.error('[DATING][UPLOAD][PHOTOS] Stack:', e?.stack);
 		return ApiResponse.serverError(res, 'Failed to upload dating photos');
 	}
 }
@@ -179,40 +193,51 @@ async function uploadDatingPhotos(req, res) {
  */
 async function uploadDatingVideos(req, res) {
 	try {
-		console.log('[DATING][UPLOAD] uploadDatingVideos');
+		console.log('[DATING][UPLOAD][VIDEOS] 📥 Request received');
+		console.log('[DATING][UPLOAD][VIDEOS] User ID:', req.user?.userId);
+		console.log('[DATING][UPLOAD][VIDEOS] Files count:', req.files?.length || 0);
+		console.log('[DATING][UPLOAD][VIDEOS] Durations from body:', req.body?.durations || 'not provided');
 
 		uploadVideos(req, res, async (err) => {
 			if (err) {
-				console.error('[DATING][UPLOAD] Multer error:', err.message);
+				console.error('[DATING][UPLOAD][VIDEOS] ❌ Multer error:', err.message);
 				return ApiResponse.badRequest(res, err.message);
 			}
 
 			if (!req.files || req.files.length === 0) {
+				console.log('[DATING][UPLOAD][VIDEOS] ❌ No videos uploaded');
 				return ApiResponse.badRequest(res, 'No videos uploaded. Please upload at least 1 video (max 5).');
 			}
 
 			if (req.files.length > MAX_VIDEOS) {
+				console.log('[DATING][UPLOAD][VIDEOS] ❌ Too many videos:', req.files.length);
 				return ApiResponse.badRequest(res, `Maximum ${MAX_VIDEOS} videos allowed`);
 			}
 
 			try {
+				console.log('[DATING][UPLOAD][VIDEOS] Finding user...');
 				const user = await User.findById(req.user?.userId);
 				if (!user) {
+					console.log('[DATING][UPLOAD][VIDEOS] ❌ User not found');
 					return ApiResponse.notFound(res, 'User not found');
 				}
+				console.log('[DATING][UPLOAD][VIDEOS] ✅ User found:', { userId: user._id, username: user.username });
 
 				// Check existing videos count
 				const existingVideosCount = user.dating?.videos?.length || 0;
 				const totalVideos = existingVideosCount + req.files.length;
+				
+				console.log('[DATING][UPLOAD][VIDEOS] Video count check:', { existing: existingVideosCount, new: req.files.length, total: totalVideos, max: MAX_VIDEOS });
 
 				if (totalVideos > MAX_VIDEOS) {
+					console.log('[DATING][UPLOAD][VIDEOS] ❌ Video limit exceeded');
 					return ApiResponse.badRequest(
 						res,
 						`You can only have ${MAX_VIDEOS} videos total. You currently have ${existingVideosCount} video(s).`
 					);
 				}
 
-				console.log(`[DATING][UPLOAD] Uploading ${req.files.length} video(s) to S3`);
+				console.log(`[DATING][UPLOAD][VIDEOS] 📤 Uploading ${req.files.length} video(s) to S3`);
 
 				// Upload all videos to S3
 				const uploadedVideos = [];
@@ -240,7 +265,7 @@ async function uploadDatingVideos(req, res) {
 					});
 
 					// Extract duration from request body if provided (client should send this)
-					const duration = req.body.durations && req.body.durations[i] 
+					const duration = req.body?.durations && req.body.durations[i] 
 						? parseFloat(req.body.durations[i]) 
 						: 0;
 
@@ -268,7 +293,9 @@ async function uploadDatingVideos(req, res) {
 				const updatedUser = await User.findById(user._id);
 				const datingProfile = updatedUser.getDatingProfile();
 
-				console.log(`[DATING][UPLOAD] ${req.files.length} video(s) uploaded successfully`);
+				console.log(`[DATING][UPLOAD][VIDEOS] ✅ ${req.files.length} video(s) uploaded successfully`);
+				console.log(`[DATING][UPLOAD][VIDEOS] Total videos now: ${datingProfile.videos.length}`);
+				console.log(`[DATING][UPLOAD][VIDEOS] 📤 Sending success response to frontend`);
 
 				return ApiResponse.success(
 					res,
@@ -281,13 +308,15 @@ async function uploadDatingVideos(req, res) {
 				);
 
 			} catch (uploadError) {
-				console.error('[DATING][UPLOAD] Upload error:', uploadError.message);
+				console.error('[DATING][UPLOAD][VIDEOS] ❌ Upload error:', uploadError.message);
+				console.error('[DATING][UPLOAD][VIDEOS] Stack:', uploadError.stack);
 				return ApiResponse.serverError(res, `Failed to upload videos: ${uploadError.message}`);
 			}
 		});
 
 	} catch (e) {
-		console.error('[DATING][UPLOAD] uploadDatingVideos error:', e?.message || e);
+		console.error('[DATING][UPLOAD][VIDEOS] ❌ uploadDatingVideos error:', e?.message || e);
+		console.error('[DATING][UPLOAD][VIDEOS] Stack:', e?.stack);
 		return ApiResponse.serverError(res, 'Failed to upload dating videos');
 	}
 }
@@ -297,23 +326,35 @@ async function uploadDatingVideos(req, res) {
  */
 async function removeDatingPhoto(req, res) {
 	try {
+		console.log('[DATING][DELETE][PHOTO] 📥 Request received');
+		console.log('[DATING][DELETE][PHOTO] User ID:', req.user?.userId);
+		
 		const { photoIndex } = req.params;
 		const index = parseInt(photoIndex, 10);
+		
+		console.log('[DATING][DELETE][PHOTO] Photo index from params:', photoIndex, '-> parsed:', index);
 
 		if (isNaN(index) || index < 0) {
+			console.log('[DATING][DELETE][PHOTO] ❌ Invalid photo index');
 			return ApiResponse.badRequest(res, 'Invalid photo index');
 		}
 
+		console.log('[DATING][DELETE][PHOTO] Finding user...');
 		const user = await User.findById(req.user?.userId);
 		if (!user) {
+			console.log('[DATING][DELETE][PHOTO] ❌ User not found');
 			return ApiResponse.notFound(res, 'User not found');
 		}
+		console.log('[DATING][DELETE][PHOTO] ✅ User found:', { userId: user._id, username: user.username });
+		console.log('[DATING][DELETE][PHOTO] Current photos count:', user.dating?.photos?.length || 0);
 
 		if (!user.dating || !user.dating.photos || index >= user.dating.photos.length) {
+			console.log('[DATING][DELETE][PHOTO] ❌ Photo not found at index:', index);
 			return ApiResponse.badRequest(res, 'Photo not found at the specified index');
 		}
 
 		const photo = user.dating.photos[index];
+		console.log('[DATING][DELETE][PHOTO] Photo to delete:', { index, url: photo.url?.substring(0, 50) + '...' });
 		
 		// Extract S3 key from URL for deletion
 		if (photo.url) {
@@ -335,9 +376,13 @@ async function removeDatingPhoto(req, res) {
 		}
 
 		await user.removeDatingPhoto(index);
+		console.log('[DATING][DELETE][PHOTO] ✅ Photo removed from user profile');
 
 		const updatedUser = await User.findById(user._id);
 		const datingProfile = updatedUser.getDatingProfile();
+		
+		console.log('[DATING][DELETE][PHOTO] ✅ Updated photos count:', datingProfile.photos.length);
+		console.log('[DATING][DELETE][PHOTO] 📤 Sending success response to frontend');
 
 		return ApiResponse.success(
 			res,
@@ -348,7 +393,8 @@ async function removeDatingPhoto(req, res) {
 		);
 
 	} catch (e) {
-		console.error('[DATING] removeDatingPhoto error:', e?.message || e);
+		console.error('[DATING][DELETE][PHOTO] ❌ removeDatingPhoto error:', e?.message || e);
+		console.error('[DATING][DELETE][PHOTO] Stack:', e?.stack);
 		return ApiResponse.serverError(res, 'Failed to remove photo');
 	}
 }
@@ -489,12 +535,24 @@ async function updateVideoOrder(req, res) {
  */
 async function getDatingProfile(req, res) {
 	try {
+		console.log('[DATING][PROFILE][GET] 📥 Request received');
+		console.log('[DATING][PROFILE][GET] User ID:', req.user?.userId);
+		
 		const user = await User.findById(req.user?.userId);
 		if (!user) {
+			console.log('[DATING][PROFILE][GET] ❌ User not found');
 			return ApiResponse.notFound(res, 'User not found');
 		}
+		console.log('[DATING][PROFILE][GET] ✅ User found:', { userId: user._id, username: user.username });
 
 		const datingProfile = user.getDatingProfile();
+		
+		console.log('[DATING][PROFILE][GET] Dating profile data:', {
+			photosCount: datingProfile.photos?.length || 0,
+			videosCount: datingProfile.videos?.length || 0,
+			isActive: datingProfile.isDatingProfileActive,
+		});
+		console.log('[DATING][PROFILE][GET] 📤 Sending response to frontend');
 
 		return ApiResponse.success(
 			res,
@@ -505,7 +563,8 @@ async function getDatingProfile(req, res) {
 		);
 
 	} catch (e) {
-		console.error('[DATING] getDatingProfile error:', e?.message || e);
+		console.error('[DATING][PROFILE][GET] ❌ getDatingProfile error:', e?.message || e);
+		console.error('[DATING][PROFILE][GET] Stack:', e?.stack);
 		return ApiResponse.serverError(res, 'Failed to get dating profile');
 	}
 }

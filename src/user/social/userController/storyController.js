@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Story = require('../userModel/storyModel');
 const User = require('../../auth/model/userAuthModel');
 const ApiResponse = require('../../../utils/apiResponse');
@@ -130,7 +131,24 @@ async function createStory(req, res) {
     }
 
     // OPTIMIZED: Invalidate feed cache when new story is created
+    // Invalidate cache for the story author
     invalidateUserCache(userId, 'feed:stories:*');
+    
+    // CRITICAL: Invalidate cache for all followers so they see the new story immediately
+    try {
+      const author = await User.findById(userId).select('followers').lean();
+      if (author && author.followers && author.followers.length > 0) {
+        console.log('[STORY] Invalidating cache for', author.followers.length, 'followers');
+        // Invalidate cache for each follower
+        author.followers.forEach(followerId => {
+          invalidateUserCache(followerId.toString(), 'feed:stories:*');
+        });
+        console.log('[STORY] Cache invalidated for all followers');
+      }
+    } catch (cacheError) {
+      console.error('[STORY] Error invalidating follower caches:', cacheError);
+      // Don't fail story creation if cache invalidation fails
+    }
     
     console.log('[STORY] Story created successfully:', story._id);
     return ApiResponse.success(res, story, 'Story created successfully');
@@ -355,6 +373,32 @@ async function getStoriesFeed(req, res) {
           ]
         }
       },
+      // CRITICAL: Add hasViewed flag BEFORE lookup (check original ObjectIds)
+      // This checks if current userId is in the views.user array (before population)
+      // Convert userId to ObjectId for comparison
+      {
+        $addFields: {
+          hasViewed: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: { $ifNull: ['$views', []] },
+                    as: 'view',
+                    cond: {
+                      $eq: [
+                        { $toString: '$$view.user' },
+                        userId.toString()
+                      ]
+                    }
+                  }
+                }
+              },
+              0
+            ]
+          }
+        }
+      },
       {
         $lookup: {
           from: 'users',
@@ -408,25 +452,16 @@ async function getStoriesFeed(req, res) {
     console.log('[STORY] Stories found from followed users:', stories.length);
 
     // Add hasViewed flag to each story and group by author
+    // CRITICAL: hasViewed is now calculated in aggregation pipeline (more reliable)
     const groupedStories = {};
     stories.forEach(story => {
       // Aggregation results are already plain objects, not Mongoose documents
       // So we don't need toObject(), just create a copy
       const storyObj = { ...story };
       
-      // Check if current user has viewed this story
-      // Handle aggregation lookup structure where views.user might be an array or object
-      let hasViewed = false;
-      if (story.views && Array.isArray(story.views)) {
-        hasViewed = story.views.some(view => {
-          if (!view || !view.user) return false;
-          // Handle both array (from lookup) and object (direct reference) cases
-          const viewUser = Array.isArray(view.user) ? view.user[0] : view.user;
-          if (!viewUser) return false;
-          const viewUserId = (viewUser._id || viewUser).toString();
-          return viewUserId === userId.toString();
-        });
-      }
+      // Use hasViewed from aggregation (already calculated correctly)
+      // Fallback to false if not set (shouldn't happen, but safety check)
+      const hasViewed = storyObj.hasViewed === true;
       storyObj.hasViewed = hasViewed;
       
       const authorId = story.author._id.toString();
@@ -578,11 +613,30 @@ async function deleteStory(req, res) {
       }
     }
 
+    // Store author ID before deletion for cache invalidation
+    const authorId = story.author.toString();
+
     // Hard delete from database
     await Story.findByIdAndDelete(storyId);
 
     // OPTIMIZED: Invalidate feed cache when story is deleted
     invalidateUserCache(userId, 'feed:stories:*');
+    
+    // CRITICAL: Invalidate cache for all followers so they see the story removed immediately
+    try {
+      const author = await User.findById(authorId).select('followers').lean();
+      if (author && author.followers && author.followers.length > 0) {
+        console.log('[STORY] Invalidating cache for', author.followers.length, 'followers (story deleted)');
+        // Invalidate cache for each follower
+        author.followers.forEach(followerId => {
+          invalidateUserCache(followerId.toString(), 'feed:stories:*');
+        });
+        console.log('[STORY] Cache invalidated for all followers (story deleted)');
+      }
+    } catch (cacheError) {
+      console.error('[STORY] Error invalidating follower caches on delete:', cacheError);
+      // Don't fail story deletion if cache invalidation fails
+    }
 
     console.log('[STORY] Story deleted from database successfully:', storyId);
     return ApiResponse.success(res, null, 'Story deleted successfully');
@@ -792,38 +846,70 @@ async function trackStoryView(req, res) {
       return ApiResponse.badRequest(res, 'Cannot track view for your own story');
     }
 
-    // Check if user already viewed this story
+    // Check if user already viewed this story (robust check)
     // Handle both populated and unpopulated view.user cases
+    // Also check by ObjectId comparison for reliability
+    const userIdStr = userId.toString();
     const hasAlreadyViewed = story.views.some(view => {
+      if (!view || !view.user) return false;
       const viewUserId = (view.user._id || view.user).toString();
-      return viewUserId === userId.toString();
+      return viewUserId === userIdStr;
     });
 
     if (hasAlreadyViewed) {
-      console.log('[STORY] User already viewed this story');
+      console.log('[STORY] User already viewed this story - returning existing view count');
+      // Reload story to get latest view count
+      const freshStory = await Story.findById(storyId);
+      const currentViewsCount = freshStory?.analytics?.viewsCount || story.analytics.viewsCount;
+      
       return ApiResponse.success(res, {
-        viewsCount: story.analytics.viewsCount,
+        viewsCount: currentViewsCount,
         hasViewed: true,
         message: 'You have already viewed this story'
       }, 'Story view already recorded');
     }
 
-    // Add view (this automatically checks for duplicates and updates count)
+    // Add view (this automatically checks for duplicates and updates count using atomic operations)
+    // The addView method uses atomic MongoDB operations to prevent race conditions
     await story.addView(userId);
+    
+    // Check if view was actually added (from atomic operation result)
+    const wasViewAdded = story._wasViewAdded === true;
+    
+    // Reload story to get updated view count
+    const updatedStory = await Story.findById(storyId);
+    const finalViewsCount = updatedStory?.analytics?.viewsCount || story.analytics.viewsCount;
+    
+    if (!wasViewAdded) {
+      console.log('[STORY] View was not added - user already viewed this story (duplicate request prevented)');
+      // Return success but indicate it was already viewed
+      return ApiResponse.success(res, {
+        viewsCount: finalViewsCount,
+        hasViewed: true,
+        message: 'Story view already recorded'
+      }, 'Story view already recorded');
+    }
 
     // OPTIMIZED: Invalidate feed cache when story is viewed (hasViewed changes)
     invalidateUserCache(userId, 'feed:stories:*');
+    
+    // CRITICAL: Invalidate cache for story author so they see updated view count immediately
+    const authorId = story.author._id.toString();
+    invalidateUserCache(authorId, 'feed:stories:*');
+    // Also invalidate their own stories cache
+    invalidateUserCache(authorId, 'my-stories:*');
 
     console.log('[STORY] Story view tracked successfully:', {
       storyId: story._id,
       storyAuthor: story.author.username,
-      viewsCount: story.analytics.viewsCount,
+      viewsCount: finalViewsCount,
       isPrivateAccount,
-      isFollowing
+      isFollowing,
+      wasNewView: wasViewAdded
     });
 
     return ApiResponse.success(res, {
-      viewsCount: story.analytics.viewsCount,
+      viewsCount: finalViewsCount,
       hasViewed: true
     }, 'Story view tracked successfully');
   } catch (error) {

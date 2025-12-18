@@ -31,6 +31,7 @@ const storyRoutes = require('./user/social/userRoutes/storyRoutes');
 const datingMediaRoutes = require('./user/auth/controller/datingMediaRoutes');
 const datingProfileRoutes = require('./user/dating/routes/datingProfileRoutes');
 const datingInteractionRoutes = require('./user/dating/routes/datingInteractionRoutes');
+const datingMessageRoutes = require('./user/dating/routes/datingMessageRoutes');
 const cookieParser = require('cookie-parser');
 
 // Enhanced routes
@@ -97,6 +98,7 @@ app.use('/user/stories', storyRoutes);
 app.use('/user/dating', datingMediaRoutes);
 app.use('/user/dating', datingProfileRoutes);
 app.use('/user/dating', datingInteractionRoutes);
+app.use('/user/dating/messages', datingMessageRoutes); // Dating messages routes - must come after interaction routes
 
 // Notification routes (new architecture)
 const notificationRoutes = require('./notification/routes/notificationRoutes');

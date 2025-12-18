@@ -53,6 +53,7 @@ DatingInteractionSchema.index({ targetUser: 1, action: 1 }); // "Liked you" quer
 DatingInteractionSchema.index({ user: 1, action: 1, createdAt: -1 }); // User interaction history
 DatingInteractionSchema.index({ targetUser: 1, action: 1, createdAt: -1 }); // "Liked you" with sorting
 DatingInteractionSchema.index({ user: 1, status: 1 }); // Match status queries
+DatingInteractionSchema.index({ targetUser: 1, action: 1, status: 1 }); // "Liked you" with status filter (for matched/unmatched likes)
 
 const DatingInteraction =
 	mongoose.models.DatingInteraction ||

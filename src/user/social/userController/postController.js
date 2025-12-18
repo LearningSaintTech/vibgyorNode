@@ -1442,33 +1442,52 @@ async function toggleCommentLike(req, res) {
     const { postId, commentId } = req.params;
     const userId = req.user?.userId;
 
-    const post = await Post.findById(postId);
-    if (!post) {
-      return ApiResponse.notFound(res, 'Post not found');
+    console.log('[POST] Toggle comment like - START:', { postId, commentId, userId });
+
+    if (!postId || !commentId) {
+      console.error('[POST] Toggle comment like - Missing parameters:', { postId, commentId });
+      return ApiResponse.badRequest(res, 'Post ID and Comment ID are required');
     }
 
-    // Check if user is the post owner (ONLY post owner can like comments)
-    const isPostOwner = post.author.toString() === userId;
+    if (!userId) {
+      console.error('[POST] Toggle comment like - Missing userId');
+      return ApiResponse.unauthorized(res, 'User authentication required');
+    }
 
-    if (!isPostOwner) {
-      return ApiResponse.forbidden(res, 'Only the post owner can like comments');
+    const post = await Post.findById(postId);
+    if (!post) {
+      console.error('[POST] Toggle comment like - Post not found:', postId);
+      return ApiResponse.notFound(res, 'Post not found');
     }
 
     // Find the comment
     const comment = post.comments.id(commentId);
     if (!comment) {
+      console.error('[POST] Toggle comment like - Comment not found:', { postId, commentId });
       return ApiResponse.notFound(res, 'Comment not found');
     }
 
-    // Check if user already liked this comment
-    const existingLike = comment.likes.find(like => like.user.toString() === userId);
+    console.log('[POST] Toggle comment like - Comment found:', {
+      commentId,
+      currentLikesCount: comment.likes?.length || 0,
+      commentAuthor: comment.user?.toString()
+    });
 
-    if (existingLike) {
+    // Check if user already liked this comment
+    const existingLikeIndex = comment.likes.findIndex(like => like.user.toString() === userId);
+
+    if (existingLikeIndex !== -1) {
       // Unlike: Remove the like
-      comment.likes = comment.likes.filter(like => like.user.toString() !== userId);
+      comment.likes.splice(existingLikeIndex, 1);
       await post.save();
 
-      console.log('[POST] Comment unliked successfully by post owner');
+      console.log('[POST] Comment unliked successfully:', {
+        postId,
+        commentId,
+        userId,
+        newLikesCount: comment.likes.length
+      });
+
       return ApiResponse.success(res, {
         liked: false,
         likesCount: comment.likes.length
@@ -1481,7 +1500,13 @@ async function toggleCommentLike(req, res) {
       });
       await post.save();
 
-      console.log('[POST] Comment liked successfully by post owner');
+      console.log('[POST] Comment liked successfully:', {
+        postId,
+        commentId,
+        userId,
+        newLikesCount: comment.likes.length
+      });
+
       return ApiResponse.success(res, {
         liked: true,
         likesCount: comment.likes.length

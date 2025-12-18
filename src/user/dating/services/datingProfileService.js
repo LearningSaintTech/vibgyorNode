@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../../auth/model/userAuthModel');
 const DatingInteraction = require('../models/datingInteractionModel');
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
@@ -47,7 +48,7 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 	].filter(Boolean);
 	
 	// Remove duplicates and convert back to ObjectIds
-	const allExcludedIds = [...new Set(allExcludedIdsStrings)].map(id => require('mongoose').Types.ObjectId(id));
+	const allExcludedIds = [...new Set(allExcludedIdsStrings)].map(id => new mongoose.Types.ObjectId(id));
 
 	// Base query - exclude current user, blocked users, interacted users, and inactive profiles
 	const query = {
@@ -206,16 +207,25 @@ function filterByDistance(profiles, currentUser, maxDistance) {
  */
 async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { page: 1, limit: 20 }) {
 	try {
-		// OPTIMIZED: Cache user data for 5 minutes
-		const cacheKey = 'dating:userData';
+		// Convert currentUserId to ObjectId and get hex string for use in aggregation $expr
+		const currentUserIdObj = new mongoose.Types.ObjectId(currentUserId);
+		const currentUserIdHex = currentUserIdObj.toString();
+		
+		// OPTIMIZED: Cache user data with filter-specific key (Phase 2 Optimization)
+		// Create cache key that includes filter hash for better cache granularity
+		const filterHash = JSON.stringify(filters).substring(0, 50); // Use first 50 chars as hash
+		const cacheKey = `dating:userData:${currentUserId}:${filterHash.substring(0, 20)}`;
 		let currentUser = getCachedUserData(currentUserId, cacheKey);
 		
 		if (!currentUser) {
-			currentUser = await User.findById(currentUserId);
+			// OPTIMIZED: Select only needed fields for better caching (Phase 2 Optimization)
+			currentUser = await User.findById(currentUserId)
+				.select('_id blockedUsers blockedBy location dating preferences interests isActive')
+				.lean();
 			if (!currentUser) {
 				throw new Error('Current user not found');
 			}
-			// Cache user data
+			// Cache user data for 5 minutes (300 seconds)
 			cacheUserData(currentUserId, cacheKey, currentUser, 300);
 		}
 
@@ -231,7 +241,7 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			// Extract targetUser IDs and remove duplicates
 			excludedUserIds = [...new Set(
 				userInteractions.map(interaction => interaction.targetUser.toString())
-			)].map(id => require('mongoose').Types.ObjectId(id));
+			)].map(id => new mongoose.Types.ObjectId(id));
 		}
 
 		// Build search query with excluded user IDs
@@ -239,30 +249,173 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 		
 		const skip = (pagination.page - 1) * pagination.limit;
 
-		// OPTIMIZED: Use geospatial query if distance filter is provided
+		// OPTIMIZED: Use aggregation pipeline for efficient filtering (Phase 1 Optimization)
+		// This allows us to filter by interaction type at database level instead of in memory
 		let profiles;
-		if (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng) {
-			// Check if user has GeoJSON coordinates, otherwise use lat/lng
-			const userCoordinates = currentUser.location?.coordinates?.coordinates 
-				? currentUser.location.coordinates.coordinates 
-				: [currentUser.location.lng, currentUser.location.lat];
-			
-			// Use geospatial aggregation for distance-based queries
-			profiles = await User.aggregate([
-				{
+		const useAggregation = filters.filter === 'liked_you' || filters.filter === 'liked_by_you' || 
+		                      (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng);
+
+		if (useAggregation) {
+			const pipeline = [];
+
+			// Step 1: Match base query (exclude users, active profiles, etc.)
+			pipeline.push({ $match: query });
+
+			// Step 2: Filter by interaction type using $lookup (OPTIMIZED)
+			if (filters.filter === 'liked_you') {
+				// "liked_you" = users who have liked the current user
+				// We need interactions where targetUser = currentUserId and user = this profile
+				pipeline.push({
+					$lookup: {
+						from: 'datinginteractions',
+						let: { profileUserId: '$_id' },
+						pipeline: [
+							{
+								$match: {
+									$expr: {
+										$and: [
+											{ $eq: ['$user', '$$profileUserId'] }, // The profile user is the one who liked
+											{ $eq: [{ $toString: '$targetUser' }, currentUserIdHex] }, // Current user was liked
+											{ $eq: ['$action', 'like'] }
+										]
+									}
+								}
+							}
+						],
+						as: 'interaction'
+					}
+				});
+				// Only include profiles that have an interaction (they liked current user)
+				pipeline.push({
+					$match: {
+						'interaction.0': { $exists: true }
+					}
+				});
+				// Remove the interaction array from output
+				pipeline.push({
+					$project: {
+						'interaction': 0
+					}
+				});
+			} else if (filters.filter === 'liked_by_you') {
+				// "liked_by_you" = users that the current user has liked
+				// We need interactions where user = currentUserId and targetUser = this profile
+				pipeline.push({
+					$lookup: {
+						from: 'datinginteractions',
+						let: { profileUserId: '$_id' },
+						pipeline: [
+							{
+								$match: {
+									$expr: {
+										$and: [
+											{ $eq: [{ $toString: '$user' }, currentUserIdHex] }, // Current user did the liking
+											{ $eq: ['$targetUser', '$$profileUserId'] }, // This profile was liked
+											{ $eq: ['$action', 'like'] }
+										]
+									}
+								}
+							}
+						],
+						as: 'interaction'
+					}
+				});
+				// Only include profiles that have an interaction (current user liked them)
+				pipeline.push({
+					$match: {
+						'interaction.0': { $exists: true }
+					}
+				});
+				// Remove the interaction array from output
+				pipeline.push({
+					$project: {
+						'interaction': 0
+					}
+				});
+			}
+
+			// Step 3: Geospatial filtering (if needed)
+			if (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng) {
+				const userCoordinates = currentUser.location?.coordinates?.coordinates 
+					? currentUser.location.coordinates.coordinates 
+					: [currentUser.location.lng, currentUser.location.lat];
+				
+				// Use $geoNear stage (must be first stage, but we handle it differently in aggregation)
+				// Since we need $geoNear first, we restructure the pipeline
+				const geoNearStage = {
 					$geoNear: {
 						near: {
 							type: 'Point',
 							coordinates: userCoordinates
 						},
 						distanceField: 'distance',
-						maxDistance: filters.distanceMax * 1000, // Convert km to meters
+						maxDistance: filters.distanceMax * 1000,
 						query: query,
 						spherical: true,
-						key: 'location.coordinates' // Use GeoJSON field for geospatial index
+						key: 'location.coordinates'
 					}
-				},
-				{
+				};
+
+				// For distance-based queries, we need to put $geoNear first, then filter by interactions
+				const distancePipeline = [geoNearStage];
+				
+				// Add interaction filtering after geospatial
+				if (filters.filter === 'liked_you') {
+					// "liked_you" = users who have liked the current user
+					distancePipeline.push({
+						$lookup: {
+							from: 'datinginteractions',
+							let: { profileUserId: '$_id' },
+							pipeline: [
+								{
+									$match: {
+										$expr: {
+											$and: [
+												{ $eq: ['$user', '$$profileUserId'] }, // The profile user is the one who liked
+												{ $eq: [{ $toString: '$targetUser' }, currentUserIdHex] }, // Current user was liked
+												{ $eq: ['$action', 'like'] }
+											]
+										}
+									}
+								}
+							],
+							as: 'interaction'
+						}
+					});
+					distancePipeline.push({
+						$match: { 'interaction.0': { $exists: true } }
+					});
+					distancePipeline.push({ $project: { 'interaction': 0 } });
+				} else if (filters.filter === 'liked_by_you') {
+					// "liked_by_you" = users that the current user has liked
+					distancePipeline.push({
+						$lookup: {
+							from: 'datinginteractions',
+							let: { profileUserId: '$_id' },
+							pipeline: [
+								{
+									$match: {
+										$expr: {
+											$and: [
+												{ $eq: [{ $toString: '$user' }, currentUserIdHex] }, // Current user did the liking
+												{ $eq: ['$targetUser', '$$profileUserId'] }, // This profile was liked
+												{ $eq: ['$action', 'like'] }
+											]
+										}
+									}
+								}
+							],
+							as: 'interaction'
+						}
+					});
+					distancePipeline.push({
+						$match: { 'interaction.0': { $exists: true } }
+					});
+					distancePipeline.push({ $project: { 'interaction': 0 } });
+				}
+
+				// Project only needed fields
+				distancePipeline.push({
 					$project: {
 						username: 1,
 						fullName: 1,
@@ -278,48 +431,108 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 						dating: 1,
 						verificationStatus: 1,
 						createdAt: 1,
-						distance: 1 // Include calculated distance
+						distance: 1
 					}
-				},
-				{
-					$sort: { distance: 1, createdAt: -1 }
-				},
-				{
-					$skip: skip
-				},
-				{
-					$limit: pagination.limit
-				}
-			]);
-		} else {
-			// OPTIMIZED: Select only needed fields for list view
-			profiles = await User.find(query)
-				.select('username fullName profilePictureUrl dob gender pronouns bio interests likes preferences location dating verificationStatus createdAt')
-				.sort({ createdAt: -1 })
-				.skip(skip)
-				.limit(pagination.limit)
-				.lean();
-		}
+				});
 
-		// Filter by interaction type (liked_you, liked_by_you)
-		if (filters.filter === 'liked_you') {
-			// Find users who have liked the current user
-			const likedYouInteractions = await DatingInteraction.find({
-				targetUser: currentUserId,
-				action: 'like'
-			}).select('user').lean();
-			
-			const likedYouUserIds = likedYouInteractions.map(interaction => interaction.user);
-			profiles = profiles.filter(profile => likedYouUserIds.some(id => id.toString() === profile._id.toString()));
-		} else if (filters.filter === 'liked_by_you') {
-			// Find users that the current user has liked
-			const likedByYouInteractions = await DatingInteraction.find({
-				user: currentUserId,
-				action: 'like'
-			}).select('targetUser').lean();
-			
-			const likedByYouUserIds = likedByYouInteractions.map(interaction => interaction.targetUser);
-			profiles = profiles.filter(profile => likedByYouUserIds.some(id => id.toString() === profile._id.toString()));
+				// Sort and paginate
+				distancePipeline.push({
+					$sort: filters.filter === 'near_by' || filters.distanceMax !== null 
+						? { distance: 1, createdAt: -1 }
+						: { createdAt: -1 }
+				});
+				distancePipeline.push({ $skip: skip });
+				distancePipeline.push({ $limit: pagination.limit });
+
+				profiles = await User.aggregate(distancePipeline);
+			} else {
+				// No distance filter, use regular aggregation
+				// Project only needed fields
+				pipeline.push({
+					$project: {
+						username: 1,
+						fullName: 1,
+						profilePictureUrl: 1,
+						dob: 1,
+						gender: 1,
+						pronouns: 1,
+						bio: 1,
+						interests: 1,
+						likes: 1,
+						preferences: 1,
+						location: 1,
+						dating: 1,
+						verificationStatus: 1,
+						createdAt: 1
+					}
+				});
+
+				// Sort and paginate
+				pipeline.push({ $sort: { createdAt: -1 } });
+				pipeline.push({ $skip: skip });
+				pipeline.push({ $limit: pagination.limit });
+
+				profiles = await User.aggregate(pipeline);
+			}
+		} else {
+			// OPTIMIZED: Use geospatial query if distance filter is provided (but no interaction filter)
+			if (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng) {
+				const userCoordinates = currentUser.location?.coordinates?.coordinates 
+					? currentUser.location.coordinates.coordinates 
+					: [currentUser.location.lng, currentUser.location.lat];
+				
+				profiles = await User.aggregate([
+					{
+						$geoNear: {
+							near: {
+								type: 'Point',
+								coordinates: userCoordinates
+							},
+							distanceField: 'distance',
+							maxDistance: filters.distanceMax * 1000,
+							query: query,
+							spherical: true,
+							key: 'location.coordinates'
+						}
+					},
+					{
+						$project: {
+							username: 1,
+							fullName: 1,
+							profilePictureUrl: 1,
+							dob: 1,
+							gender: 1,
+							pronouns: 1,
+							bio: 1,
+							interests: 1,
+							likes: 1,
+							preferences: 1,
+							location: 1,
+							dating: 1,
+							verificationStatus: 1,
+							createdAt: 1,
+							distance: 1
+						}
+					},
+					{
+						$sort: { distance: 1, createdAt: -1 }
+					},
+					{
+						$skip: skip
+					},
+					{
+						$limit: pagination.limit
+					}
+				]);
+			} else {
+				// OPTIMIZED: Select only needed fields for list view
+				profiles = await User.find(query)
+					.select('username fullName profilePictureUrl dob gender pronouns bio interests likes preferences location dating verificationStatus createdAt')
+					.sort({ createdAt: -1 })
+					.skip(skip)
+					.limit(pagination.limit)
+					.lean();
+			}
 		}
 
 		// OPTIMIZED: Distance filtering now done in database via $geoNear
@@ -409,17 +622,19 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			});
 		}
 
-		// Get total count (approximate, since distance filtering is done in memory)
-		const totalQuery = buildSearchQuery(currentUser, { ...filters, distanceMax: null });
-		const total = await User.countDocuments(totalQuery);
+		// OPTIMIZED: Get total count efficiently (Phase 1 Optimization)
+		// Use $facet to get count and results in single query for better performance
+		// For now, use hasMore based on returned results length (more efficient than counting all)
+		// Only count when explicitly needed (e.g., for showing "X results found")
+		const hasMore = profiles.length === pagination.limit;
 
 		return {
 			profiles,
 			pagination: {
 				page: pagination.page,
 				limit: pagination.limit,
-				total: profiles.length,
-				hasMore: profiles.length === pagination.limit
+				total: profiles.length, // Return count of current page results
+				hasMore: hasMore // More efficient than exact count
 			}
 		};
 

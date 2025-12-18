@@ -79,6 +79,29 @@ const SAMPLE_COMMENTS = [
   'Absolutely amazing!', 'Love this post!', 'So inspiring!', 'This is incredible work!'
 ];
 
+const SAMPLE_HASHTAGS = [
+  'photography', 'photooftheday', 'instagood', 'picoftheday', 'beautiful', 'nature',
+  'travel', 'adventure', 'explore', 'wanderlust', 'vacation', 'holiday', 'sunset',
+  'sunrise', 'landscape', 'mountains', 'ocean', 'beach', 'city', 'urban', 'street',
+  'portrait', 'selfie', 'fashion', 'style', 'ootd', 'outfit', 'fashionista', 'trendy',
+  'food', 'foodie', 'foodporn', 'delicious', 'yummy', 'cooking', 'recipe', 'restaurant',
+  'fitness', 'workout', 'gym', 'fitnessmotivation', 'health', 'wellness', 'yoga',
+  'lifestyle', 'life', 'daily', 'motivation', 'inspiration', 'quote', 'positive',
+  'happy', 'blessed', 'grateful', 'love', 'family', 'friends', 'friendship', 'memories',
+  'art', 'artist', 'creative', 'design', 'drawing', 'painting', 'sketch', 'digitalart',
+  'music', 'musician', 'song', 'concert', 'festival', 'dance', 'party', 'celebration',
+  'sports', 'football', 'cricket', 'basketball', 'tennis', 'running', 'cycling',
+  'technology', 'tech', 'gadgets', 'innovation', 'startup', 'business', 'entrepreneur',
+  'india', 'mumbai', 'delhi', 'bangalore', 'culture', 'tradition', 'festival',
+  'wedding', 'celebration', 'birthday', 'anniversary', 'graduation', 'achievement',
+  'pet', 'dog', 'cat', 'animals', 'wildlife', 'naturelovers', 'outdoors', 'camping',
+  'coffee', 'tea', 'drinks', 'cocktail', 'wine', 'dining', 'brunch', 'breakfast',
+  'makeup', 'beauty', 'skincare', 'cosmetics', 'glam', 'makeupartist', 'beautyblogger',
+  'cars', 'automotive', 'bike', 'motorcycle', 'travel', 'roadtrip', 'journey',
+  'architecture', 'building', 'interior', 'design', 'home', 'decor', 'minimalist',
+  'vintage', 'retro', 'classic', 'modern', 'contemporary', 'aesthetic', 'vibes'
+];
+
 // Diverse media URLs from various sources
 const IMAGE_URLS = [
   // Unsplash images
@@ -153,6 +176,14 @@ const getRandomElement = (array) => array[Math.floor(Math.random() * array.lengt
 const getRandomElements = (array, count) => {
   const shuffled = [...array].sort(() => 0.5 - Math.random());
   return shuffled.slice(0, Math.min(count, array.length));
+};
+
+// Generate random hashtags for a post (3-10 hashtags)
+const generateHashtags = () => {
+  const hashtagCount = Math.floor(Math.random() * 8) + 3; // 3 to 10 hashtags
+  const selectedHashtags = getRandomElements(SAMPLE_HASHTAGS, hashtagCount);
+  // Return lowercase hashtags without '#' symbol (as per model schema)
+  return selectedHashtags.map(tag => tag.toLowerCase().trim());
 };
 
 const getRandomDate = (daysAgo = 30) => {
@@ -316,11 +347,15 @@ const createPostsForUser = async (user, allUsers, userIndex) => {
       
       const publishedAt = getRandomDate(30);
       
+      // Generate hashtags for the post
+      const hashtags = generateHashtags();
+      
       // Create post with empty likes and comments (will be populated later)
       const postData = {
         author: user._id,
         content,
         media,
+        hashtags,
         visibility: getRandomElement(['public', 'followers']),
         commentVisibility: getRandomElement(['everyone', 'followers']),
         status: 'published',
@@ -395,6 +430,7 @@ const createStoriesForUser = async (user, userIndex) => {
       const content = hasContent ? getRandomElement(SAMPLE_POST_CONTENT) : null;
       
       const isVideo = Math.random() > 0.7; // 30% videos
+      // Stories expire 24 hours after creation (current time + 24 hours)
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       
       const media = {
@@ -430,7 +466,7 @@ const createStoriesForUser = async (user, userIndex) => {
           repliesCount: 0,
           sharesCount: 0
         },
-        createdAt: getRandomDate(1) // Created within last 24 hours
+        createdAt: new Date() // Use current time for story creation
       };
       
       const story = await Story.create(storyData);
@@ -446,9 +482,9 @@ const createStoriesForUser = async (user, userIndex) => {
 // Main seeding function
 const seedAll = async () => {
   try {
-    console.log('\n🚀 Starting Comprehensive Seeding Script...\n');
+    console.log('\n🚀 Starting Comprehensive Seeding Script (SOCIAL DATA ONLY)...\n');
     console.log('='.repeat(70));
-    console.log(`📊 Configuration:`);
+    console.log(`📊 Configuration - SOCIAL:`);
     console.log(`   👥 Users: ${TOTAL_USERS}`);
     console.log(`   📝 Posts per user: ${POSTS_PER_USER}`);
     console.log(`   📖 Stories per user: ${STORIES_PER_USER}`);
@@ -456,6 +492,9 @@ const seedAll = async () => {
     console.log(`   👥 Following per user: ${FOLLOWING_PER_USER}`);
     console.log(`   ❤️  Likes per post: ${LIKES_PER_POST}`);
     console.log(`   💬 Comments per post: ${COMMENTS_PER_POST}`);
+    console.log('\n⚠️  NOTE: This script seeds SOCIAL data only.');
+    console.log('   For DATING data, use: comprehensiveDatingSeed.js');
+    console.log('   Stories are created with CURRENT time and expire in 24 hours.');
     console.log('='.repeat(70));
     
     // Step 1: Create users
@@ -512,14 +551,17 @@ const seedAll = async () => {
     console.log(`   ❤️  Total likes: ${totalPosts * LIKES_PER_POST}`);
     console.log(`   💬 Total comments: ${totalPosts * COMMENTS_PER_POST}`);
     console.log(`   👥 Total follow relationships: ${users.length * FOLLOWING_PER_USER}`);
-    console.log('\n💡 Features:');
+    console.log('\n💡 Features - SOCIAL DATA:');
     console.log('   ✅ 100 users with unique phone numbers (10 digits, starting with 9)');
     console.log('   ✅ Each user has 100 followers and 100 following');
     console.log('   ✅ Each user has 100 posts with diverse media');
-    console.log('   ✅ Each user has 100 stories');
+    console.log('   ✅ Each user has 100 stories (created with CURRENT time, expire in 24 hours)');
     console.log('   ✅ Each post has exactly 100 likes and 100 comments');
     console.log('   ✅ Diverse media URLs from Unsplash, Pexels, and sample videos');
-    console.log('   ✅ Realistic engagement and timestamps\n');
+    console.log('   ✅ Realistic engagement and timestamps');
+    console.log('\n⚠️  DATING DATA:');
+    console.log('   ❌ This script does NOT seed dating data');
+    console.log('   📝 Use comprehensiveDatingSeed.js for dating profiles, likes, matches, etc.\n');
     
   } catch (error) {
     console.error('\n❌ Seeding failed:', error);

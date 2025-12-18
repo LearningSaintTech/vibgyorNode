@@ -235,15 +235,58 @@ StorySchema.virtual('engagementRate').get(function() {
 });
 
 // Methods
-StorySchema.methods.addView = function(userId, viewDuration = 0) {
-  // Check if user already viewed this story
-  const existingView = this.views.find(view => view.user.toString() === userId.toString());
-  if (!existingView) {
-    this.views.push({ user: userId, viewDuration });
-    this.analytics.viewsCount = this.views.length;
+StorySchema.methods.addView = async function(userId, viewDuration = 0) {
+  const storyId = this._id;
+  const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+  
+  // Use atomic updateOne to prevent duplicate views (race condition safe)
+  // Only add view if user doesn't already exist in views array
+  const updateResult = await this.constructor.updateOne(
+    {
+      _id: storyId,
+      'views.user': { $ne: userIdObj } // Only update if user is NOT in views array
+    },
+    {
+      $push: {
+        views: {
+          user: userIdObj,
+          viewDuration: viewDuration,
+          viewedAt: new Date()
+        }
+      },
+      $set: {
+        lastEngagementAt: new Date()
+      }
+    }
+  );
+  
+  // Check if view was actually added (atomic operation result)
+  const wasViewAdded = updateResult.modifiedCount > 0;
+  
+  // Reload story to get current state (whether view was added or already existed)
+  const updatedStory = await this.constructor.findById(storyId);
+  if (updatedStory) {
+    // Update analytics count to match actual views array length
+    await this.constructor.findByIdAndUpdate(
+      storyId,
+      {
+        $set: {
+          'analytics.viewsCount': updatedStory.views.length,
+          lastEngagementAt: new Date()
+        }
+      }
+    );
+    
+    // Update local instance with latest data
+    this.views = updatedStory.views;
+    this.analytics.viewsCount = updatedStory.views.length;
     this.lastEngagementAt = new Date();
   }
-  return this.save();
+  
+  // Store whether view was added for controller to check
+  this._wasViewAdded = wasViewAdded;
+  
+  return Promise.resolve(this);
 };
 
 StorySchema.methods.toggleLike = function(userId) {

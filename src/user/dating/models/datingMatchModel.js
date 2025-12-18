@@ -45,6 +45,13 @@ const DatingMatchSchema = new mongoose.Schema(
 
 DatingMatchSchema.index({ userA: 1, userB: 1 }, { unique: true });
 
+// CRITICAL: Compound indexes for dating match queries (Phase 1 Optimization)
+DatingMatchSchema.index({ status: 1, updatedAt: -1 }); // For match list queries sorted by last interaction
+DatingMatchSchema.index({ userA: 1, status: 1 }); // Match queries for userA
+DatingMatchSchema.index({ userB: 1, status: 1 }); // Match queries for userB
+DatingMatchSchema.index({ userA: 1, status: 1, updatedAt: -1 }); // Compound for userA match lists
+DatingMatchSchema.index({ userB: 1, status: 1, updatedAt: -1 }); // Compound for userB match lists
+
 DatingMatchSchema.statics.createOrGetMatch = async function(userId1, userId2) {
 	const [sortedA, sortedB] = sortUserIds(userId1, userId2);
 

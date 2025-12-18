@@ -10,6 +10,7 @@ const {
 	reportProfile,
 	blockProfile,
 	unblockProfile,
+	unmatchUser,
 	getDatingProfileLikes
 } = require('../controllers/datingInteractionController');
 
@@ -25,6 +26,9 @@ router.post('/profiles/:userId/comments', addProfileComment);
 router.get('/profiles/:userId/comments', getProfileComments);
 
 router.get('/matches', getMatches);
+
+// Unmatch with a user (end a match)
+router.delete('/matches/:matchId', unmatchUser);
 
 router.post('/profiles/:userId/report', reportProfile);
 

@@ -116,27 +116,41 @@ async function likeProfile(req, res) {
 		let match = null;
 
 		console.log('[DATING][LIKE] searching reciprocal like', { currentUserId, targetUserId });
+		// OPTIMIZED: Use index-optimized query (Phase 2 Optimization)
 		const reciprocal = await DatingInteraction.findOne({
 			user: targetUserId,
 			targetUser: currentUserId,
 			action: 'like'
-		});
+		}).lean(); // Use lean() for better performance since we only need the existence check
 
 		if (reciprocal) {
 			console.log('[DATING][LIKE] reciprocal like found', { reciprocalId: reciprocal._id });
 			isMatch = true;
-			match = await DatingMatch.createOrGetMatch(currentUserId, targetUserId);
-			console.log('[DATING][LIKE] match created', { matchId: match?._id });
-
-			interaction.status = 'matched';
-			interaction.matchedAt = new Date();
-			await interaction.save();
-
-			if (reciprocal.status !== 'matched') {
-				reciprocal.status = 'matched';
-				reciprocal.matchedAt = new Date();
-				await reciprocal.save();
-			}
+			
+			// OPTIMIZED: Update both interactions in parallel (Phase 2 Optimization)
+			const [createdMatch, updatedInteraction, updatedReciprocal] = await Promise.all([
+				DatingMatch.createOrGetMatch(currentUserId, targetUserId),
+				DatingInteraction.findByIdAndUpdate(
+					interaction._id,
+					{ 
+						status: 'matched',
+						matchedAt: new Date()
+					},
+					{ new: true }
+				),
+				DatingInteraction.findByIdAndUpdate(
+					reciprocal._id,
+					{ 
+						status: 'matched',
+						matchedAt: new Date()
+					},
+					{ new: true }
+				)
+			]);
+			
+			match = createdMatch;
+			interaction = updatedInteraction || interaction;
+			console.log('[DATING][LIKE] match created and interactions updated', { matchId: match?._id });
 		}
 
 		console.log('[DATING][LIKE] response', { isMatch, matchId: match?._id });
@@ -294,34 +308,85 @@ async function getMatches(req, res) {
 		const { status = 'active', page = 1, limit = 20 } = req.query;
 		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-		const filter = {
-			status,
-			$or: [{ userA: currentUserId }, { userB: currentUserId }]
-		};
-
-		const [matches, total] = await Promise.all([
-			DatingMatch.find(filter)
-				.sort({ updatedAt: -1 })
-				.skip(skip)
-				.limit(parseInt(limit, 10))
-				.populate('userA', 'username fullName profilePictureUrl')
-				.populate('userB', 'username fullName profilePictureUrl')
-				.lean(),
-			DatingMatch.countDocuments(filter)
+		// OPTIMIZED: Use aggregation pipeline for better performance (Phase 2 Optimization)
+		// This uses the compound indexes we added and avoids populating both users
+		const matches = await DatingMatch.aggregate([
+			{
+				$match: {
+					status,
+					$or: [{ userA: require('mongoose').Types.ObjectId(currentUserId) }, { userB: require('mongoose').Types.ObjectId(currentUserId) }]
+				}
+			},
+			{
+				$sort: { updatedAt: -1 }
+			},
+			{
+				$skip: skip
+			},
+			{
+				$limit: parseInt(limit, 10)
+			},
+			{
+				$lookup: {
+					from: 'users',
+					localField: 'userA',
+					foreignField: '_id',
+					as: 'userA'
+				}
+			},
+			{
+				$lookup: {
+					from: 'users',
+					localField: 'userB',
+					foreignField: '_id',
+					as: 'userB'
+				}
+			},
+			{
+				$project: {
+					'userA.username': 1,
+					'userA.fullName': 1,
+					'userA.profilePictureUrl': 1,
+					'userA._id': 1,
+					'userB.username': 1,
+					'userB.fullName': 1,
+					'userB.profilePictureUrl': 1,
+					'userB._id': 1,
+					status: 1,
+					createdAt: 1,
+					lastInteractionAt: 1,
+					updatedAt: 1
+				}
+			},
+			{
+				$addFields: {
+					userA: { $arrayElemAt: ['$userA', 0] },
+					userB: { $arrayElemAt: ['$userB', 0] }
+				}
+			}
 		]);
 
+		// Get total count (can be optimized further with $facet if needed)
+		const total = await DatingMatch.countDocuments({
+			status,
+			$or: [{ userA: currentUserId }, { userB: currentUserId }]
+		});
+
+		// OPTIMIZED: Format matches (userA and userB are already populated from aggregation)
 		const formatted = matches.map(match => {
+			const currentUserIdStr = currentUserId.toString();
+			const userAIdStr = match.userA?._id?.toString() || match.userA?.toString();
 			const otherUser =
-				match.userA._id.toString() === currentUserId
+				userAIdStr === currentUserIdStr
 					? match.userB
 					: match.userA;
 			return {
 				matchId: match._id,
 				user: {
-					_id: otherUser._id,
-					username: otherUser.username,
-					fullName: otherUser.fullName,
-					profilePictureUrl: otherUser.profilePictureUrl
+					_id: otherUser?._id || otherUser,
+					username: otherUser?.username || '',
+					fullName: otherUser?.fullName || '',
+					profilePictureUrl: otherUser?.profilePictureUrl || ''
 				},
 				status: match.status,
 				matchedAt: match.createdAt,
@@ -464,6 +529,45 @@ async function unblockProfile(req, res) {
 	}
 }
 
+async function unmatchUser(req, res) {
+	try {
+		console.log('[DATING][UNMATCH] payload', { params: req.params, userId: req.user?.userId });
+		const { matchId } = req.params;
+		const currentUserId = req.user?.userId;
+
+		if (!matchId) {
+			return ApiResponse.badRequest(res, 'Match ID is required');
+		}
+
+		// Find the match
+		const match = await DatingMatch.findById(matchId);
+		if (!match) {
+			return ApiResponse.notFound(res, 'Match not found');
+		}
+
+		// Verify user is part of this match
+		const userAId = match.userA.toString();
+		const userBId = match.userB.toString();
+		const currentUserIdStr = currentUserId.toString();
+
+		if (userAId !== currentUserIdStr && userBId !== currentUserIdStr) {
+			return ApiResponse.forbidden(res, 'You are not part of this match');
+		}
+
+		// Get the other user ID
+		const otherUserId = userAId === currentUserIdStr ? match.userB : match.userA;
+
+		// End the match (set status to 'ended')
+		await DatingMatch.endMatch(currentUserId, otherUserId, 'ended');
+
+		console.log('[DATING][UNMATCH] success', { matchId, currentUserId, otherUserId });
+		return ApiResponse.success(res, {}, 'Match ended successfully');
+	} catch (error) {
+		console.error('[DATING][UNMATCH] Error:', error);
+		return ApiResponse.serverError(res, 'Failed to unmatch user');
+	}
+}
+
 async function getDatingProfileLikes(req, res) {
 	try {
 		console.log('[DATING][LIKES] payload', { params: req.params, query: req.query, userId: req.user?.userId });
@@ -588,6 +692,7 @@ module.exports = {
 	reportProfile,
 	blockProfile,
 	unblockProfile,
+	unmatchUser,
 	getDatingProfileLikes
 };
 

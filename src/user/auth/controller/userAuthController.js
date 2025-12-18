@@ -182,10 +182,17 @@ function normalizeUsername(u) {
 
 async function getMe(req, res) {
 	try {
-		// eslint-disable-next-line no-console
-		console.log('[USER][AUTH] getMe');
+		console.log('[USER][AUTH][GET_ME] Request received');
+		console.log('[USER][AUTH][GET_ME] User ID:', req.user?.userId);
+		
 		const user = await User.findById(req.user?.userId).select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt');
-		if (!user) return ApiResponse.notFound(res, 'User not found');
+		if (!user) {
+			console.log('[USER][AUTH][GET_ME] ❌ User not found');
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		console.log('[USER][AUTH][GET_ME] ✅ User found:', { userId: user._id, username: user.username });
+		console.log('[USER][AUTH][GET_ME] Fetching dating statistics...');
 
 		// Get dating statistics
 		const [datingLikesReceived, datingCommentsReceived] = await Promise.all([
@@ -198,6 +205,8 @@ async function getMe(req, res) {
 				isDeleted: false
 			})
 		]);
+		
+		console.log('[USER][AUTH][GET_ME] Dating stats:', { likesReceived: datingLikesReceived, commentsReceived: datingCommentsReceived });
 
 		const profileData = {
 			id: user._id,
@@ -243,11 +252,19 @@ async function getMe(req, res) {
 			}
 		};
 
+		console.log('[USER][AUTH][GET_ME] ✅ Profile data prepared:', {
+			hasDatingData: !!profileData.dating,
+			datingPhotosCount: profileData.dating?.photos?.length || 0,
+			datingVideosCount: profileData.dating?.videos?.length || 0,
+			isDatingProfileActive: profileData.dating?.isDatingProfileActive,
+		});
+		
 		// Return in format expected by frontend: { success: true, data: { user: profileData } }
+		console.log('[USER][AUTH][GET_ME] 📤 Sending response to frontend');
 		return ApiResponse.success(res, { user: profileData }, 'User data retrieved successfully');
 	} catch (e) {
-		// eslint-disable-next-line no-console
-		console.error('[USER][AUTH] getMe error', e?.message || e);
+		console.error('[USER][AUTH][GET_ME] ❌ Error:', e?.message || e);
+		console.error('[USER][AUTH][GET_ME] Stack:', e?.stack);
 		return ApiResponse.serverError(res, 'Failed to get user data');
 	}
 }
