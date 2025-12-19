@@ -84,6 +84,13 @@ async function getAllDatingProfiles(req, res) {
 		if (city) location.city = city;
 		if (country) location.country = country;
 
+		// Set default distanceMax for "near_by" filter if not provided
+		let finalDistanceMax = distanceMax ? parseFloat(distanceMax) : null;
+		if (filter === 'near_by' && !finalDistanceMax) {
+			// Default to 50km for "near_by" filter
+			finalDistanceMax = 50;
+		}
+
 		// Build filters object
 		const filters = {
 			search: search.trim(),
@@ -93,7 +100,7 @@ async function getAllDatingProfiles(req, res) {
 			ageMax: ageMax ? parseInt(ageMax, 10) : null,
 			languages: languagesArray,
 			location: Object.keys(location).length > 0 ? location : null,
-			distanceMax: distanceMax ? parseFloat(distanceMax) : null,
+			distanceMax: finalDistanceMax,
 			filter
 		};
 

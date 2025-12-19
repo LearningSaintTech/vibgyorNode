@@ -24,7 +24,7 @@ const connectDB = async () => {
 };
 
 // Configuration - Social
-const TOTAL_USERS = 500; // Total users (will have both social and dating profiles)
+const TOTAL_USERS = 100; // Total users (will have both social and dating profiles)
 const POSTS_PER_USER = 100;
 const STORIES_PER_USER = 100;
 const FOLLOWERS_PER_USER = 100;
@@ -281,13 +281,16 @@ const createUsers = async () => {
       const dob = getRandomBirthDate(18, 45);
       const age = new Date().getFullYear() - dob.getFullYear();
       
-      // Generate dating photos (2-5 photos)
+      // Generate dating photos (2-5 photos) with unique media URLs
       const photoCount = Math.floor(Math.random() * 4) + 2;
       const photos = [];
+      // Offset dating photos to avoid overlap with posts/stories
+      const datingPhotoOffset = (TOTAL_USERS * POSTS_PER_USER) + (TOTAL_USERS * STORIES_PER_USER) + (i * PHOTOS_PER_USER);
       for (let j = 0; j < photoCount; j++) {
+        const imageIndex = (datingPhotoOffset + j) % IMAGE_URLS.length;
         photos.push({
-          url: getRandomElement(IMAGE_URLS),
-          thumbnailUrl: getRandomElement(IMAGE_URLS),
+          url: IMAGE_URLS[imageIndex],
+          thumbnailUrl: IMAGE_URLS[(imageIndex + 1) % IMAGE_URLS.length], // Different thumbnail
           blurhash: null,
           responsiveUrls: null,
           order: j,
@@ -295,13 +298,17 @@ const createUsers = async () => {
         });
       }
       
-      // Generate dating videos (0-3 videos)
+      // Generate dating videos (0-3 videos) with unique media URLs
       const videoCount = Math.floor(Math.random() * 4);
       const videos = [];
+      // Offset dating videos to avoid overlap
+      const datingVideoOffset = (TOTAL_USERS * POSTS_PER_USER) + (TOTAL_USERS * STORIES_PER_USER) + (TOTAL_USERS * PHOTOS_PER_USER) + (i * VIDEOS_PER_USER);
       for (let j = 0; j < videoCount; j++) {
+        const videoIndex = (datingVideoOffset + j) % VIDEO_URLS.length;
+        const thumbnailIndex = (datingVideoOffset + j) % VIDEO_THUMBNAILS.length;
         videos.push({
-          url: getRandomElement(VIDEO_URLS),
-          thumbnailUrl: getRandomElement(VIDEO_THUMBNAILS),
+          url: VIDEO_URLS[videoIndex],
+          thumbnailUrl: VIDEO_THUMBNAILS[thumbnailIndex],
           blurhash: null,
           duration: Math.floor(Math.random() * 60) + 10, // 10-70 seconds
           order: j,
@@ -391,7 +398,8 @@ const createUsers = async () => {
           },
           lastUpdatedAt: getRandomDate(30)
         },
-        createdAt: getRandomDate(365)
+        // Create 30% of users within last 7 days (for "new_dater" filter), rest within last year
+        createdAt: Math.random() < 0.3 ? getRandomDate(7) : getRandomDate(365)
       };
       
       const user = await User.create(userData);
@@ -456,6 +464,8 @@ const createFollowRelationships = async (users) => {
 // Create posts for a user
 const createPostsForUser = async (user, allUsers, userIndex) => {
   const posts = [];
+  // Media counter to ensure unique media URLs per post
+  let mediaCounter = userIndex * POSTS_PER_USER;
   
   for (let i = 0; i < POSTS_PER_USER; i++) {
     try {
@@ -467,10 +477,15 @@ const createPostsForUser = async (user, allUsers, userIndex) => {
       
       const media = [];
       for (let j = 0; j < mediaCount; j++) {
+        // Use counter to ensure unique media URLs - cycle through arrays
+        const imageIndex = (mediaCounter + j) % IMAGE_URLS.length;
+        const videoIndex = (mediaCounter + j) % VIDEO_URLS.length;
+        const thumbnailIndex = (mediaCounter + j) % VIDEO_THUMBNAILS.length;
+        
         const mediaItem = {
           type: isVideo ? 'video' : 'image',
-          url: isVideo ? getRandomElement(VIDEO_URLS) : getRandomElement(IMAGE_URLS),
-          thumbnail: isVideo ? getRandomElement(VIDEO_THUMBNAILS) : null,
+          url: isVideo ? VIDEO_URLS[videoIndex] : IMAGE_URLS[imageIndex],
+          thumbnail: isVideo ? VIDEO_THUMBNAILS[thumbnailIndex] : null,
           filename: `post_${userIndex}_${i}_${j}_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
           fileSize: isVideo 
             ? Math.floor(Math.random() * 20000000) + 5000000
@@ -488,6 +503,9 @@ const createPostsForUser = async (user, allUsers, userIndex) => {
         
         media.push(mediaItem);
       }
+      
+      // Increment counter for next post
+      mediaCounter += mediaCount;
       
       const publishedAt = getRandomDate(30);
       
@@ -567,6 +585,9 @@ const addEngagementToPost = async (post, allUsers) => {
 // Create stories for a user
 const createStoriesForUser = async (user, userIndex) => {
   const stories = [];
+  // Media counter to ensure unique media URLs per story
+  // Offset by total posts to avoid overlap with post media
+  let mediaCounter = (TOTAL_USERS * POSTS_PER_USER) + (userIndex * STORIES_PER_USER);
   
   for (let i = 0; i < STORIES_PER_USER; i++) {
     try {
@@ -576,10 +597,15 @@ const createStoriesForUser = async (user, userIndex) => {
       const isVideo = Math.random() > 0.7; // 30% videos
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       
+      // Use counter to ensure unique media URLs - cycle through arrays
+      const imageIndex = (mediaCounter + i) % IMAGE_URLS.length;
+      const videoIndex = (mediaCounter + i) % VIDEO_URLS.length;
+      const thumbnailIndex = (mediaCounter + i) % VIDEO_THUMBNAILS.length;
+      
       const media = {
         type: isVideo ? 'video' : 'image',
-        url: isVideo ? getRandomElement(VIDEO_URLS) : getRandomElement(IMAGE_URLS),
-        thumbnail: isVideo ? getRandomElement(VIDEO_THUMBNAILS) : null,
+        url: isVideo ? VIDEO_URLS[videoIndex] : IMAGE_URLS[imageIndex],
+        thumbnail: isVideo ? VIDEO_THUMBNAILS[thumbnailIndex] : null,
         filename: `story_${userIndex}_${i}_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
         fileSize: isVideo 
           ? Math.floor(Math.random() * 20000000) + 5000000

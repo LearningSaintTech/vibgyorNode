@@ -280,11 +280,11 @@ const createFollowRelationships = async (users) => {
     // Get other users (exclude self)
     const otherUsers = users.filter(u => u._id.toString() !== user._id.toString());
     
-    // Select 100 random users to follow
-    const usersToFollow = getRandomElements(otherUsers, FOLLOWING_PER_USER);
+    // Select random users to follow (max 99 with 100 users, as user can't follow themselves)
+    const usersToFollow = getRandomElements(otherUsers, Math.min(FOLLOWING_PER_USER, otherUsers.length));
     
-    // Select 100 random users as followers
-    const followers = getRandomElements(otherUsers, FOLLOWERS_PER_USER);
+    // Select random users as followers (max 99 with 100 users)
+    const followers = getRandomElements(otherUsers, Math.min(FOLLOWERS_PER_USER, otherUsers.length));
     
     // Update user's following and followers
     user.following = usersToFollow.map(u => u._id);
@@ -312,6 +312,8 @@ const createFollowRelationships = async (users) => {
 // Create posts for a user
 const createPostsForUser = async (user, allUsers, userIndex) => {
   const posts = [];
+  // Media counter to ensure unique media URLs per post
+  let mediaCounter = userIndex * POSTS_PER_USER;
   
   for (let i = 0; i < POSTS_PER_USER; i++) {
     try {
@@ -323,10 +325,15 @@ const createPostsForUser = async (user, allUsers, userIndex) => {
       
       const media = [];
       for (let j = 0; j < mediaCount; j++) {
+        // Use counter to ensure unique media URLs - cycle through arrays
+        const imageIndex = (mediaCounter + j) % IMAGE_URLS.length;
+        const videoIndex = (mediaCounter + j) % VIDEO_URLS.length;
+        const thumbnailIndex = (mediaCounter + j) % VIDEO_THUMBNAILS.length;
+        
         const mediaItem = {
           type: isVideo ? 'video' : 'image',
-          url: isVideo ? getRandomElement(VIDEO_URLS) : getRandomElement(IMAGE_URLS),
-          thumbnail: isVideo ? getRandomElement(VIDEO_THUMBNAILS) : null,
+          url: isVideo ? VIDEO_URLS[videoIndex] : IMAGE_URLS[imageIndex],
+          thumbnail: isVideo ? VIDEO_THUMBNAILS[thumbnailIndex] : null,
           filename: `post_${userIndex}_${i}_${j}_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
           fileSize: isVideo 
             ? Math.floor(Math.random() * 20000000) + 5000000
@@ -344,6 +351,9 @@ const createPostsForUser = async (user, allUsers, userIndex) => {
         
         media.push(mediaItem);
       }
+      
+      // Increment counter for next post
+      mediaCounter += mediaCount;
       
       const publishedAt = getRandomDate(30);
       
@@ -423,6 +433,9 @@ const addEngagementToPost = async (post, allUsers) => {
 // Create stories for a user
 const createStoriesForUser = async (user, userIndex) => {
   const stories = [];
+  // Media counter to ensure unique media URLs per story
+  // Offset by total posts to avoid overlap with post media
+  let mediaCounter = (TOTAL_USERS * POSTS_PER_USER) + (userIndex * STORIES_PER_USER);
   
   for (let i = 0; i < STORIES_PER_USER; i++) {
     try {
@@ -433,10 +446,15 @@ const createStoriesForUser = async (user, userIndex) => {
       // Stories expire 24 hours after creation (current time + 24 hours)
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
       
+      // Use counter to ensure unique media URLs - cycle through arrays
+      const imageIndex = (mediaCounter + i) % IMAGE_URLS.length;
+      const videoIndex = (mediaCounter + i) % VIDEO_URLS.length;
+      const thumbnailIndex = (mediaCounter + i) % VIDEO_THUMBNAILS.length;
+      
       const media = {
         type: isVideo ? 'video' : 'image',
-        url: isVideo ? getRandomElement(VIDEO_URLS) : getRandomElement(IMAGE_URLS),
-        thumbnail: isVideo ? getRandomElement(VIDEO_THUMBNAILS) : null,
+        url: isVideo ? VIDEO_URLS[videoIndex] : IMAGE_URLS[imageIndex],
+        thumbnail: isVideo ? VIDEO_THUMBNAILS[thumbnailIndex] : null,
         filename: `story_${userIndex}_${i}_${Date.now()}.${isVideo ? 'mp4' : 'jpg'}`,
         fileSize: isVideo 
           ? Math.floor(Math.random() * 20000000) + 5000000

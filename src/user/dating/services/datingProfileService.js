@@ -24,6 +24,228 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Calculate match percentage between current user and a profile
+ * Based on: interests, age compatibility, preferences, languages, and distance
+ * @param {Object} currentUser - Current user object
+ * @param {Object} profile - Profile to match against
+ * @returns {number} Match percentage (0-100)
+ */
+function calculateMatchPercentage(currentUser, profile) {
+	console.log('\n🔍 [MATCH CALC] Starting calculation for profile:', profile.username || profile._id);
+	console.log('📊 [MATCH CALC] Current User:', {
+		hasInterests: !!(currentUser.interests && currentUser.interests.length > 0),
+		interestsCount: currentUser.interests?.length || 0,
+		hasDatingPrefs: !!currentUser.dating?.preferences,
+		hasAgeRange: !!currentUser.dating?.preferences?.ageRange,
+		hasHereTo: !!currentUser.dating?.preferences?.hereTo,
+		hasWantToMeet: !!currentUser.dating?.preferences?.wantToMeet,
+		hasLanguages: !!(currentUser.dating?.preferences?.languages && currentUser.dating.preferences.languages.length > 0),
+		gender: currentUser.gender
+	});
+	console.log('📊 [MATCH CALC] Profile:', {
+		hasInterests: !!(profile.interests && profile.interests.length > 0),
+		interestsCount: profile.interests?.length || 0,
+		age: profile.age,
+		hasDatingPrefs: !!profile.dating?.preferences,
+		hasHereTo: !!profile.dating?.preferences?.hereTo,
+		hasWantToMeet: !!profile.dating?.preferences?.wantToMeet,
+		hasLanguages: !!(profile.dating?.preferences?.languages && profile.dating.preferences.languages.length > 0),
+		gender: profile.gender,
+		distance: profile.distance
+	});
+
+	let matchScore = 0;
+	let maxScore = 0;
+	let availableFactors = 0;
+
+	// 1. Shared Interests (30% weight)
+	if (currentUser.interests && Array.isArray(currentUser.interests) && currentUser.interests.length > 0 &&
+		profile.interests && Array.isArray(profile.interests) && profile.interests.length > 0) {
+		maxScore += 30;
+		availableFactors++;
+		const currentInterests = currentUser.interests.map(i => i.toLowerCase());
+		const profileInterests = profile.interests.map(i => i.toLowerCase());
+		const sharedInterests = currentInterests.filter(i => profileInterests.includes(i));
+		if (currentInterests.length > 0) {
+			const interestMatch = (sharedInterests.length / Math.max(currentInterests.length, profileInterests.length)) * 30;
+			matchScore += interestMatch;
+			console.log('✅ [MATCH CALC] Interests:', {
+				current: currentInterests,
+				profile: profileInterests,
+				shared: sharedInterests,
+				matchScore: interestMatch.toFixed(2),
+				totalScore: matchScore.toFixed(2)
+			});
+		}
+	} else {
+		console.log('❌ [MATCH CALC] Interests: Skipped (missing data)');
+	}
+
+	// 2. Age Compatibility (20% weight)
+	if (currentUser.dating?.preferences?.ageRange && profile.age) {
+		maxScore += 20;
+		availableFactors++;
+		const { min, max } = currentUser.dating.preferences.ageRange;
+		let ageScore = 0;
+		if (profile.age >= min && profile.age <= max) {
+			ageScore = 20; // Perfect match
+			matchScore += ageScore;
+		} else {
+			// Partial match based on how close the age is
+			const ageDiff = Math.min(
+				Math.abs(profile.age - min),
+				Math.abs(profile.age - max)
+			);
+			if (ageDiff <= 5) {
+				ageScore = 10; // Close match
+			} else if (ageDiff <= 10) {
+				ageScore = 5; // Somewhat close
+			}
+			matchScore += ageScore;
+		}
+		console.log('✅ [MATCH CALC] Age:', {
+			profileAge: profile.age,
+			preferredRange: `${min}-${max}`,
+			ageScore: ageScore,
+			totalScore: matchScore.toFixed(2)
+		});
+	} else {
+		console.log('❌ [MATCH CALC] Age: Skipped (missing data)');
+	}
+
+	// 3. Preferences Matching (25% weight)
+	let prefScore = 0;
+	let prefMax = 0;
+	
+	// hereTo preference match
+	if (currentUser.dating?.preferences?.hereTo && profile.dating?.preferences?.hereTo) {
+		prefMax += 10;
+		if (currentUser.dating.preferences.hereTo === profile.dating.preferences.hereTo) {
+			prefScore += 10; // Perfect match
+		} else {
+			prefScore += 5; // Partial match (both looking for something)
+		}
+		console.log('✅ [MATCH CALC] HereTo:', {
+			currentUser: currentUser.dating.preferences.hereTo,
+			profile: profile.dating.preferences.hereTo,
+			match: currentUser.dating.preferences.hereTo === profile.dating.preferences.hereTo,
+			score: currentUser.dating.preferences.hereTo === profile.dating.preferences.hereTo ? 10 : 5
+		});
+	}
+
+	// wantToMeet preference match
+	if (currentUser.dating?.preferences?.wantToMeet && profile.dating?.preferences?.wantToMeet) {
+		prefMax += 15;
+		const currentWant = (currentUser.dating.preferences.wantToMeet || '').toLowerCase();
+		const profileWant = (profile.dating.preferences.wantToMeet || '').toLowerCase();
+		const currentGender = (profile.gender || '').toLowerCase();
+		const userGender = (currentUser.gender || '').toLowerCase();
+		
+		let wantToMeetScore = 0;
+		if (currentWant === 'everyone' || profileWant === 'everyone') {
+			wantToMeetScore = 15; // Everyone matches all
+		} else if (currentWant === currentGender || profileWant === userGender) {
+			wantToMeetScore = 15; // Perfect match
+		} else {
+			wantToMeetScore = 5; // Some compatibility
+		}
+		prefScore += wantToMeetScore;
+		console.log('✅ [MATCH CALC] WantToMeet:', {
+			currentUserWant: currentWant,
+			profileWant: profileWant,
+			currentUserGender: userGender,
+			profileGender: currentGender,
+			score: wantToMeetScore
+		});
+	}
+	
+	if (prefMax > 0) {
+		maxScore += 25;
+		availableFactors++;
+		const prefMatchScore = (prefScore / prefMax) * 25;
+		matchScore += prefMatchScore;
+		console.log('✅ [MATCH CALC] Preferences Total:', {
+			prefScore: prefScore,
+			prefMax: prefMax,
+			calculatedScore: prefMatchScore.toFixed(2),
+			totalScore: matchScore.toFixed(2)
+		});
+	} else {
+		console.log('❌ [MATCH CALC] Preferences: Skipped (missing data)');
+	}
+
+	// 4. Language Matching (15% weight)
+	if (currentUser.dating?.preferences?.languages && Array.isArray(currentUser.dating.preferences.languages) && currentUser.dating.preferences.languages.length > 0 &&
+		profile.dating?.preferences?.languages && Array.isArray(profile.dating.preferences.languages) && profile.dating.preferences.languages.length > 0) {
+		maxScore += 15;
+		availableFactors++;
+		const currentLangs = currentUser.dating.preferences.languages.map(l => l.toLowerCase());
+		const profileLangs = profile.dating.preferences.languages.map(l => l.toLowerCase());
+		const sharedLangs = currentLangs.filter(l => profileLangs.includes(l));
+		if (currentLangs.length > 0) {
+			const langMatch = (sharedLangs.length / Math.max(currentLangs.length, profileLangs.length)) * 15;
+			matchScore += langMatch;
+			console.log('✅ [MATCH CALC] Languages:', {
+				current: currentLangs,
+				profile: profileLangs,
+				shared: sharedLangs,
+				matchScore: langMatch.toFixed(2),
+				totalScore: matchScore.toFixed(2)
+			});
+		}
+	} else {
+		console.log('❌ [MATCH CALC] Languages: Skipped (missing data)');
+	}
+
+	// 5. Distance Bonus (10% weight) - closer is better
+	if (profile.distance !== null && profile.distance !== undefined) {
+		maxScore += 10;
+		availableFactors++;
+		let distanceScore = 0;
+		if (profile.distance <= 10) {
+			distanceScore = 10; // Very close
+		} else if (profile.distance <= 25) {
+			distanceScore = 7; // Close
+		} else if (profile.distance <= 50) {
+			distanceScore = 5; // Moderate
+		} else if (profile.distance <= 100) {
+			distanceScore = 3; // Far but acceptable
+		}
+		matchScore += distanceScore;
+		console.log('✅ [MATCH CALC] Distance:', {
+			distance: profile.distance,
+			score: distanceScore,
+			totalScore: matchScore.toFixed(2)
+		});
+	} else {
+		console.log('❌ [MATCH CALC] Distance: Skipped (missing data)');
+	}
+
+	// If no factors are available, return 0
+	if (maxScore === 0 || availableFactors === 0) {
+		console.log('⚠️ [MATCH CALC] No factors available, returning 0%');
+		return 0;
+	}
+
+	// Calculate percentage (ensure it's between 0 and 100)
+	const rawPercentage = (matchScore / maxScore) * 100;
+	const percentage = Math.min(100, Math.max(0, Math.round(rawPercentage)));
+	
+	console.log('📈 [MATCH CALC] Final Calculation:', {
+		matchScore: matchScore.toFixed(2),
+		maxScore: maxScore,
+		availableFactors: availableFactors,
+		rawPercentage: rawPercentage.toFixed(2),
+		roundedPercentage: percentage
+	});
+	
+	// Return the exact calculated percentage with NO threshold or minimum
+	// This shows the true compatibility score based on actual data
+	console.log('🎯 [MATCH CALC] Final Match Percentage:', percentage, '%\n');
+	return percentage;
+}
+
+/**
  * Build search query based on filters
  */
 function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
@@ -219,8 +441,9 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 		
 		if (!currentUser) {
 			// OPTIMIZED: Select only needed fields for better caching (Phase 2 Optimization)
+			// Include gender for match calculation
 			currentUser = await User.findById(currentUserId)
-				.select('_id blockedUsers blockedBy location dating preferences interests isActive')
+				.select('_id blockedUsers blockedBy location dating preferences interests isActive gender')
 				.lean();
 			if (!currentUser) {
 				throw new Error('Current user not found');
@@ -610,6 +833,14 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 				isActive: profile.dating?.isDatingProfileActive || false
 			};
 
+			// Calculate match percentage
+			profile.matchPercentage = calculateMatchPercentage(currentUser, profile);
+			
+			// Debug logging (can be removed in production)
+			if (process.env.NODE_ENV === 'development') {
+				console.log(`[MATCH] Profile ${profile.username || profile._id}: ${profile.matchPercentage}% match`);
+			}
+
 			return profile;
 		});
 
@@ -648,6 +879,7 @@ module.exports = {
 	getAllDatingProfiles,
 	calculateDistance,
 	buildSearchQuery,
-	filterByDistance
+	filterByDistance,
+	calculateMatchPercentage
 };
 
