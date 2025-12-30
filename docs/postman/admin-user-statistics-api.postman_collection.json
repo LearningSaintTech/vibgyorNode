@@ -1,0 +1,228 @@
+{
+  "info": {
+    "name": "Admin User Statistics API",
+    "_postman_id": "b2c3d4e5-f6a7-8901-bcde-f23456789012",
+    "description": "Postman collection for Admin User Statistics API endpoints. Base URL stored in {{baseUrl}}. Admin token uses {{adminToken}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Weekly Statistics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text",
+            "description": "Admin access token"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/statistics/weekly",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "statistics", "weekly"]
+        },
+        "description": "Get weekly user statistics showing daily breakdown for the current week (Sunday to Saturday). Returns new users count per day."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/weekly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "weekly"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"status\": 200,\n  \"message\": \"Weekly user statistics fetched successfully\",\n  \"data\": {\n    \"period\": \"weekly\",\n    \"startDate\": \"2025-01-05\",\n    \"endDate\": \"2025-01-11\",\n    \"total\": 40000,\n    \"data\": [\n      { \"date\": \"2025-01-05\", \"day\": \"Sun\", \"count\": 5600 },\n      { \"date\": \"2025-01-06\", \"day\": \"Mon\", \"count\": 7200 },\n      { \"date\": \"2025-01-07\", \"day\": \"Tue\", \"count\": 3000 },\n      { \"date\": \"2025-01-08\", \"day\": \"Wed\", \"count\": 8400 },\n      { \"date\": \"2025-01-09\", \"day\": \"Thu\", \"count\": 5600 },\n      { \"date\": \"2025-01-10\", \"day\": \"Fri\", \"count\": 4000 },\n      { \"date\": \"2025-01-11\", \"day\": \"Sat\", \"count\": 6800 }\n    ]\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Monthly Statistics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text",
+            "description": "Admin access token"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/statistics/monthly",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "statistics", "monthly"]
+        },
+        "description": "Get monthly user statistics showing daily breakdown for the current month. Returns new users count per day."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/monthly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "monthly"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"status\": 200,\n  \"message\": \"Monthly user statistics fetched successfully\",\n  \"data\": {\n    \"period\": \"monthly\",\n    \"startDate\": \"2025-01-01\",\n    \"endDate\": \"2025-01-31\",\n    \"total\": 150000,\n    \"data\": [\n      { \"date\": \"2025-01-01\", \"day\": 1, \"dayName\": \"Wed\", \"count\": 5000 },\n      { \"date\": \"2025-01-02\", \"day\": 2, \"dayName\": \"Thu\", \"count\": 6000 }\n    ]\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "6 Months Statistics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text",
+            "description": "Admin access token"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/statistics/6months",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "statistics", "6months"]
+        },
+        "description": "Get 6 months user statistics showing monthly breakdown for the last 6 months. Returns new users count per month."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/6months",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "6months"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"status\": 200,\n  \"message\": \"6 months user statistics fetched successfully\",\n  \"data\": {\n    \"period\": \"6months\",\n    \"startDate\": \"2024-08-01\",\n    \"endDate\": \"2025-01-31\",\n    \"total\": 500000,\n    \"data\": [\n      { \"month\": \"Aug 2024\", \"monthKey\": \"2024-08\", \"count\": 80000 },\n      { \"month\": \"Sep 2024\", \"monthKey\": \"2024-09\", \"count\": 85000 },\n      { \"month\": \"Oct 2024\", \"monthKey\": \"2024-10\", \"count\": 90000 },\n      { \"month\": \"Nov 2024\", \"monthKey\": \"2024-11\", \"count\": 95000 },\n      { \"month\": \"Dec 2024\", \"monthKey\": \"2024-12\", \"count\": 100000 },\n      { \"month\": \"Jan 2025\", \"monthKey\": \"2025-01\", \"count\": 50000 }\n    ]\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "Yearly Statistics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text",
+            "description": "Admin access token"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/statistics/yearly",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "statistics", "yearly"]
+        },
+        "description": "Get yearly user statistics showing monthly breakdown for the current year. Returns new users count per month."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/statistics/yearly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "statistics", "yearly"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"status\": 200,\n  \"message\": \"Yearly user statistics fetched successfully\",\n  \"data\": {\n    \"period\": \"yearly\",\n    \"year\": 2025,\n    \"startDate\": \"2025-01-01\",\n    \"endDate\": \"2025-12-31\",\n    \"total\": 1200000,\n    \"data\": [\n      { \"month\": \"Jan\", \"monthKey\": \"2025-01\", \"monthNumber\": 1, \"count\": 100000 },\n      { \"month\": \"Feb\", \"monthKey\": \"2025-02\", \"monthNumber\": 2, \"count\": 95000 },\n      { \"month\": \"Mar\", \"monthKey\": \"2025-03\", \"monthNumber\": 3, \"count\": 110000 }\n    ]\n  }\n}"
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string",
+      "description": "Admin access token obtained from /admin-auth/verify-otp"
+    }
+  ]
+}
+

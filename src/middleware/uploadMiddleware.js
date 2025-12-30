@@ -1,63 +1,70 @@
 const multer = require('multer');
 
-const ACCEPTED_MIME = [
+const IMAGE_MIME = [
 	'image/jpeg',
 	'image/png',
 	'image/webp',
-	'image/gif',
-	'video/mp4',
-	'video/quicktime',
-	'video/avi',
-	'video/mov',
-	'audio/mp3',
-	'audio/wav',
-	'audio/m4a',
-	'audio/mpeg',
-	'application/pdf',
-	'application/msword',
-	'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-	'text/plain',
-	'application/zip',
-	'application/x-rar-compressed'
+	'image/gif'
 ];
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file
-const MAX_FILES = 10; // allow multiple images/videos
+const ALL_MIME = [
+	...IMAGE_MIME,
+	'video/mp4',
+	'video/quicktime',
+	'audio/mpeg',
+	'application/pdf'
+];
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES = 10;
 
 const storage = multer.memoryStorage();
 
-function fileFilter(req, file, cb) {
-	console.log("fileFilter",file);
-	if (!ACCEPTED_MIME.includes(file.mimetype)) {
-		// eslint-disable-next-line no-console
-		console.warn('[UPLOAD] Rejected file type', { mimetype: file.mimetype, filename: file.originalname });
-		return cb(new Error('Unsupported file type'));
+/* ---------- FILE FILTER ---------- */
+function imageFileFilter(req, file, cb) {
+	if (!IMAGE_MIME.includes(file.mimetype)) {
+		return cb(new Error('Only image files are allowed'), false);
 	}
-	// eslint-disable-next-line no-console
-	console.log('[UPLOAD] Accept file', { mimetype: file.mimetype, filename: file.originalname, size: file.size });
 	cb(null, true);
 }
 
-const uploadSingle = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE } }).single('file');
-const uploadMultiple = multer({ storage, fileFilter, limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES } }).array('files', MAX_FILES);
+function anyFileFilter(req, file, cb) {
+	if (!ALL_MIME.includes(file.mimetype)) {
+		return cb(new Error('Unsupported file type'), false);
+	}
+	cb(null, true);
+}
 
-// Upload with thumbnails support (for posts with videos)
-const uploadWithThumbnails = multer({ 
-  storage, 
-  fileFilter, 
-  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES * 2 } // Allow files + thumbnails
+/* ---------- MIDDLEWARES ---------- */
+
+// ✅ Profile image upload (ONLY images, field = file)
+const uploadSingle = multer({
+	storage,
+	fileFilter: imageFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE }
+}).single('file');
+
+// For posts / media uploads
+const uploadMultiple = multer({
+	storage,
+	fileFilter: anyFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES }
+}).array('files', MAX_FILES);
+
+// Posts with thumbnails
+const uploadWithThumbnails = multer({
+	storage,
+	fileFilter: anyFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES * 2 }
 }).fields([
-  { name: 'files', maxCount: MAX_FILES },
-  { name: 'thumbnails', maxCount: MAX_FILES }, // Video thumbnails
+	{ name: 'files', maxCount: MAX_FILES },
+	{ name: 'thumbnails', maxCount: MAX_FILES }
 ]);
 
 module.exports = {
 	uploadSingle,
 	uploadMultiple,
 	uploadWithThumbnails,
-	ACCEPTED_MIME,
 	MAX_FILE_SIZE,
-	MAX_FILES,
+	MAX_FILES
 };
-
-

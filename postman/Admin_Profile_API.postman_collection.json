@@ -1,0 +1,350 @@
+{
+	"info": {
+		"_postman_id": "admin-profile-api-collection",
+		"name": "Admin Profile API",
+		"description": "Complete API collection for Admin Profile management including image uploads",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get Admin Profile",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/admin/profile",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"admin",
+						"profile"
+					]
+				},
+				"description": "Get the admin profile. Since there's only one admin, no ID parameter is needed."
+			},
+			"response": []
+		},
+		{
+			"name": "Create Admin Profile",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "firstName",
+							"value": "John",
+							"type": "text"
+						},
+						{
+							"key": "lastName",
+							"value": "Doe",
+							"type": "text"
+						},
+						{
+							"key": "dob",
+							"value": "1990-01-15",
+							"type": "text",
+							"description": "Date of birth (YYYY-MM-DD)"
+						},
+						{
+							"key": "gender",
+							"value": "male",
+							"type": "text",
+							"description": "Options: male, female, other"
+						},
+						{
+							"key": "email",
+							"value": "admin@example.com",
+							"type": "text"
+						},
+						{
+							"key": "countryCode",
+							"value": "+91",
+							"type": "text"
+						},
+						{
+							"key": "phoneNumber",
+							"value": "9999999999",
+							"type": "text"
+						},
+						{
+							"key": "address",
+							"value": "123 Main Street",
+							"type": "text"
+						},
+						{
+							"key": "city",
+							"value": "Mumbai",
+							"type": "text"
+						},
+						{
+							"key": "pinCode",
+							"value": "400001",
+							"type": "text"
+						},
+						{
+							"key": "state",
+							"value": "Maharashtra",
+							"type": "text"
+						},
+						{
+							"key": "isActive",
+							"value": "true",
+							"type": "text"
+						},
+						{
+							"key": "profileImage",
+							"type": "file",
+							"src": [],
+							"description": "Profile image (JPEG, PNG, WebP, GIF - Max 5MB)"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/admin/profile",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"admin",
+						"profile"
+					]
+				},
+				"description": "Create admin profile. Only one admin profile can exist. Profile image is optional."
+			},
+			"response": []
+		},
+		{
+			"name": "Update Admin Profile",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "firstName",
+							"value": "John",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "lastName",
+							"value": "Smith",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "dob",
+							"value": "1990-01-15",
+							"type": "text",
+							"description": "Optional - Date of birth (YYYY-MM-DD)"
+						},
+						{
+							"key": "gender",
+							"value": "male",
+							"type": "text",
+							"description": "Optional - Options: male, female, other"
+						},
+						{
+							"key": "email",
+							"value": "admin@example.com",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "countryCode",
+							"value": "+91",
+							"type": "text",
+							"description": "Optional"
+						},
+						{
+							"key": "phoneNumber",
+							"value": "9999999999",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "address",
+							"value": "123 Main Street",
+							"type": "text",
+							"description": "Optional"
+						},
+						{
+							"key": "city",
+							"value": "Mumbai",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "pinCode",
+							"value": "400001",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "state",
+							"value": "Maharashtra",
+							"type": "text",
+							"description": "Optional - only include if updating"
+						},
+						{
+							"key": "isActive",
+							"value": "true",
+							"type": "text",
+							"description": "Optional"
+						},
+						{
+							"key": "profileImage",
+							"type": "file",
+							"src": [],
+							"description": "Optional - New profile image (replaces old one)"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/admin/profile",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"admin",
+						"profile"
+					]
+				},
+				"description": "Update admin profile. All fields are optional. If profileImage is provided, it will replace the existing image."
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Admin Profile",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/admin/profile",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"admin",
+						"profile"
+					]
+				},
+				"description": "Delete admin profile. This will also delete the profile image from S3."
+			},
+			"response": []
+		},
+		{
+			"name": "Update Profile Image Only",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "profileImage",
+							"type": "file",
+							"src": [],
+							"description": "New profile image (JPEG, PNG, WebP, GIF - Max 5MB)"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/admin/profile",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"admin",
+						"profile"
+					]
+				},
+				"description": "Update only the profile image without changing other fields."
+			},
+			"response": []
+		},
+		{
+			"name": "Create Profile Without Image",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"dob\": \"1990-01-15\",\n  \"gender\": \"male\",\n  \"email\": \"admin@example.com\",\n  \"countryCode\": \"+91\",\n  \"phoneNumber\": \"9999999999\",\n  \"address\": \"123 Main Street\",\n  \"city\": \"Mumbai\",\n  \"pinCode\": \"400001\",\n  \"state\": \"Maharashtra\",\n  \"isActive\": true\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/admin/profile",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"admin",
+						"profile"
+					]
+				},
+				"description": "Create admin profile without image using JSON body. Note: This won't work with multipart/form-data, use form-data mode for file uploads."
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "admin_token",
+			"value": "your_admin_jwt_token_here",
+			"type": "string"
+		}
+	]
+}
+
+
