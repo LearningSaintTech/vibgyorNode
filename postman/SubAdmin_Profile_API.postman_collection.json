@@ -1,0 +1,590 @@
+{
+	"info": {
+		"_postman_id": "subadmin-profile-api-collection-v2",
+		"name": "SubAdmin Profile API - Complete",
+		"description": "Complete API collection for SubAdmin Profile CRUD operations with multipart/form-data support for image uploads",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "subadmin-profile"
+	},
+	"item": [
+		{
+			"name": "SubAdmin - Own Profile",
+			"item": [
+				{
+					"name": "1. Get Own Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has success field\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('success');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{subadmin_token}}",
+								"type": "text",
+								"description": "SubAdmin JWT Token"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile"
+							]
+						},
+						"description": "Get the current subadmin's profile using JWT token.\n\n**Authentication Required:** SubAdmin JWT token"
+					},
+					"response": []
+				},
+				{
+					"name": "2. Create Profile (Minimal)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{subadmin_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "firstName",
+									"value": "John",
+									"type": "text",
+									"description": "Required: First name"
+								},
+								{
+									"key": "lastName",
+									"value": "Doe",
+									"type": "text",
+									"description": "Required: Last name"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile"
+							]
+						},
+						"description": "Create subadmin profile with only required fields.\n\n**Content-Type:** multipart/form-data (automatic)\n\n**Required Fields:**\n- firstName\n- lastName\n\n**Optional Fields:**\n- email, phone, gender, dateOfBirth, address, city, state, pinCode, isActive, profileImage"
+					},
+					"response": []
+				},
+				{
+					"name": "3. Create Profile (With Image)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{subadmin_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "firstName",
+									"value": "John",
+									"type": "text",
+									"description": "Required"
+								},
+								{
+									"key": "lastName",
+									"value": "Doe",
+									"type": "text",
+									"description": "Required"
+								},
+								{
+									"key": "email",
+									"value": "subadmin@example.com",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "phone",
+									"value": "8888888888",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "gender",
+									"value": "Male",
+									"type": "text",
+									"description": "Optional: Male, Female, Other"
+								},
+								{
+									"key": "dateOfBirth",
+									"value": "1990-01-15",
+									"type": "text",
+									"description": "Optional: YYYY-MM-DD format"
+								},
+								{
+									"key": "address",
+									"value": "123 Main Street",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "city",
+									"value": "Mumbai",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "state",
+									"value": "Maharashtra",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "pinCode",
+									"value": "400001",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "isActive",
+									"value": "true",
+									"type": "text",
+									"description": "Optional: true/false"
+								},
+								{
+									"key": "profileImage",
+									"type": "file",
+									"src": [],
+									"description": "Optional: Image file (JPEG, PNG, WebP, GIF - Max 5MB)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile"
+							]
+						},
+						"description": "Create subadmin profile with all fields including profile image.\n\n**Content-Type:** multipart/form-data (automatic)\n\n**Image Upload:**\n- Field name: `profileImage`\n- Formats: JPEG, PNG, WebP, GIF\n- Max size: 5MB\n- Stored in S3"
+					},
+					"response": []
+				},
+				{
+					"name": "4. Update Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{subadmin_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "firstName",
+									"value": "John",
+									"type": "text",
+									"description": "Optional - only include if updating"
+								},
+								{
+									"key": "lastName",
+									"value": "Smith",
+									"type": "text",
+									"description": "Optional - only include if updating"
+								},
+								{
+									"key": "email",
+									"value": "newemail@example.com",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "phone",
+									"value": "9999999999",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "gender",
+									"value": "Male",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "dateOfBirth",
+									"value": "1990-01-15",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "address",
+									"value": "456 New Street",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "city",
+									"value": "Delhi",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "state",
+									"value": "Delhi",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "pinCode",
+									"value": "110001",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "isActive",
+									"value": "true",
+									"type": "text",
+									"description": "Optional"
+								},
+								{
+									"key": "profileImage",
+									"type": "file",
+									"src": [],
+									"description": "Optional - New image replaces old one"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile"
+							]
+						},
+						"description": "Update subadmin profile. All fields are optional.\n\n**Content-Type:** multipart/form-data (automatic)\n\n**Note:** Only include fields you want to update. If profileImage is provided, it will replace the existing image."
+					},
+					"response": []
+				},
+				{
+					"name": "5. Update Profile Image Only",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{subadmin_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "profileImage",
+									"type": "file",
+									"src": [],
+									"description": "New profile image (JPEG, PNG, WebP, GIF - Max 5MB)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile"
+							]
+						},
+						"description": "Update only the profile image without changing other fields.\n\n**Content-Type:** multipart/form-data (automatic)"
+					},
+					"response": []
+				},
+				{
+					"name": "6. Delete Profile",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{subadmin_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile"
+							]
+						},
+						"description": "Delete subadmin profile and associated image from S3.\n\n**Warning:** This action cannot be undone!"
+					},
+					"response": []
+				}
+			],
+			"description": "SubAdmin routes for managing own profile. All routes require SubAdmin JWT authentication."
+		},
+		{
+			"name": "Admin - Manage All SubAdmins",
+			"item": [
+				{
+					"name": "7. Get All SubAdmin Profiles",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}",
+								"type": "text",
+								"description": "Admin JWT Token"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/subadmin/profiles?page=1&limit=10&search=&isActive=",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profiles"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (default: 1)",
+									"disabled": false
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Items per page (default: 10)",
+									"disabled": false
+								},
+								{
+									"key": "search",
+									"value": "",
+									"description": "Search by firstName, lastName, email, phone",
+									"disabled": true
+								},
+								{
+									"key": "isActive",
+									"value": "",
+									"description": "Filter by active status (true/false)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all subadmin profiles with pagination and search.\n\n**Authentication Required:** Admin JWT token\n\n**Query Parameters:**\n- `page`: Page number (default: 1)\n- `limit`: Items per page (default: 10)\n- `search`: Search by firstName, lastName, email, phone\n- `isActive`: Filter by active status (true/false)"
+					},
+					"response": []
+				},
+				{
+					"name": "8. Get SubAdmin Profile by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}",
+								"type": "text",
+								"description": "Admin JWT Token"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/subadmin/profile/:id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"subadmin",
+								"profile",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "SUBADMIN_PROFILE_ID_HERE",
+									"description": "SubAdmin Profile ID (MongoDB ObjectId)"
+								}
+							]
+						},
+						"description": "Get a specific subadmin profile by ID.\n\n**Authentication Required:** Admin JWT token\n\n**URL Parameter:**\n- `id`: SubAdmin Profile ID (MongoDB ObjectId)"
+					},
+					"response": []
+				}
+			],
+			"description": "Admin routes for managing all subadmin profiles. All routes require Admin JWT authentication."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "subadmin_token",
+			"value": "your_subadmin_jwt_token_here",
+			"type": "string",
+			"description": "SubAdmin JWT token obtained from /subadmin/auth/verify-otp"
+		},
+		{
+			"key": "admin_token",
+			"value": "your_admin_jwt_token_here",
+			"type": "string",
+			"description": "Admin JWT token obtained from /admin-auth/verify-otp"
+		}
+	]
+}

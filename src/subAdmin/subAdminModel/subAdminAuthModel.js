@@ -9,12 +9,32 @@ const SubAdminSchema = new mongoose.Schema(
 		avatarUrl: { type: String, default: '' },
 		isProfileCompleted: { type: Boolean, default: false },
 		role: { type: String, default: 'subadmin' },
+		gender: { type: String, enum: ['Male', 'Female', 'Other'], default: 'Male' },
+		dateOfBirth: { type: Date, default: null },
+		address: {
+			type: String,
+			default: ''
+		},
+		location: {
+			city: { type: String, default: '' },
+			state: { type: String, default: '' },
+			country: { type: String, default: '' }
+		},
+		pinCode: {
+			type: String,
+			default: ''
+		},
+
+		isProfileCompleted: {
+			type: Boolean,
+			default: false
+		},
 		isVerified: { type: Boolean, default: false },
 		isActive: { type: Boolean, default: false }, // Changed to false - needs admin approval
-		approvalStatus: { 
-			type: String, 
-			enum: ['pending', 'approved', 'rejected'], 
-			default: 'pending' 
+		approvalStatus: {
+			type: String,
+			enum: ['pending', 'approved', 'rejected'],
+			default: 'pending'
 		},
 		approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 		approvedAt: { type: Date, default: null },
@@ -26,6 +46,7 @@ const SubAdminSchema = new mongoose.Schema(
 		lastOtpSentAt: { type: Date, default: null },
 		lastLoginAt: { type: Date, default: null },
 	},
+
 	{ timestamps: true }
 );
 

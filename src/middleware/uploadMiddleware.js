@@ -1,11 +1,16 @@
 const multer = require('multer');
 
-const ACCEPTED_MIME = [
+const IMAGE_MIME = [
 	// Images
 	'image/jpeg',
 	'image/jpg', // Some systems use jpg instead of jpeg
 	'image/png',
 	'image/webp',
+	'image/gif'
+];
+
+const ALL_MIME = [
+	...IMAGE_MIME,
 	'image/gif',
 	'image/bmp',
 	'image/heic',
@@ -22,6 +27,7 @@ const ACCEPTED_MIME = [
 	'audio/wav',
 	'audio/m4a',
 	'audio/mpeg',
+	'application/pdf'
 	'audio/aac',
 	'audio/flac',
 	'audio/ogg',
@@ -44,6 +50,8 @@ const ACCEPTED_MIME = [
 	'application/x-7z-compressed'
 ];
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES = 10;
 // Different size limits for different file types
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB default per file
 const MAX_MUSIC_SIZE = 50 * 1024 * 1024; // 50MB for music files
@@ -52,6 +60,18 @@ const MAX_FILES = 10; // allow multiple images/videos
 
 const storage = multer.memoryStorage();
 
+/* ---------- FILE FILTER ---------- */
+function imageFileFilter(req, file, cb) {
+	if (!IMAGE_MIME.includes(file.mimetype)) {
+		return cb(new Error('Only image files are allowed'), false);
+	}
+	cb(null, true);
+}
+
+function anyFileFilter(req, file, cb) {
+	if (!ALL_MIME.includes(file.mimetype)) {
+		return cb(new Error('Unsupported file type'), false);
+	}
 function fileFilter(req, file, cb) {
 	console.log("fileFilter", file);
 	
@@ -99,29 +119,42 @@ function fileFilter(req, file, cb) {
 	cb(null, true);
 }
 
+/* ---------- MIDDLEWARES ---------- */
+
+// ✅ Profile image upload (ONLY images, field = file)
+const uploadSingle = multer({
+	storage,
+	fileFilter: imageFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE }
+}).single('file');
+
+// For posts / media uploads
+const uploadMultiple = multer({
+	storage,
+	fileFilter: anyFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES }
+}).array('files', MAX_FILES);
 // Upload single file with dynamic size limit (handled in fileFilter)
 const uploadSingle = multer({ storage, fileFilter, limits: { fileSize: MAX_MUSIC_SIZE } }).single('file');
 const uploadMultiple = multer({ storage, fileFilter, limits: { fileSize: MAX_MUSIC_SIZE, files: MAX_FILES } }).array('files', MAX_FILES);
 
-// Upload with thumbnails support (for posts with videos)
-const uploadWithThumbnails = multer({ 
-  storage, 
-  fileFilter, 
-  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES * 2 } // Allow files + thumbnails
+// Posts with thumbnails
+const uploadWithThumbnails = multer({
+	storage,
+	fileFilter: anyFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES * 2 }
 }).fields([
-  { name: 'files', maxCount: MAX_FILES },
-  { name: 'thumbnails', maxCount: MAX_FILES }, // Video thumbnails
+	{ name: 'files', maxCount: MAX_FILES },
+	{ name: 'thumbnails', maxCount: MAX_FILES }
 ]);
 
 module.exports = {
 	uploadSingle,
 	uploadMultiple,
 	uploadWithThumbnails,
-	ACCEPTED_MIME,
 	MAX_FILE_SIZE,
+	MAX_FILES
 	MAX_MUSIC_SIZE,
 	MAX_DOCUMENT_SIZE,
 	MAX_FILES,
 };
-
-

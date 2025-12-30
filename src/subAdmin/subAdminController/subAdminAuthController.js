@@ -50,70 +50,217 @@ async function verifyOtp(req, res) {
 		return ApiResponse.serverError(res, 'Failed to verify OTP');
 	}
 }
-
-async function updateProfile(req, res) {
+async function getProfile(req, res) {
 	try {
-		// eslint-disable-next-line no-console
-		console.log('[SUBADMIN] updateProfile request received');
-		
-		const { name, email } = req.body || {};
-		const sub = await SubAdmin.findById(req.user?.userId);
+		console.log('[SUBADMIN] getProfile request received');
+
+		const sub = await SubAdmin.findById(req.user.userId)
+			.select('-otpCode -otpExpiresAt -lastOtpSentAt');
+
 		if (!sub) return ApiResponse.notFound(res, 'Subadmin not found');
 
-		// Handle image upload if present
-		let avatarUrl = sub.avatarUrl; // Keep existing if no new upload
-		if (req.file) {
-			// eslint-disable-next-line no-console
-			console.log('[SUBADMIN] Uploading image to S3');
-			const uploadResult = await uploadBuffer({
-				buffer: req.file.buffer,
-				contentType: req.file.mimetype,
-				userId: String(sub._id),
-				category: 'profile',
-				type: 'images',
-				filename: req.file.originalname,
-				acl: 'public-read',
-			});
-			avatarUrl = uploadResult.url;
-			// eslint-disable-next-line no-console
-			console.log('[SUBADMIN] Image uploaded to S3:', avatarUrl);
-		}
-
-		// Update profile fields
-		if (name !== undefined) sub.name = name;
-		if (email !== undefined) sub.email = email;
-		sub.avatarUrl = avatarUrl;
-		sub.isProfileCompleted = true;
-		
-		// Only set approval status to pending if it's the first profile completion
-		// This allows existing SubAdmins to update their profiles without affecting approval status
-		if (!sub.approvalStatus || sub.approvalStatus === 'none') {
-			sub.approvalStatus = 'pending';
-			sub.isActive = false; // Ensure inactive until approved (only for new applications)
-		}
-		
-		await sub.save();
-
-		// eslint-disable-next-line no-console
-		console.log('[SUBADMIN] Profile updated successfully');
-		return ApiResponse.success(res, { 
-			id: sub._id, 
-			name: sub.name, 
-			email: sub.email, 
-			avatarUrl: sub.avatarUrl, 
+		return ApiResponse.success(res, {
+			id: sub._id,
+			phoneNumber: sub.phoneNumber,
+			countryCode: sub.countryCode,
+			name: sub.name,
+			email: sub.email,
+			avatarUrl: sub.avatarUrl,
+			gender: sub.gender,
+			dateOfBirth: sub.dateOfBirth,
+			address: sub.address,
+			city: sub.city,
+			state: sub.state,
+			pinCode: sub.pinCode,
+			isVerified: sub.isVerified,
 			isProfileCompleted: sub.isProfileCompleted,
 			approvalStatus: sub.approvalStatus,
 			isActive: sub.isActive,
-			message: sub.approvalStatus === 'pending' 
-				? 'Profile completed successfully. Your application is pending admin approval.'
-				: 'Profile updated successfully.'
-		}, 'Profile updated successfully');
+			createdAt: sub.createdAt,
+			updatedAt: sub.updatedAt
+		}, 'Profile fetched successfully');
+
 	} catch (err) {
-		// eslint-disable-next-line no-console
-		console.error('[SUBADMIN] updateProfile error:', err?.message || err);
+		console.error('[SUBADMIN] getProfile error:', err);
+		return ApiResponse.serverError(res, 'Failed to fetch profile');
+	}
+}
+
+
+async function updateProfile(req, res) {
+	try {
+		console.log('[SUBADMIN] updateProfile request received', {
+			userId: req.user?.userId,
+			ip: req.ip,
+			hasFile: !!req.file,
+			bodyKeys: Object.keys(req.body || {})
+		});
+
+		const {
+			name,
+			email,
+			gender,
+			dateOfBirth,
+			address,
+			city,
+			state,
+			pinCode
+		} = req.body || {};
+
+		// Log incoming data for debugging
+		console.log('[SUBADMIN] Incoming profile data', {
+			name: name ?? null,
+			email: email ?? null,
+			gender: gender ?? null,
+			dateOfBirth: dateOfBirth ?? null,
+			address: address ?? null,
+			city: city ?? null,
+			state: state ?? null,
+			pinCode: pinCode ?? null
+		});
+
+		const sub = await SubAdmin.findById(req.user.userId);
+		if (!sub) {
+			console.warn('[SUBADMIN] Subadmin not found', { userId: req.user.userId });
+			return ApiResponse.notFound(res, 'Subadmin not found');
+		}
+
+		console.log('[SUBADMIN] Subadmin found', {
+			id: sub._id,
+			currentName: sub.name,
+			currentEmail: sub.email,
+			currentAvatar: !!sub.avatarUrl,
+			isProfileCompleted: sub.isProfileCompleted,
+			approvalStatus: sub.approvalStatus
+		});
+
+		/* ---------- IMAGE UPLOAD ---------- */
+		let avatarUrl = sub.avatarUrl;
+
+		if (req.file) {
+			console.log('[SUBADMIN] Avatar file received', {
+				originalname: req.file.originalname,
+				mimetype: req.file.mimetype,
+				size: req.file.size,
+				fieldname: req.file.fieldname
+			});
+
+			try {
+				console.log('[S3] Starting avatar upload for subadmin', { userId: sub._id });
+
+				const uploadResult = await uploadBuffer({
+					buffer: req.file.buffer,
+					contentType: req.file.mimetype,
+					userId: String(sub._id),
+					category: 'profile',
+					type: 'images',
+					filename: req.file.originalname,
+				});
+
+				avatarUrl = uploadResult.url;
+
+				console.log('✅ [S3] Avatar uploaded successfully', {
+					key: uploadResult.key,
+					url: avatarUrl,
+					bucket: uploadResult.bucket
+				});
+			} catch (uploadError) {
+				console.error('❌ [S3] Avatar upload failed - continuing without new avatar', {
+					userId: sub._id,
+					filename: req.file.originalname,
+					error: uploadError.name,
+					message: uploadError.message,
+					stack: uploadError.stack?.split('\n')[0]
+				});
+				// Non-critical: profile update continues even if image upload fails
+			}
+		} else {
+			console.log('[SUBADMIN] No avatar file uploaded - keeping existing', { currentAvatarUrl: avatarUrl });
+		}
+
+		/* ---------- UPDATE PROFILE FIELDS ---------- */
+		const updates = {};
+
+		if (name !== undefined) { sub.name = name; updates.name = name; }
+		if (email !== undefined) { sub.email = email; updates.email = email; }
+		if (gender !== undefined) { sub.gender = gender; updates.gender = gender; }
+		if (dateOfBirth !== undefined) {
+			sub.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+			updates.dateOfBirth = sub.dateOfBirth;
+		}
+		if (address !== undefined) { sub.address = address; updates.address = address; }
+		if (city !== undefined) { sub.city = city; updates.city = city; }
+		if (state !== undefined) { sub.state = state; updates.state = state; }
+		if (pinCode !== undefined) { sub.pinCode = pinCode; updates.pinCode = pinCode; }
+
+		// Always update avatar and completion status
+		sub.avatarUrl = avatarUrl;
+		sub.isProfileCompleted = true;
+
+		// Handle approval status logic
+		if (sub.approvalStatus === 'pending') {
+			sub.isActive = false;
+			updates.isActive = false;
+		}
+
+		console.log('[SUBADMIN] Applying profile updates', {
+			updatedFields: Object.keys(updates),
+			newAvatarUrl: avatarUrl !== sub.avatarUrl ? avatarUrl : '(unchanged)',
+			isProfileCompleted: true,
+			approvalStatus: sub.approvalStatus,
+			isActive: sub.isActive
+		});
+
+		/* ---------- SAVE TO DATABASE ---------- */
+		try {
+			await sub.save();
+			console.log('✅ [SUBADMIN] Profile updated and saved successfully', { userId: sub._id });
+		} catch (saveError) {
+			console.error('❌ [SUBADMIN] Failed to save profile', {
+				userId: sub._id,
+				error: saveError.name,
+				message: saveError.message,
+				validationErrors: saveError.errors ? Object.keys(saveError.errors) : null
+			});
+			throw saveError; // Let outer catch handle response
+		}
+
+		/* ---------- SUCCESS RESPONSE ---------- */
+		const responseData = {
+			id: sub._id,
+			phoneNumber: sub.phoneNumber,
+			name: sub.name,
+			email: sub.email,
+			avatarUrl: sub.avatarUrl,
+			gender: sub.gender,
+			dateOfBirth: sub.dateOfBirth,
+			address: sub.address,
+			city: sub.city,
+			state: sub.state,
+			pinCode: sub.pinCode,
+			isProfileCompleted: sub.isProfileCompleted,
+			approvalStatus: sub.approvalStatus,
+			isActive: sub.isActive
+		};
+
+		console.log('🎉 [SUBADMIN] Profile update completed successfully', { userId: sub._id });
+
+		return ApiResponse.success(res, responseData, 'Profile updated successfully');
+
+	} catch (err) {
+		console.error('💥 [SUBADMIN] updateProfile UNHANDLED ERROR', {
+			userId: req.user?.userId,
+			error: err.name,
+			message: err.message,
+			stack: err.stack?.split('\n').slice(0, 5).join('\n')
+		});
+
 		return ApiResponse.serverError(res, 'Failed to update profile');
 	}
 }
+
+
+
 
 async function resendOtp(req, res) {
 	try {
@@ -121,13 +268,13 @@ async function resendOtp(req, res) {
 		if (!phoneNumber) return ApiResponse.badRequest(res, 'phoneNumber is required');
 		const sub = await SubAdmin.findOne({ phoneNumber });
 		if (!sub) return ApiResponse.notFound(res, 'SubAdmin not found');
-		
+
 		const now = Date.now();
 		if (sub.lastOtpSentAt && now - sub.lastOtpSentAt.getTime() < OTP_RESEND_WINDOW_MS) {
 			const waitMs = OTP_RESEND_WINDOW_MS - (now - sub.lastOtpSentAt.getTime());
 			return ApiResponse.tooMany(res, `Please wait ${Math.ceil(waitMs / 1000)}s before requesting a new OTP`, 'OTP_RATE_LIMIT');
 		}
-		
+
 		sub.otpCode = HARD_CODED_OTP;
 		sub.otpExpiresAt = new Date(now + OTP_TTL_MS);
 		sub.lastOtpSentAt = new Date(now);
@@ -138,6 +285,6 @@ async function resendOtp(req, res) {
 	}
 }
 
-module.exports = { sendOtp, verifyOtp, resendOtp, updateProfile };
+module.exports = { sendOtp, verifyOtp, resendOtp, getProfile, updateProfile };
 
 
