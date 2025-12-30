@@ -236,13 +236,92 @@ class EnhancedRealtimeService {
   }
 
   /**
-   * Setup chat-related event handlers
+   * Setup chat-related event handlers (social chats)
    */
   setupChatEvents(socket) {
-    // Join chat room
+    // Join social chat room
     socket.on('join_chat', async (chatId) => {
+      console.log('🔵 [REALTIME_SVC] join_chat event received:', {
+        userId: socket.userId,
+        username: socket.user?.username,
+        chatId: chatId,
+        socketId: socket.id,
+        timestamp: new Date().toISOString()
+      });
       try {
-        console.log('[REALTIME_SERVICE] 🔌 Join chat request:', {
+        const userId = socket.userId;
+        
+        // Validate chat access (social chat)
+        console.log('🔵 [REALTIME_SVC] Validating chat access...', { chatId, userId });
+        const chat = await Chat.findById(chatId);
+        if (!chat || !chat.participants.includes(userId)) {
+          console.error('❌ [REALTIME_SVC] Access denied to social chat:', { chatId, userId, participants: chat?.participants, chatExists: !!chat });
+          socket.emit('error', { message: 'Access denied to this chat' });
+          return;
+        }
+        console.log('✅ [REALTIME_SVC] Chat access validated');
+
+        // Join social chat room
+        const room = `chat:${chatId}`;
+        console.log('🔵 [REALTIME_SVC] Joining room:', room);
+        socket.join(room);
+        
+        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+        console.log('✅ [REALTIME_SVC] User joined social chat room:', { userId, chatId, room, clientCount });
+        
+        // Mark messages as read and emit status updates
+        console.log('🔵 [REALTIME_SVC] Marking messages as read...', { chatId, userId });
+        const updatedMessages = await Message.find({
+          chatId: chatId,
+          senderId: { $ne: userId },
+          'readBy.userId': { $ne: userId },
+          isDeleted: false
+        }).limit(100); // Limit to recent messages to avoid performance issues
+        
+        await Message.markChatAsRead(chatId, userId);
+        console.log('✅ [REALTIME_SVC] Messages marked as read');
+        
+        // Emit status updates for each message that was marked as read
+        // Note: room variable is already declared above
+        for (const msg of updatedMessages) {
+          this.io.to(room).emit('message_status_update', {
+            messageId: msg._id,
+            chatId: chatId,
+            status: 'read',
+            timestamp: new Date()
+          });
+        }
+        console.log('✅ [REALTIME_SVC] Status updates emitted for', updatedMessages.length, 'messages');
+        
+        // Reset unread count
+        console.log('🔵 [REALTIME_SVC] Resetting unread count...', { chatId, userId });
+        chat.resetUnreadCount(userId);
+        await chat.save();
+        console.log('✅ [REALTIME_SVC] Unread count reset');
+        
+        // Notify other participants
+        console.log('🔵 [REALTIME_SVC] Notifying other participants...', { chatId, room });
+        socket.to(room).emit('user_joined_chat', {
+          userId: userId,
+          username: socket.user.username,
+          chatId: chatId,
+          timestamp: new Date()
+        });
+        console.log('✅ [REALTIME_SVC] Other participants notified');
+
+        socket.emit('chat_joined', { chatId, timestamp: new Date() });
+        console.log('✅ [REALTIME_SVC] Join confirmation sent to user');
+      } catch (error) {
+        console.error('❌ [REALTIME_SVC] Error joining social chat:', { error: error.message, stack: error.stack, chatId, userId: socket.userId });
+        socket.emit('error', { message: 'Failed to join chat' });
+      }
+    });
+
+    // Join dating chat room
+    socket.on('join_dating_chat', async (chatId) => {
+      try {
+        console.log('[REALTIME_SERVICE] 💕 Join dating chat request:', {
           userId: socket.userId,
           username: socket.user?.username,
           chatId: chatId
@@ -250,45 +329,59 @@ class EnhancedRealtimeService {
         
         const userId = socket.userId;
         
-        // Validate chat access
-        const chat = await Chat.findById(chatId);
-        if (!chat || !chat.participants.includes(userId)) {
-          console.log('[REALTIME_SERVICE] ❌ Access denied to chat:', { chatId, userId, participants: chat?.participants });
-          socket.emit('error', { message: 'Access denied to this chat' });
+        // Validate chat access (dating chat)
+        const DatingChat = require('../user/dating/models/datingChatModel');
+        const chat = await DatingChat.findById(chatId);
+        if (!chat || !chat.participants.some(p => p.toString() === userId)) {
+          console.log('[REALTIME_SERVICE] ❌ Access denied to dating chat:', { chatId, userId, participants: chat?.participants });
+          socket.emit('error', { message: 'Access denied to this dating chat' });
           return;
         }
 
-        // Join chat room
-        socket.join(`chat:${chatId}`);
-        console.log('[REALTIME_SERVICE] ✅ User joined chat room:', { userId, chatId, room: `chat:${chatId}` });
+        // Join dating chat room
+        socket.join(`dating-chat:${chatId}`);
+        console.log('[REALTIME_SERVICE] ✅ User joined dating chat room:', { userId, chatId, room: `dating-chat:${chatId}` });
         
         // Mark messages as read
-        await Message.markChatAsRead(chatId, userId);
+        const DatingMessage = require('../user/dating/models/datingMessageModel');
+        await DatingMessage.markChatAsRead(chatId, userId);
         
         // Reset unread count
         chat.resetUnreadCount(userId);
         await chat.save();
         
         // Notify other participants
-        socket.to(`chat:${chatId}`).emit('user_joined_chat', {
+        socket.to(`dating-chat:${chatId}`).emit('user_joined_dating_chat', {
           userId: userId,
           username: socket.user.username,
           chatId: chatId,
           timestamp: new Date()
         });
 
-        socket.emit('chat_joined', { chatId, timestamp: new Date() });
+        socket.emit('dating_chat_joined', { chatId, timestamp: new Date() });
       } catch (error) {
-        console.error('Error joining chat:', error);
-        socket.emit('error', { message: 'Failed to join chat' });
+        console.error('Error joining dating chat:', error);
+        socket.emit('error', { message: 'Failed to join dating chat' });
       }
     });
 
-    // Leave chat room
+    // Leave social chat room
     socket.on('leave_chat', (chatId) => {
       socket.leave(`chat:${chatId}`);
       
       socket.to(`chat:${chatId}`).emit('user_left_chat', {
+        userId: socket.userId,
+        username: socket.user.username,
+        chatId: chatId,
+        timestamp: new Date()
+      });
+    });
+
+    // Leave dating chat room
+    socket.on('leave_dating_chat', (chatId) => {
+      socket.leave(`dating-chat:${chatId}`);
+      
+      socket.to(`dating-chat:${chatId}`).emit('user_left_dating_chat', {
         userId: socket.userId,
         username: socket.user.username,
         chatId: chatId,
@@ -337,20 +430,265 @@ class EnhancedRealtimeService {
       console.log('[REALTIME_SERVICE] ✅ Typing stop broadcasted to chat:', chatId);
     });
 
-    // Message events
+    // Dating typing indicators
+    socket.on('typing_start_dating', async (data) => {
+      try {
+        console.log('[REALTIME_SERVICE] ⌨️💕 Typing start (dating) received:', {
+          userId: socket.userId,
+          username: socket.user?.username,
+          chatId: data.chatId,
+          data: data
+        });
+        
+        const { chatId } = data;
+        const userId = socket.userId;
+        
+        // Validate chat access (dating chat)
+        const DatingChat = require('../user/dating/models/datingChatModel');
+        const chat = await DatingChat.findById(chatId);
+        if (!chat || !chat.participants.some(p => p.toString() === userId)) {
+          console.log('[REALTIME_SERVICE] ❌ Access denied to dating chat for typing:', { chatId, userId });
+          socket.emit('error', { message: 'Access denied to this dating chat' });
+          return;
+        }
+        
+        socket.to(`dating-chat:${chatId}`).emit('user_typing_dating', {
+          userId: socket.userId,
+          username: socket.user.username,
+          chatId: chatId,
+          isTyping: true,
+          timestamp: new Date()
+        });
+        
+        console.log('[REALTIME_SERVICE] ✅ Typing start (dating) broadcasted to chat:', chatId);
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] Error handling dating typing start:', error);
+        socket.emit('error', { message: 'Failed to send typing indicator' });
+      }
+    });
+
+    socket.on('typing_stop_dating', async (data) => {
+      try {
+        console.log('[REALTIME_SERVICE] ⌨️💕 Typing stop (dating) received:', {
+          userId: socket.userId,
+          username: socket.user?.username,
+          chatId: data.chatId,
+          data: data
+        });
+        
+        const { chatId } = data;
+        const userId = socket.userId;
+        
+        // Validate chat access (dating chat)
+        const DatingChat = require('../user/dating/models/datingChatModel');
+        const chat = await DatingChat.findById(chatId);
+        if (!chat || !chat.participants.some(p => p.toString() === userId)) {
+          console.log('[REALTIME_SERVICE] ❌ Access denied to dating chat for typing:', { chatId, userId });
+          socket.emit('error', { message: 'Access denied to this dating chat' });
+          return;
+        }
+        
+        socket.to(`dating-chat:${chatId}`).emit('user_typing_dating', {
+          userId: socket.userId,
+          username: socket.user.username,
+          chatId: chatId,
+          isTyping: false,
+          timestamp: new Date()
+        });
+        
+        console.log('[REALTIME_SERVICE] ✅ Typing stop (dating) broadcasted to chat:', chatId);
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] Error handling dating typing stop:', error);
+        socket.emit('error', { message: 'Failed to send typing indicator' });
+      }
+    });
+
+    // Social message events
     socket.on('new_message', async (data) => {
+      console.log('🔵 [REALTIME_SVC] new_message event received via socket:', {
+        userId: socket.userId,
+        username: socket.user?.username,
+        chatId: data?.chatId,
+        type: data?.type,
+        hasContent: !!data?.content,
+        timestamp: new Date().toISOString()
+      });
       try {
         const { chatId, content, type, replyTo, forwardedFrom } = data;
         
-        // Validate chat access
+        // Validate chat access (social chat)
+        console.log('🔵 [REALTIME_SVC] Validating chat access for socket message...', { chatId, userId: socket.userId });
         const chat = await Chat.findById(chatId);
         if (!chat || !chat.participants.includes(socket.userId)) {
+          console.error('❌ [REALTIME_SVC] Access denied to social chat via socket:', { chatId, userId: socket.userId, chatExists: !!chat });
           socket.emit('error', { message: 'Access denied to this chat' });
+          return;
+        }
+        console.log('✅ [REALTIME_SVC] Chat access validated');
+
+        // Check for duplicate message (same content, sender, and chat within last 5 seconds)
+        // This prevents duplicate creation when API and socket both try to create the same message
+        const fiveSecondsAgo = new Date(Date.now() - 5000);
+        const duplicateCheck = await Message.findOne({
+          chatId: chatId,
+          senderId: socket.userId,
+          content: content,
+          createdAt: { $gte: fiveSecondsAgo }
+        });
+
+        if (duplicateCheck) {
+          console.log('⚠️ [REALTIME_SVC] Duplicate message detected, skipping creation:', { 
+            existingMessageId: duplicateCheck._id,
+            chatId,
+            contentPreview: content?.substring(0, 50)
+          });
+          
+          // Populate and broadcast the existing message instead
+          await duplicateCheck.populate('senderId', 'username fullName profilePictureUrl');
+          const messageDataForBroadcast = {
+            _id: duplicateCheck._id,
+            chatId: duplicateCheck.chatId,
+            senderId: duplicateCheck.senderId,
+            type: duplicateCheck.type,
+            content: duplicateCheck.content,
+            createdAt: duplicateCheck.createdAt,
+            status: duplicateCheck.status,
+            media: duplicateCheck.media,
+            location: duplicateCheck.location,
+            musicMetadata: duplicateCheck.musicMetadata,
+            isOneView: duplicateCheck.isOneView,
+            oneViewExpiresAt: duplicateCheck.oneViewExpiresAt,
+            viewedBy: duplicateCheck.viewedBy,
+            gifSource: duplicateCheck.gifSource,
+            gifId: duplicateCheck.gifId,
+            isAnimated: duplicateCheck.isAnimated,
+            sender: {
+              _id: duplicateCheck.senderId._id,
+              username: duplicateCheck.senderId.username,
+              fullName: duplicateCheck.senderId.fullName,
+              profilePictureUrl: duplicateCheck.senderId.profilePictureUrl
+            }
+          };
+          
+          const room = `chat:${chatId}`;
+          this.io.to(room).emit('message_received', messageDataForBroadcast);
+          console.log('✅ [REALTIME_SVC] Existing message broadcasted to room:', { room, messageId: duplicateCheck._id });
           return;
         }
 
         // Create message
+        console.log('🔵 [REALTIME_SVC] Creating message from socket event...', { chatId, type, contentLength: content?.length });
         const message = new Message({
+          chatId,
+          senderId: socket.userId,
+          type: type || 'text',
+          content,
+          replyTo,
+          forwardedFrom,
+          status: 'sent'
+        });
+
+        await message.save();
+        console.log('✅ [REALTIME_SVC] Message saved:', { messageId: message._id });
+        
+        await message.populate('senderId', 'username fullName profilePictureUrl');
+        console.log('✅ [REALTIME_SVC] Message populated');
+
+        // Update chat's last message
+        console.log('🔵 [REALTIME_SVC] Updating chat...', { chatId });
+        chat.lastMessage = message._id;
+        chat.lastMessageAt = new Date();
+        await chat.save();
+        console.log('✅ [REALTIME_SVC] Chat updated');
+
+        // Broadcast message to social chat participants
+        const room = `chat:${chatId}`;
+        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+        console.log('🔵 [REALTIME_SVC] Broadcasting message to room:', { room, clientCount });
+        
+        const messageDataForBroadcast = {
+          _id: message._id,
+          chatId: message.chatId,
+          senderId: message.senderId,
+          type: message.type,
+          content: message.content,
+          createdAt: message.createdAt,
+          status: message.status,
+          media: message.media,
+          location: message.location,
+          musicMetadata: message.musicMetadata,
+          isOneView: message.isOneView,
+          oneViewExpiresAt: message.oneViewExpiresAt,
+          viewedBy: message.viewedBy,
+          gifSource: message.gifSource,
+          gifId: message.gifId,
+          isAnimated: message.isAnimated,
+          sender: {
+            _id: message.senderId._id,
+            username: message.senderId.username,
+            fullName: message.senderId.fullName,
+            profilePictureUrl: message.senderId.profilePictureUrl
+          }
+        };
+        
+        this.io.to(room).emit('message_received', messageDataForBroadcast);
+        console.log('✅ [REALTIME_SVC] Message broadcasted to room:', { room, clientCount, messageId: message._id });
+
+        // Emit delivered status update to sender (if they're in the room)
+        // Check if sender is online and in the chat room
+        const senderRoom = `user:${socket.userId}`;
+        this.io.to(senderRoom).emit('message_status_update', {
+          messageId: message._id,
+          chatId: chatId,
+          status: 'delivered',
+          timestamp: new Date()
+        });
+        console.log('✅ [REALTIME_SVC] Delivered status update emitted to sender');
+
+        // Update unread counts for other participants
+        let notificationsSent = 0;
+        chat.participants.forEach(participantId => {
+          if (participantId.toString() !== socket.userId) {
+            chat.incrementUnreadCount(participantId);
+            
+            // Notify user about new message
+            const userRoom = `user:${participantId}`;
+            this.io.to(userRoom).emit('new_message_notification', {
+              chatId: chatId,
+              messageId: message._id,
+              sender: message.senderId.username,
+              content: message.content,
+              type: message.type,
+              timestamp: message.createdAt
+            });
+            notificationsSent++;
+          }
+        });
+        console.log('✅ [REALTIME_SVC] Unread counts updated and notifications sent:', { notificationsSent });
+
+      } catch (error) {
+        console.error('❌ [REALTIME_SVC] Error handling new social message:', { error: error.message, stack: error.stack, chatId: data?.chatId, userId: socket.userId });
+        socket.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
+    // Dating message events
+    socket.on('new_dating_message', async (data) => {
+      try {
+        const { chatId, content, type, replyTo, forwardedFrom } = data;
+        
+        // Validate chat access (dating chat)
+        const DatingChat = require('../user/dating/models/datingChatModel');
+        const chat = await DatingChat.findById(chatId);
+        if (!chat || !chat.participants.some(p => p.toString() === socket.userId)) {
+          socket.emit('error', { message: 'Access denied to this dating chat' });
+          return;
+        }
+
+        // Create message
+        const DatingMessage = require('../user/dating/models/datingMessageModel');
+        const message = new DatingMessage({
           chatId,
           senderId: socket.userId,
           type: type || 'text',
@@ -368,8 +706,8 @@ class EnhancedRealtimeService {
         chat.lastMessageAt = new Date();
         await chat.save();
 
-        // Broadcast message to chat participants
-        this.io.to(`chat:${chatId}`).emit('message_received', {
+        // Broadcast message to dating chat participants
+        this.io.to(`dating-chat:${chatId}`).emit('dating_message_received', {
           _id: message._id,
           chatId: message.chatId,
           senderId: message.senderId,
@@ -390,8 +728,8 @@ class EnhancedRealtimeService {
           if (participantId.toString() !== socket.userId) {
             chat.incrementUnreadCount(participantId);
             
-            // Notify user about new message
-            this.io.to(`user:${participantId}`).emit('new_message_notification', {
+            // Notify user about new dating message
+            this.io.to(`user:${participantId}`).emit('dating_new_message_notification', {
               chatId: chatId,
               messageId: message._id,
               sender: message.senderId.username,
@@ -403,8 +741,8 @@ class EnhancedRealtimeService {
         });
 
       } catch (error) {
-        console.error('Error handling new message:', error);
-        socket.emit('error', { message: 'Failed to send message' });
+        console.error('Error handling new dating message:', error);
+        socket.emit('error', { message: 'Failed to send dating message' });
       }
     });
   }
@@ -1056,22 +1394,78 @@ class EnhancedRealtimeService {
   }
 
   /**
-   * Emit new message to chat participants
+   * Emit new message to chat participants (social chats)
    */
   emitNewMessage(chatId, messageData) {
+    console.log('🔵 [REALTIME_SVC] emitNewMessage called:', { 
+      chatId, 
+      messageId: messageData._id,
+      senderId: messageData.senderId?._id || messageData.senderId,
+      type: messageData.type,
+      contentPreview: messageData.content?.substring(0, 50),
+      timestamp: new Date().toISOString()
+    });
     if (this.io) {
-      console.log(`[REALTIME_SERVICE] 📨 Broadcasting new message to chat ${chatId}:`, {
+      console.log(`🔵 [REALTIME_SVC] Broadcasting new message to social chat ${chatId}:`, {
+        messageId: messageData._id,
+        senderId: messageData.senderId?._id || messageData.senderId,
+        content: messageData.content?.substring(0, 50) + '...',
+        room: `chat:${chatId}`
+      });
+      
+      // Emit to all participants in the social chat room
+      const room = `chat:${chatId}`;
+      const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+      const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+      console.log(`🔵 [REALTIME_SVC] Emitting to room ${room}, ${clientCount} client(s) connected`);
+      
+      this.io.to(room).emit('message_received', messageData);
+      
+      console.log(`✅ [REALTIME_SVC] Social message broadcasted to chat ${chatId} (${clientCount} client(s))`);
+    } else {
+      console.error('❌ [REALTIME_SVC] Cannot broadcast message - Socket.IO not initialized');
+    }
+  }
+
+  /**
+   * Emit new message to dating chat participants
+   */
+  emitDatingMessage(chatId, messageData) {
+    if (this.io) {
+      console.log(`[REALTIME_SERVICE] 💕 Broadcasting new message to dating chat ${chatId}:`, {
         messageId: messageData._id,
         senderId: messageData.senderId._id,
         content: messageData.content?.substring(0, 50) + '...'
       });
       
-      // Emit to all participants in the chat room
-      this.io.to(`chat:${chatId}`).emit('message_received', messageData);
+      // Emit to all participants in the dating chat room
+      this.io.to(`dating-chat:${chatId}`).emit('dating_message_received', messageData);
       
-      console.log(`[REALTIME_SERVICE] ✅ Message broadcasted to chat ${chatId}`);
+      // Also emit to user rooms for notifications
+      const DatingChat = require('../user/dating/models/datingChatModel');
+      DatingChat.findById(chatId)
+        .then(chat => {
+          if (chat) {
+            chat.participants.forEach(participantId => {
+              if (participantId.toString() !== messageData.senderId._id?.toString() && 
+                  participantId.toString() !== messageData.senderId.toString()) {
+                this.io.to(`user:${participantId}`).emit('dating_new_message_notification', {
+                  chatId: chatId,
+                  messageId: messageData._id,
+                  sender: messageData.sender,
+                  content: messageData.content,
+                  type: messageData.type,
+                  timestamp: messageData.createdAt
+                });
+              }
+            });
+          }
+        })
+        .catch(err => console.error('[REALTIME_SERVICE] Error emitting dating notifications:', err));
+      
+      console.log(`[REALTIME_SERVICE] ✅ Dating message broadcasted to chat ${chatId}`);
     } else {
-      console.error('[REALTIME_SERVICE] ❌ Cannot broadcast message - Socket.IO not initialized');
+      console.error('[REALTIME_SERVICE] ❌ Cannot broadcast dating message - Socket.IO not initialized');
     }
   }
 }

@@ -90,28 +90,53 @@ class ChatService {
    * @returns {Promise<Array>} Array of chats
    */
   static async getUserChats(userId, page = 1, limit = 20) {
+    console.log('🔵 [BACKEND_CHAT_SVC] getUserChats called:', { userId, page, limit, timestamp: new Date().toISOString() });
     try {
       // Input validation
       if (!userId) {
+        console.error('❌ [BACKEND_CHAT_SVC] User ID missing');
         throw new Error('User ID is required');
       }
       
       if (page < 1 || limit < 1 || limit > 100) {
+        console.error('❌ [BACKEND_CHAT_SVC] Invalid pagination:', { page, limit });
         throw new Error('Invalid pagination parameters');
       }
       
+      // Diagnostic: Check total chats in database (only on first page)
+      if (page === 1) {
+        const totalChatsInDB = await Chat.countDocuments({ isActive: true });
+        const chatsWithUser = await Chat.countDocuments({ 
+          participants: userId, 
+          isActive: true 
+        });
+        console.log('🔵 [BACKEND_CHAT_SVC] Database diagnostics:', { 
+          totalActiveChats: totalChatsInDB,
+          chatsWithThisUser: chatsWithUser,
+          userId
+        });
+      }
+      
+      console.log('🔵 [BACKEND_CHAT_SVC] Calling Chat.getUserChats...', { userId, page, limit });
       const chats = await Chat.getUserChats(userId, page, limit);
+      console.log('🔵 [BACKEND_CHAT_SVC] Chat.getUserChats returned:', { 
+        chatsCount: chats.length, 
+        chatIds: chats.map(c => c._id)
+      });
       
       // Enhance chats with additional data
+      console.log('🔵 [BACKEND_CHAT_SVC] Enhancing chats with additional data...');
       const enhancedChats = await Promise.all(
-        chats.map(async (chat) => {
+        chats.map(async (chat, index) => {
           const userSettings = chat.userSettings?.find(setting => 
-            setting.userId.toString() === userId.toString()
+            setting.userId?.toString() === userId.toString() ||
+            setting.userId?.toString() === userId
           );
           
           // Get other participant info
-          const otherParticipant = chat.participants.find(p => 
-            p._id.toString() !== userId.toString()
+          const otherParticipant = chat.participants?.find(p => 
+            p._id?.toString() !== userId.toString() &&
+            p._id?.toString() !== userId
           );
           
           return {
@@ -128,8 +153,10 @@ class ChatService {
           };
         })
       );
+      console.log('✅ [BACKEND_CHAT_SVC] Chats enhanced:', { enhancedCount: enhancedChats.length });
       
       // Sort chats: pinned first, then by last message time
+      console.log('🔵 [BACKEND_CHAT_SVC] Sorting chats...');
       enhancedChats.sort((a, b) => {
         if (a.userSettings.isPinned && !b.userSettings.isPinned) return -1;
         if (!a.userSettings.isPinned && b.userSettings.isPinned) return 1;
@@ -138,11 +165,17 @@ class ChatService {
         const bTime = b.lastMessageAt || b.updatedAt;
         return new Date(bTime) - new Date(aTime);
       });
+      console.log('✅ [BACKEND_CHAT_SVC] Chats sorted');
+      
+      console.log('✅ [BACKEND_CHAT_SVC] getUserChats completed:', { 
+        finalCount: enhancedChats.length,
+        hasMore: enhancedChats.length === limit
+      });
       
       return enhancedChats;
       
     } catch (error) {
-      console.error('[ChatService] getUserChats error:', error);
+      console.error('❌ [BACKEND_CHAT_SVC] getUserChats error:', { error: error.message, stack: error.stack, userId });
       throw error;
     }
   }
@@ -328,65 +361,158 @@ class ChatService {
    * @returns {Promise<Array>} Filtered chats
    */
   static async searchChats(userId, query, page = 1, limit = 20) {
+    console.log('🔵 [BACKEND_CHAT_SVC] searchChats called:', { userId, query, page, limit, timestamp: new Date().toISOString() });
     try {
       // Input validation
       if (!userId || !query || query.trim() === '') {
+        console.error('❌ [BACKEND_CHAT_SVC] User ID and search query are required');
         throw new Error('User ID and search query are required');
       }
       
       if (page < 1 || limit < 1 || limit > 100) {
+        console.error('❌ [BACKEND_CHAT_SVC] Invalid pagination:', { page, limit });
         throw new Error('Invalid pagination parameters');
       }
       
-      const searchTerm = query.trim();
+      const searchTerm = query.trim().toLowerCase();
       const skip = (page - 1) * limit;
+      
+      console.log('🔵 [BACKEND_CHAT_SVC] Finding chats for user...', { userId, searchTerm });
       
       // Find chats where the other participant matches the search
       const chats = await Chat.find({
         participants: userId,
         isActive: true
       })
-      .populate('participants', 'username fullName profilePictureUrl')
+      .populate('participants', 'username fullName profilePictureUrl isActive')
       .populate('lastMessage')
       .lean();
       
-      // Filter chats where other participant matches search
+      console.log('🔵 [BACKEND_CHAT_SVC] Found chats:', { totalChats: chats.length });
+      
+      // Filter chats where other participant matches search AND not archived
       const filteredChats = chats.filter(chat => {
-        const otherParticipant = chat.participants.find(p => 
-          p._id.toString() !== userId.toString()
-        );
+        // Filter out archived chats for this user
+        const userSetting = chat.userSettings?.find(setting => {
+          const settingUserId = setting.userId?.toString() || setting.userId;
+          return settingUserId === userId.toString();
+        });
         
-        if (!otherParticipant) return false;
+        if (userSetting?.isArchived) {
+          return false;
+        }
         
-        return (
-          otherParticipant.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          otherParticipant.fullName.toLowerCase().includes(searchTerm.toLowerCase())
-        );
+        // Find other participant
+        const otherParticipant = chat.participants?.find(p => {
+          const pId = p._id?.toString() || p?.toString();
+          return pId && pId !== userId.toString();
+        });
+        
+        if (!otherParticipant) {
+          console.warn('⚠️ [BACKEND_CHAT_SVC] No other participant found for chat:', chat._id);
+          return false;
+        }
+        
+        // Check if other participant matches search
+        const otherUsername = (otherParticipant.username || '').toLowerCase();
+        const otherFullName = (otherParticipant.fullName || '').toLowerCase();
+        
+        const matchesUsername = otherUsername.includes(searchTerm);
+        const matchesFullName = otherFullName.includes(searchTerm);
+        
+        const matches = matchesUsername || matchesFullName;
+        
+        if (matches) {
+          console.log('✅ [BACKEND_CHAT_SVC] Chat matches search:', {
+            chatId: chat._id,
+            otherParticipant: otherParticipant.fullName || otherParticipant.username,
+            matchesUsername,
+            matchesFullName,
+            searchTerm
+          });
+        }
+        
+        return matches;
       });
       
-      // Get unread counts for filtered chats
-      const chatsWithDetails = await Promise.all(
-        filteredChats.slice(skip, skip + limit).map(async (chat) => {
-          const unreadCount = await Message.getUnreadCount(chat._id, userId);
+      console.log('🔵 [BACKEND_CHAT_SVC] Filtered chats:', { filteredCount: filteredChats.length });
+      
+      // Apply pagination
+      const paginatedChats = filteredChats.slice(skip, skip + limit);
+      console.log('🔵 [BACKEND_CHAT_SVC] Paginated chats:', { 
+        paginatedCount: paginatedChats.length,
+        skip,
+        limit
+      });
+      
+      // Enhance chats with additional data (same as getUserChats)
+      console.log('🔵 [BACKEND_CHAT_SVC] Enhancing search result chats...');
+      const enhancedChats = await Promise.all(
+        paginatedChats.map(async (chat, index) => {
+          console.log(`🔵 [BACKEND_CHAT_SVC] Processing search chat ${index + 1}/${paginatedChats.length}:`, { chatId: chat._id });
+          
+          const userSettings = chat.userSettings?.find(setting => {
+            const settingUserId = setting.userId?.toString() || setting.userId;
+            return settingUserId === userId.toString();
+          });
+          
+          // Get other participant info
+          const otherParticipant = chat.participants?.find(p => {
+            const pId = p._id?.toString() || p?.toString();
+            return pId && pId !== userId.toString();
+          });
+          
+          console.log(`🔵 [BACKEND_CHAT_SVC] Chat ${chat._id} otherParticipant:`, { 
+            found: !!otherParticipant,
+            participantId: otherParticipant?._id,
+            name: otherParticipant?.fullName || otherParticipant?.username
+          });
+          
           return {
             ...chat,
-            unreadCount
+            unreadCount: userSettings?.unreadCount || 0,
+            userSettings: userSettings || {
+              isArchived: false,
+              isPinned: false,
+              isMuted: false,
+              unreadCount: 0,
+              lastReadAt: null
+            },
+            otherParticipant
           };
         })
       );
+      console.log('✅ [BACKEND_CHAT_SVC] Search result chats enhanced:', { enhancedCount: enhancedChats.length });
+      
+      // Sort chats (same as getUserChats)
+      console.log('🔵 [BACKEND_CHAT_SVC] Sorting search result chats...');
+      enhancedChats.sort((a, b) => {
+        if (a.userSettings.isPinned && !b.userSettings.isPinned) return -1;
+        if (!a.userSettings.isPinned && b.userSettings.isPinned) return 1;
+        
+        const aTime = a.lastMessageAt || a.updatedAt;
+        const bTime = b.lastMessageAt || b.updatedAt;
+        return new Date(bTime) - new Date(aTime);
+      });
+      console.log('✅ [BACKEND_CHAT_SVC] Search result chats sorted.');
+      
+      const total = filteredChats.length;
+      const hasMore = (skip + limit) < total;
+      
+      console.log('✅ [BACKEND_CHAT_SVC] searchChats completed:', { 
+        finalCount: enhancedChats.length, 
+        total,
+        hasMore
+      });
       
       return {
-        chats: chatsWithDetails,
-        pagination: {
-          page,
-          limit,
-          total: filteredChats.length,
-          hasMore: skip + limit < filteredChats.length
-        }
+        chats: enhancedChats,
+        total,
+        hasMore
       };
       
     } catch (error) {
-      console.error('[ChatService] searchChats error:', error);
+      console.error('❌ [BACKEND_CHAT_SVC] searchChats error:', { error: error.message, stack: error.stack });
       throw error;
     }
   }

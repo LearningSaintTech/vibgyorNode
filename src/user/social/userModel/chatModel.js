@@ -191,13 +191,17 @@ chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy
 };
 
 chatSchema.statics.getUserChats = async function(userId, page = 1, limit = 20) {
+  console.log('🔵 [CHAT_MODEL] getUserChats called:', { userId, page, limit, timestamp: new Date().toISOString() });
   try {
 	const skip = (page - 1) * limit;
 	
-	const chats = await this.find({
+	const query = {
 		participants: userId,
 		isActive: true
-	})
+	};
+	console.log('🔵 [CHAT_MODEL] Query:', JSON.stringify(query));
+	
+	const chats = await this.find(query)
 	.populate('participants', 'username fullName profilePictureUrl isActive')
 	.populate('lastMessage')
 	.sort({ lastMessageAt: -1, updatedAt: -1 })
@@ -205,8 +209,34 @@ chatSchema.statics.getUserChats = async function(userId, page = 1, limit = 20) {
 	.limit(limit)
 	.lean();
 
-	return chats;
+	console.log('🔵 [CHAT_MODEL] Raw query result:', { 
+		chatsCount: chats.length,
+		chatIds: chats.map(c => c._id),
+		hasParticipants: chats.map(c => c.participants?.length)
+	});
+	
+	// Filter out archived chats for this user
+	const filteredChats = chats.filter(chat => {
+		const userSetting = chat.userSettings?.find(setting => 
+			setting.userId?.toString() === userId.toString() || 
+			setting.userId?.toString() === userId
+		);
+		const isArchived = userSetting?.isArchived || false;
+		if (isArchived) {
+			console.log('🔵 [CHAT_MODEL] Filtering out archived chat:', { chatId: chat._id, userId });
+		}
+		return !isArchived;
+	});
+	
+	console.log('✅ [CHAT_MODEL] getUserChats result:', { 
+		rawCount: chats.length, 
+		filteredCount: filteredChats.length,
+		userId
+	});
+
+	return filteredChats;
   } catch (error) {
+    console.error('❌ [CHAT_MODEL] getUserChats error:', { error: error.message, stack: error.stack, userId });
     throw new Error(`Failed to get user chats: ${error.message}`);
   }
 };

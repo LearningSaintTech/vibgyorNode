@@ -27,11 +27,41 @@ router.post('/',
       type: { 
         type: 'string', 
         required: true, 
-        enum: ['text', 'audio', 'video', 'image', 'document', 'system', 'forwarded']
+        enum: ['text', 'audio', 'video', 'image', 'document', 'gif', 'location', 'voice', 'system', 'forwarded']
       },
       content: { type: 'string', optional: true, maxLength: 4096 },
       replyTo: { type: 'string', optional: true, minLength: 24, maxLength: 24 },
-      forwardedFrom: { type: 'string', optional: true, minLength: 24, maxLength: 24 }
+      forwardedFrom: { type: 'string', optional: true, minLength: 24, maxLength: 24 },
+      // One-view message fields
+      isOneView: { type: 'boolean', optional: true },
+      oneViewExpirationHours: { type: 'number', optional: true, min: 1, max: 168 }, // Max 7 days
+      // Location fields
+      location: {
+        type: 'object',
+        optional: true,
+        properties: {
+          latitude: { type: 'number', required: true, min: -90, max: 90 },
+          longitude: { type: 'number', required: true, min: -180, max: 180 },
+          address: { type: 'string', optional: true },
+          name: { type: 'string', optional: true },
+          placeType: { type: 'string', optional: true }
+        }
+      },
+      // GIF fields (for external GIFs)
+      gifSource: { type: 'string', optional: true, enum: ['upload', 'giphy', 'tenor'] },
+      gifId: { type: 'string', optional: true },
+      // Music metadata
+      musicMetadata: {
+        type: 'object',
+        optional: true,
+        properties: {
+          title: { type: 'string', optional: true },
+          artist: { type: 'string', optional: true },
+          album: { type: 'string', optional: true },
+          duration: { type: 'number', optional: true },
+          genre: { type: 'string', optional: true }
+        }
+      }
     }
   }),
   MessageController.sendMessage
@@ -85,7 +115,7 @@ router.get('/chat/:chatId/media',
       chatId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
     },
     query: {
-      type: { type: 'string', optional: true, enum: ['audio', 'video', 'image', 'document'] },
+      type: { type: 'string', optional: true, enum: ['audio', 'video', 'image', 'document', 'gif', 'voice'] },
       page: { type: 'number', min: 1, default: 1 },
       limit: { type: 'number', min: 1, max: 100, default: 20 }
     }
@@ -112,6 +142,21 @@ router.get('/chat/:chatId/search',
     }
   }),
   MessageController.searchMessages
+);
+
+/**
+ * @route   PUT /api/user/messages/:messageId/view
+ * @desc    Mark a one-view message as viewed
+ * @access  Private
+ * @params  { messageId: string }
+ */
+router.put('/:messageId/view',
+  validateRequest({
+    params: {
+      messageId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
+    }
+  }),
+  MessageController.markOneViewAsViewed
 );
 
 /**

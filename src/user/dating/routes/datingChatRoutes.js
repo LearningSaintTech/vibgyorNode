@@ -1,37 +1,36 @@
 const express = require('express');
 const router = express.Router();
-const ChatController = require('../userController/enhancedChatController');
+const DatingChatController = require('../controllers/datingChatController');
 const { authorize } = require('../../../middleware/authMiddleware');
 const { validateRequest } = require('../../../middleware/validationMiddleware');
 
 /**
- * Enhanced Chat Routes with comprehensive middleware and validation
+ * Dating Chat Routes with comprehensive middleware and validation
  */
 
 // Apply authentication middleware to all routes
 router.use(authorize());
 
 /**
- * @route   POST /api/user/chats
- * @desc    Create or get chat between users
+ * @route   POST /api/user/dating/chats
+ * @desc    Create or get chat for a dating match
  * @access  Private
- * @body    { otherUserId: string }
+ * @body    { matchId: string }
  */
 router.post('/', 
   validateRequest({
     body: {
-      otherUserId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
+      matchId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
     }
   }),
-  ChatController.createOrGetChat
+  DatingChatController.createOrGetChat
 );
 
 /**
- * @route   GET /api/user/chats
- * @desc    Get user's chats with pagination and optional search
+ * @route   GET /api/user/dating/chats
+ * @desc    Get user's dating chats with pagination and optional search
  * @access  Private
  * @query   { page: number, limit: number, q?: string, search?: string }
- * @note    If 'q' or 'search' query param is provided, performs search. Otherwise returns all chats.
  */
 router.get('/', 
   validateRequest({
@@ -42,12 +41,12 @@ router.get('/',
       search: { type: 'string', optional: true, maxLength: 100 }
     }
   }),
-  ChatController.getUserChats
+  DatingChatController.getUserChats
 );
 
 /**
- * @route   GET /api/user/chats/search
- * @desc    Search chats by participant name (deprecated - use GET /api/user/chats?q=... instead)
+ * @route   GET /api/user/dating/chats/search
+ * @desc    Search dating chats by participant name
  * @access  Private
  * @query   { q: string, page: number, limit: number }
  */
@@ -59,19 +58,19 @@ router.get('/search',
       limit: { type: 'number', min: 1, max: 100, default: 20 }
     }
   }),
-  ChatController.searchChats
+  DatingChatController.searchChats
 );
 
 /**
- * @route   GET /api/user/chats/stats
- * @desc    Get chat statistics for user
+ * @route   GET /api/user/dating/chats/stats
+ * @desc    Get dating chat statistics for user
  * @access  Private
  */
-router.get('/stats', ChatController.getChatStats);
+router.get('/stats', DatingChatController.getChatStats);
 
 /**
- * @route   GET /api/user/chats/:chatId
- * @desc    Get chat details
+ * @route   GET /api/user/dating/chats/:chatId
+ * @desc    Get dating chat details
  * @access  Private
  * @params  { chatId: string }
  */
@@ -81,12 +80,12 @@ router.get('/:chatId',
       chatId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
     }
   }),
-  ChatController.getChatDetails
+  DatingChatController.getChatDetails
 );
 
 /**
- * @route   PUT /api/user/chats/:chatId/settings
- * @desc    Update chat settings (archive, pin, mute)
+ * @route   PUT /api/user/dating/chats/:chatId/settings
+ * @desc    Update dating chat settings (archive, pin, mute)
  * @access  Private
  * @params  { chatId: string }
  * @body    { isArchived?: boolean, isPinned?: boolean, isMuted?: boolean }
@@ -102,12 +101,12 @@ router.put('/:chatId/settings',
       isMuted: { type: 'boolean', optional: true }
     }
   }),
-  ChatController.updateChatSettings
+  DatingChatController.updateChatSettings
 );
 
 /**
- * @route   DELETE /api/user/chats/:chatId
- * @desc    Delete chat (archive for user)
+ * @route   DELETE /api/user/dating/chats/:chatId
+ * @desc    Delete dating chat (archive for user)
  * @access  Private
  * @params  { chatId: string }
  */
@@ -117,12 +116,12 @@ router.delete('/:chatId',
       chatId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
     }
   }),
-  ChatController.deleteChat
+  DatingChatController.deleteChat
 );
 
 /**
- * @route   POST /api/user/chats/:chatId/join
- * @desc    Join chat room for real-time updates
+ * @route   POST /api/user/dating/chats/:chatId/join
+ * @desc    Join dating chat room for real-time updates
  * @access  Private
  * @params  { chatId: string }
  */
@@ -132,12 +131,12 @@ router.post('/:chatId/join',
       chatId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
     }
   }),
-  ChatController.joinChat
+  DatingChatController.joinChat
 );
 
 /**
- * @route   POST /api/user/chats/:chatId/leave
- * @desc    Leave chat room
+ * @route   POST /api/user/dating/chats/:chatId/leave
+ * @desc    Leave dating chat room
  * @access  Private
  * @params  { chatId: string }
  */
@@ -147,7 +146,8 @@ router.post('/:chatId/leave',
       chatId: { type: 'string', required: true, minLength: 24, maxLength: 24 }
     }
   }),
-  ChatController.leaveChat
+  DatingChatController.leaveChat
 );
 
 module.exports = router;
+

@@ -159,8 +159,19 @@ const validateField = (field, value, rules) => {
   }
   
   // Boolean validations
-  if (rules.type === 'boolean' && typeof value !== 'boolean') {
-    errors.push(`${field} must be a boolean value`);
+  if (rules.type === 'boolean') {
+    // Handle string booleans from FormData (multipart/form-data sends everything as strings)
+    if (typeof value === 'string') {
+      const lowerValue = value.toLowerCase();
+      if (lowerValue === 'true' || lowerValue === 'false') {
+        // Valid string boolean, will be converted in controller
+        // No error, but we could convert it here: req.body[field] = lowerValue === 'true';
+      } else {
+        errors.push(`${field} must be a boolean value (got string: "${value}")`);
+      }
+    } else if (typeof value !== 'boolean') {
+      errors.push(`${field} must be of type boolean, got ${typeof value}`);
+    }
   }
   
   // Array validations
@@ -207,12 +218,20 @@ const validateType = (field, value, expectedType) => {
     actualType = 'date';
   }
   
-  // Handle type conversion for query parameters
+  // Handle type conversion for query parameters and FormData
   if (expectedType === 'number' && typeof value === 'string') {
     const numValue = Number(value);
     if (!isNaN(numValue)) {
       // Convert string to number for validation
       return null; // Valid number string
+    }
+  }
+  
+  // Handle boolean strings from FormData (multipart/form-data sends everything as strings)
+  if (expectedType === 'boolean' && typeof value === 'string') {
+    const lowerValue = value.toLowerCase();
+    if (lowerValue === 'true' || lowerValue === 'false') {
+      return null; // Valid boolean string
     }
   }
   

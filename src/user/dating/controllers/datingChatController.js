@@ -1,65 +1,48 @@
-const ChatService = require('../services/chatService');
-const MessageService = require('../services/messageService');
-const Chat = require('../userModel/chatModel');
+const DatingChatService = require('../services/datingChatService');
+const DatingChat = require('../models/datingChatModel');
 const { createResponse, createErrorResponse } = require('../../../utils/apiResponse');
 
 /**
- * Enhanced Chat Controller with comprehensive error handling
+ * Dating Chat Controller with comprehensive error handling
  */
-class ChatController {
+class DatingChatController {
   
   /**
-   * Create or get chat between users
+   * Create or get chat for a dating match
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
   static async createOrGetChat(req, res) {
-    console.log('🔵 [BACKEND_CHAT_CTRL] createOrGetChat called:', { 
-      userId: req.user?.userId,
-      otherUserId: req.body?.otherUserId,
-      timestamp: new Date().toISOString()
-    });
     try {
-      const { otherUserId } = req.body;
+      const { matchId } = req.body;
       const userId = req.user.userId;
       
-      // Input validation
-      if (!otherUserId) {
-        console.warn('⚠️ [BACKEND_CHAT_CTRL] Other user ID missing');
-        return res.status(400).json(createErrorResponse('Other user ID is required'));
+      if (!matchId) {
+        return res.status(400).json(createErrorResponse('Match ID is required'));
       }
       
-      if (otherUserId === userId.toString()) {
-        console.warn('⚠️ [BACKEND_CHAT_CTRL] Cannot create chat with self');
-        return res.status(400).json(createErrorResponse('Cannot create chat with yourself'));
-      }
+      const chat = await DatingChatService.getOrCreateMatchChat(matchId, userId);
       
-      console.log('🔵 [BACKEND_CHAT_CTRL] Calling ChatService.createOrGetChat...', { userId, otherUserId });
-      const result = await ChatService.createOrGetChat(userId, otherUserId, userId);
-      console.log('✅ [BACKEND_CHAT_CTRL] ChatService.createOrGetChat success:', { chatId: result.chat._id, canChat: result.canChat });
+      // Get unread count
+      const DatingMessage = require('../models/datingMessageModel');
+      const unreadCount = await DatingMessage.getUnreadCount(chat._id, userId);
       
       res.status(200).json(createResponse(
-        'Chat retrieved successfully',
-        result,
-        { chatId: result.chat._id }
+        'Dating chat retrieved successfully',
+        { chat, unreadCount, canChat: true },
+        { chatId: chat._id }
       ));
-      console.log('✅ [BACKEND_CHAT_CTRL] Response sent to client');
       
     } catch (error) {
-      console.error('❌ [BACKEND_CHAT_CTRL] createOrGetChat error:', { 
-        error: error.message, 
-        stack: error.stack,
-        userId: req.user?.userId,
-        otherUserId: req.body?.otherUserId
-      });
+      console.error('[DatingChatController] createOrGetChat error:', error);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
         statusCode = 404;
-      } else if (error.message.includes('permission') || error.message.includes('inactive')) {
-        statusCode = 403;
       } else if (error.message.includes('required') || error.message.includes('Invalid')) {
         statusCode = 400;
+      } else if (error.message.includes('permission') || error.message.includes('inactive')) {
+        statusCode = 403;
       }
       
       res.status(statusCode).json(createErrorResponse(error.message));
@@ -67,20 +50,11 @@ class ChatController {
   }
   
   /**
-   * Get user's chats with pagination and optional search
-   * Unified endpoint for both get all chats and search
+   * Get user's dating chats with pagination and optional search
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
   static async getUserChats(req, res) {
-    console.log('🔵 [BACKEND_CHAT_CTRL] getUserChats called:', { 
-      userId: req.user?.userId,
-      page: req.query?.page,
-      limit: req.query?.limit,
-      search: req.query?.q || req.query?.search,
-      hasSearch: !!(req.query?.q || req.query?.search),
-      timestamp: new Date().toISOString()
-    });
     try {
       const userId = req.user.userId;
       const page = parseInt(req.query.page) || 1;
@@ -89,15 +63,8 @@ class ChatController {
       
       let result;
       if (searchQuery) {
-        console.log('🔵 [BACKEND_CHAT_CTRL] Searching chats...', { userId, searchQuery, page, limit });
-        const searchResult = await ChatService.searchChats(userId, searchQuery, page, limit);
-        console.log('✅ [BACKEND_CHAT_CTRL] ChatService.searchChats success:', { 
-          chatsCount: searchResult.chats?.length || 0,
-          total: searchResult.total,
-          hasMore: searchResult.hasMore
-        });
+        const searchResult = await DatingChatService.searchChats(userId, searchQuery, page, limit);
         
-        // Transform to match expected format
         result = {
           chats: searchResult.chats || [],
           pagination: {
@@ -108,28 +75,22 @@ class ChatController {
           }
         };
       } else {
-        console.log('🔵 [BACKEND_CHAT_CTRL] Getting all chats...', { userId, page, limit });
-        const chats = await ChatService.getUserChats(userId, page, limit);
-        console.log('✅ [BACKEND_CHAT_CTRL] ChatService.getUserChats success:', { 
-          chatsCount: chats.length || 0
-        });
+        const chats = await DatingChatService.getUserDatingChats(userId, page, limit);
         
         // Get total count for pagination (only on first page for performance)
         let totalCount = chats.length;
         let hasMore = chats.length === limit;
         
         if (page === 1) {
-          totalCount = await Chat.countDocuments({ 
+          totalCount = await DatingChat.countDocuments({ 
             participants: userId, 
             isActive: true 
           });
           hasMore = totalCount > limit;
         } else {
-          // For subsequent pages, hasMore is true if we got a full page
           hasMore = chats.length === limit;
         }
         
-        // Transform to match search result format
         result = {
           chats: chats,
           pagination: {
@@ -142,18 +103,13 @@ class ChatController {
       }
       
       res.status(200).json(createResponse(
-        searchQuery ? 'Chats searched successfully' : 'Chats retrieved successfully',
+        searchQuery ? 'Dating chats searched successfully' : 'Dating chats retrieved successfully',
         { chats: result.chats || result },
         { pagination: result.pagination || { page, limit, total: result.chats?.length || result.length || 0, hasMore: false } }
       ));
-      console.log('✅ [BACKEND_CHAT_CTRL] Response sent to client');
       
     } catch (error) {
-      console.error('❌ [BACKEND_CHAT_CTRL] getUserChats error:', { 
-        error: error.message, 
-        stack: error.stack,
-        userId: req.user?.userId
-      });
+      console.error('[DatingChatController] getUserChats error:', error);
       
       let statusCode = 500;
       if (error.message.includes('required') || error.message.includes('Invalid')) {
@@ -165,7 +121,7 @@ class ChatController {
   }
   
   /**
-   * Get chat details
+   * Get dating chat details
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -174,16 +130,16 @@ class ChatController {
       const { chatId } = req.params;
       const userId = req.user.userId;
       
-      const chat = await ChatService.getChatDetails(chatId, userId);
+      const chat = await DatingChatService.getChatDetails(chatId, userId);
       
       res.status(200).json(createResponse(
-        'Chat details retrieved successfully',
+        'Dating chat details retrieved successfully',
         { chat },
         { chatId }
       ));
       
     } catch (error) {
-      console.error('[ChatController] getChatDetails error:', error);
+      console.error('[DatingChatController] getChatDetails error:', error);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -197,7 +153,7 @@ class ChatController {
   }
   
   /**
-   * Update chat settings (archive, pin, mute)
+   * Update dating chat settings (archive, pin, mute)
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -212,20 +168,20 @@ class ChatController {
         return res.status(400).json(createErrorResponse('At least one setting must be provided'));
       }
       
-      const result = await ChatService.updateChatSettings(chatId, userId, {
+      const result = await DatingChatService.updateChatSettings(chatId, userId, {
         isArchived,
         isPinned,
         isMuted
       });
       
       res.status(200).json(createResponse(
-        'Chat settings updated successfully',
+        'Dating chat settings updated successfully',
         result,
         { chatId }
       ));
       
     } catch (error) {
-      console.error('[ChatController] updateChatSettings error:', error);
+      console.error('[DatingChatController] updateChatSettings error:', error);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -239,7 +195,7 @@ class ChatController {
   }
   
   /**
-   * Delete chat (archive for user)
+   * Delete dating chat (archive for user)
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -248,16 +204,16 @@ class ChatController {
       const { chatId } = req.params;
       const userId = req.user.userId;
       
-      const result = await ChatService.deleteChat(chatId, userId);
+      const result = await DatingChatService.deleteChat(chatId, userId);
       
       res.status(200).json(createResponse(
-        'Chat deleted successfully',
+        'Dating chat deleted successfully',
         result,
         { chatId }
       ));
       
     } catch (error) {
-      console.error('[ChatController] deleteChat error:', error);
+      console.error('[DatingChatController] deleteChat error:', error);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -271,7 +227,7 @@ class ChatController {
   }
   
   /**
-   * Search chats by participant name
+   * Search dating chats by participant name
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -284,16 +240,16 @@ class ChatController {
         return res.status(400).json(createErrorResponse('Search query is required'));
       }
       
-      const result = await ChatService.searchChats(userId, query, parseInt(page), parseInt(limit));
+      const result = await DatingChatService.searchChats(userId, query, parseInt(page), parseInt(limit));
       
       res.status(200).json(createResponse(
-        'Chats search completed successfully',
+        'Dating chats search completed successfully',
         result,
         { query, pagination: result.pagination }
       ));
       
     } catch (error) {
-      console.error('[ChatController] searchChats error:', error);
+      console.error('[DatingChatController] searchChats error:', error);
       
       let statusCode = 500;
       if (error.message.includes('required') || error.message.includes('Invalid')) {
@@ -305,7 +261,7 @@ class ChatController {
   }
   
   /**
-   * Get chat statistics
+   * Get dating chat statistics
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -313,16 +269,16 @@ class ChatController {
     try {
       const userId = req.user.userId;
       
-      const stats = await ChatService.getChatStats(userId);
+      const stats = await DatingChatService.getChatStats(userId);
       
       res.status(200).json(createResponse(
-        'Chat statistics retrieved successfully',
+        'Dating chat statistics retrieved successfully',
         { stats },
         { userId }
       ));
       
     } catch (error) {
-      console.error('[ChatController] getChatStats error:', error);
+      console.error('[DatingChatController] getChatStats error:', error);
       
       let statusCode = 500;
       if (error.message.includes('required')) {
@@ -334,7 +290,7 @@ class ChatController {
   }
   
   /**
-   * Join chat room for real-time updates
+   * Join dating chat room for real-time updates
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -343,16 +299,16 @@ class ChatController {
       const { chatId } = req.params;
       const userId = req.user.userId;
       
-      const result = await ChatService.joinChat(chatId, userId);
+      const result = await DatingChatService.joinChat(chatId, userId);
       
       res.status(200).json(createResponse(
-        'Joined chat successfully',
+        'Joined dating chat successfully',
         result,
         { chatId }
       ));
       
     } catch (error) {
-      console.error('[ChatController] joinChat error:', error);
+      console.error('[DatingChatController] joinChat error:', error);
       
       let statusCode = 500;
       if (error.message.includes('Access denied')) {
@@ -366,7 +322,7 @@ class ChatController {
   }
   
   /**
-   * Leave chat room
+   * Leave dating chat room
    * @param {Object} req - Express request object
    * @param {Object} res - Express response object
    */
@@ -375,16 +331,16 @@ class ChatController {
       const { chatId } = req.params;
       const userId = req.user.userId;
       
-      const result = await ChatService.leaveChat(chatId, userId);
+      const result = await DatingChatService.leaveChat(chatId, userId);
       
       res.status(200).json(createResponse(
-        'Left chat successfully',
+        'Left dating chat successfully',
         result,
         { chatId }
       ));
       
     } catch (error) {
-      console.error('[ChatController] leaveChat error:', error);
+      console.error('[DatingChatController] leaveChat error:', error);
       
       let statusCode = 500;
       if (error.message.includes('required')) {
@@ -396,4 +352,5 @@ class ChatController {
   }
 }
 
-module.exports = ChatController;
+module.exports = DatingChatController;
+

@@ -1,31 +1,22 @@
-const Message = require('../userModel/messageModel');
-const Chat = require('../userModel/chatModel');
+const DatingMessage = require('../models/datingMessageModel');
+const DatingChat = require('../models/datingChatModel');
+const DatingMatch = require('../models/datingMatchModel');
 const User = require('../../auth/model/userAuthModel');
 const { uploadBuffer } = require('../../../services/s3Service');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 
 /**
- * Enhanced Message Service with comprehensive error handling and edge cases
+ * Dating Message Service - Separate from social messages
  */
-class MessageService {
+class DatingMessageService {
   
   /**
-   * Send a message to a chat
+   * Send a message to a dating chat
    * @param {Object} messageData - Message data
    * @param {Object} file - Optional file attachment
    * @returns {Promise<Object>} Created message
    */
   static async sendMessage(messageData, file = null) {
-    console.log('🔵 [BACKEND_MSG_SVC] sendMessage called:', { 
-      chatId: messageData.chatId,
-      senderId: messageData.senderId,
-      type: messageData.type,
-      hasContent: !!messageData.content,
-      hasFile: !!file,
-      replyTo: messageData.replyTo,
-      forwardedFrom: messageData.forwardedFrom,
-      timestamp: new Date().toISOString()
-    });
     try {
       const {
         chatId,
@@ -38,39 +29,27 @@ class MessageService {
       
       // Input validation
       if (!chatId || !senderId) {
-        console.error('❌ [BACKEND_MSG_SVC] Missing required fields:', { chatId: !!chatId, senderId: !!senderId });
         throw new Error('Chat ID and Sender ID are required');
       }
       
       if (!['text', 'audio', 'video', 'image', 'document', 'gif', 'location', 'voice', 'system', 'forwarded'].includes(type)) {
-        console.error('❌ [BACKEND_MSG_SVC] Invalid message type:', type);
         throw new Error('Invalid message type');
       }
       
       if (type === 'text' && (!content || content.trim() === '')) {
-        console.error('❌ [BACKEND_MSG_SVC] Content missing for text message');
         throw new Error('Message content is required for text messages');
       }
       
       // Validate chat exists and user is participant
-      console.log('🔵 [BACKEND_MSG_SVC] Validating chat access...', { chatId, senderId });
-      const chat = await Chat.findById(chatId);
+      const chat = await DatingChat.findById(chatId);
       if (!chat) {
-        console.error('❌ [BACKEND_MSG_SVC] Chat not found:', chatId);
-        throw new Error('Chat not found');
+        throw new Error('Dating chat not found');
       }
-      console.log('✅ [BACKEND_MSG_SVC] Chat found:', { chatId, participantsCount: chat.participants.length });
       
       const isParticipant = chat.participants.some(p => p.toString() === senderId.toString());
       if (!isParticipant) {
-        console.error('❌ [BACKEND_MSG_SVC] Access denied - user not participant:', { chatId, senderId, participants: chat.participants });
-        throw new Error('Access denied to this chat');
+        throw new Error('Access denied to this dating chat');
       }
-      console.log('✅ [BACKEND_MSG_SVC] User is participant');
-      
-      // Handle media upload if file is present
-      let mediaData = {};
-      let musicMetadata = null;
       
       // Handle location messages (no file upload needed)
       let locationData = null;
@@ -84,7 +63,10 @@ class MessageService {
         };
       }
       
-      // Handle file uploads for media messages
+      // Handle media upload if file is present
+      let mediaData = {};
+      let musicMetadata = null;
+      
       if (file && ['audio', 'video', 'image', 'document', 'gif', 'voice'].includes(type)) {
         // Validate file size based on type
         const maxSizes = {
@@ -124,27 +106,20 @@ class MessageService {
           ]
         };
         
-        // Normalize MIME type (handle variations like image/jpeg vs image/jpg)
+        // Normalize MIME type
         const normalizedMimeType = file.mimetype?.toLowerCase().replace(/jpg$/, 'jpeg');
         
         if (allowedTypes[type] && !allowedTypes[type].includes(normalizedMimeType)) {
-          // Provide more helpful error message
-          const detectedType = file.mimetype || 'unknown';
-          console.error(`❌ [MESSAGE_SERVICE] Invalid file type for ${type} message:`, {
-            detectedMimeType: detectedType,
-            fileName: file.originalname,
-            allowedTypes: allowedTypes[type]
-          });
-          throw new Error(`Invalid file type for ${type} message. Detected: ${detectedType}. Allowed types: ${allowedTypes[type].join(', ')}`);
+          throw new Error(`Invalid file type for ${type} message. Detected: ${file.mimetype}. Allowed types: ${allowedTypes[type].join(', ')}`);
         }
         
         // Determine S3 category and type
-        const s3Category = 'messages';
+        const s3Category = 'dating-messages';
         let s3Type = type;
         if (type === 'voice') {
-          s3Type = 'voice'; // Store voice messages separately
+          s3Type = 'voice';
         } else if (type === 'audio') {
-          s3Type = 'music'; // Store music files in music folder
+          s3Type = 'music';
         }
         
         // Upload to S3
@@ -164,43 +139,13 @@ class MessageService {
           fileSize: file.size
         };
         
-        // Add duration for video, audio, and voice messages (required by schema)
+        // Add duration for video, audio, and voice messages
         if (['video', 'audio', 'voice'].includes(type)) {
-          // Duration comes from req.body.duration (sent via FormData from frontend)
-          // Parse as number, default to 0 if not provided
-          console.log('🔵 [MESSAGE_SERVICE] Processing duration for', type, 'message:', {
-            messageDataDuration: messageData.duration,
-            durationType: typeof messageData.duration,
-            durationValue: messageData.duration,
-            hasDuration: !!messageData.duration
-          });
-          
           const duration = messageData.duration ? parseFloat(messageData.duration) : 0;
           mediaData.duration = isNaN(duration) ? 0 : Math.max(0, duration);
-          
-          console.log('🔵 [MESSAGE_SERVICE] Duration processing result:', {
-            type,
-            rawDuration: messageData.duration,
-            parsedDuration: duration,
-            finalDuration: mediaData.duration,
-            isNaN: isNaN(duration),
-            mediaDataKeys: Object.keys(mediaData),
-            fullMediaData: mediaData
-          });
-          
-          if (mediaData.duration === 0 && type === 'video') {
-            console.warn('⚠️ [MESSAGE_SERVICE] Video duration not provided, defaulting to 0');
-          } else if (mediaData.duration === 0 && type === 'voice') {
-            console.warn('⚠️ [MESSAGE_SERVICE] Voice duration not provided or is 0:', {
-              messageDataDuration: messageData.duration,
-              parsedDuration: duration
-            });
-          } else {
-            console.log('✅ [MESSAGE_SERVICE] Media duration set:', { type, duration: mediaData.duration });
-          }
         }
         
-        // Add dimensions for images and videos if available (from req.body)
+        // Add dimensions for images and videos if available
         if ((type === 'image' || type === 'video')) {
           const width = messageData.width ? parseInt(messageData.width) : null;
           const height = messageData.height ? parseInt(messageData.height) : null;
@@ -216,7 +161,6 @@ class MessageService {
         // Add GIF-specific fields
         if (type === 'gif') {
           mediaData.isAnimated = true;
-          // Check if GIF is from external service (would come in messageData)
           if (messageData.gifSource) {
             mediaData.gifSource = messageData.gifSource;
             mediaData.gifId = messageData.gifId || null;
@@ -225,7 +169,7 @@ class MessageService {
           }
         }
         
-        // Extract music metadata for audio files (optional, can be done async)
+        // Extract music metadata for audio files
         if (type === 'audio' && messageData.musicMetadata) {
           musicMetadata = messageData.musicMetadata;
         }
@@ -238,7 +182,7 @@ class MessageService {
       
       // Validate replyTo message if provided
       if (replyTo) {
-        const replyMessage = await Message.findById(replyTo);
+        const replyMessage = await DatingMessage.findById(replyTo);
         if (!replyMessage || replyMessage.chatId.toString() !== chatId) {
           throw new Error('Invalid reply message');
         }
@@ -246,7 +190,7 @@ class MessageService {
       
       // Validate forwardedFrom message if provided
       if (forwardedFrom) {
-        const forwardedMessage = await Message.findById(forwardedFrom);
+        const forwardedMessage = await DatingMessage.findById(forwardedFrom);
         if (!forwardedMessage) {
           throw new Error('Invalid forwarded message');
         }
@@ -256,13 +200,12 @@ class MessageService {
       const isOneView = messageData.isOneView === true || messageData.isOneView === 'true';
       let oneViewExpiresAt = null;
       if (isOneView) {
-        // Default to 24 hours, or use provided expiration
         const expirationHours = messageData.oneViewExpirationHours || 24;
         oneViewExpiresAt = new Date(Date.now() + expirationHours * 60 * 60 * 1000);
       }
       
       // Create message
-      const message = new Message({
+      const message = new DatingMessage({
         chatId,
         senderId,
         type,
@@ -277,30 +220,7 @@ class MessageService {
         status: 'sent'
       });
       
-      // Debug: Log message before saving (especially for voice messages)
-      if (type === 'voice') {
-        console.log('🔵 [MESSAGE_SERVICE] Voice message before save:', {
-          messageId: message._id,
-          hasMedia: !!message.media,
-          mediaDuration: message.media?.duration,
-          mediaKeys: message.media ? Object.keys(message.media) : [],
-          fullMedia: message.media,
-          mediaDataDuration: mediaData.duration
-        });
-      }
-      
       await message.save();
-      
-      // Debug: Log message after saving (especially for voice messages)
-      if (type === 'voice') {
-        console.log('🔵 [MESSAGE_SERVICE] Voice message after save:', {
-          messageId: message._id,
-          hasMedia: !!message.media,
-          mediaDuration: message.media?.duration,
-          mediaKeys: message.media ? Object.keys(message.media) : [],
-          fullMedia: JSON.stringify(message.media)
-        });
-      }
       await message.populate([
         { path: 'senderId', select: 'username fullName profilePictureUrl' },
         { path: 'replyTo', select: 'content type senderId' },
@@ -320,24 +240,16 @@ class MessageService {
       
       await chat.save();
       
-      // Emit real-time message to chat participants
+      // Emit real-time message to chat participants (dating-specific room)
       const realtime = enhancedRealtimeService;
-      if (realtime && realtime.emitNewMessage) {
-        realtime.emitNewMessage(chatId, {
+      if (realtime && realtime.emitDatingMessage) {
+        realtime.emitDatingMessage(chatId, {
           _id: message._id,
           chatId: message.chatId,
           senderId: message.senderId,
           type: message.type,
           content: message.content,
           media: message.media,
-          location: message.location,
-          musicMetadata: message.musicMetadata,
-          isOneView: message.isOneView,
-          oneViewExpiresAt: message.oneViewExpiresAt,
-          viewedBy: message.viewedBy,
-          gifSource: message.gifSource,
-          gifId: message.gifId,
-          isAnimated: message.isAnimated,
           replyTo: message.replyTo,
           forwardedFrom: message.forwardedFrom,
           createdAt: message.createdAt,
@@ -349,58 +261,68 @@ class MessageService {
             profilePictureUrl: message.senderId.profilePictureUrl
           }
         });
-        
-        // Emit delivered status update to sender after a short delay
-        // This simulates message delivery when receiver receives it
-        setTimeout(() => {
-          if (realtime.io) {
-            const senderRoom = `user:${senderId}`;
-            realtime.io.to(senderRoom).emit('message_status_update', {
-              messageId: message._id,
-              chatId: chatId,
-              status: 'delivered',
-              timestamp: new Date()
-            });
-            console.log('✅ [MESSAGE_SERVICE] Delivered status update emitted for message:', message._id);
+      } else if (realtime && realtime.emitNewMessage) {
+        // Fallback to general emitNewMessage
+        realtime.emitNewMessage(chatId, {
+          _id: message._id,
+          chatId: message.chatId,
+          senderId: message.senderId,
+          type: message.type,
+          content: message.content,
+          media: message.media,
+          replyTo: message.replyTo,
+          forwardedFrom: message.forwardedFrom,
+          createdAt: message.createdAt,
+          status: message.status,
+          sender: {
+            _id: message.senderId._id,
+            username: message.senderId.username,
+            fullName: message.senderId.fullName,
+            profilePictureUrl: message.senderId.profilePictureUrl
           }
-        }, 500);
+        });
       }
       
       const responseMessage = {
         _id: message._id,
-        messageId: message._id, // Keep both for backward compatibility
+        messageId: message._id,
         chatId: message.chatId,
         senderId: message.senderId,
         type: message.type,
         content: message.content,
         media: message.media,
+        location: message.location,
+        musicMetadata: message.musicMetadata,
+        isOneView: message.isOneView,
+        oneViewExpiresAt: message.oneViewExpiresAt,
         replyTo: message.replyTo,
         forwardedFrom: message.forwardedFrom,
         createdAt: message.createdAt,
         status: message.status
       };
       
-      // Debug: Log voice message response
-      if (type === 'voice') {
-        console.log('🔵 [MESSAGE_SERVICE] Voice message response:', {
-          messageId: responseMessage._id,
-          hasMedia: !!responseMessage.media,
-          mediaDuration: responseMessage.media?.duration,
-          mediaKeys: responseMessage.media ? Object.keys(responseMessage.media) : [],
-          fullMedia: JSON.stringify(responseMessage.media)
-        });
-      }
+      // Emit delivered status update to sender after a short delay
+      setTimeout(() => {
+        if (realtime && realtime.io) {
+          const senderRoom = `user:${senderId}`;
+          realtime.io.to(senderRoom).emit('dating_message_status_update', {
+            messageId: message._id,
+            chatId: chatId,
+            status: 'delivered',
+            timestamp: new Date()
+          });
+        }
+      }, 500);
       
       return responseMessage;
-      
     } catch (error) {
-      console.error('[MessageService] sendMessage error:', error);
+      console.error('[DatingMessageService] sendMessage error:', error);
       throw error;
     }
   }
   
   /**
-   * Get messages in a chat with pagination
+   * Get messages in a dating chat with pagination
    * @param {string} chatId - Chat ID
    * @param {string} userId - User ID
    * @param {number} page - Page number
@@ -408,53 +330,29 @@ class MessageService {
    * @returns {Promise<Array>} Array of messages
    */
   static async getChatMessages(chatId, userId, page = 1, limit = 50) {
-    console.log('🔵 [BACKEND_MSG_SVC] getChatMessages called:', { chatId, userId, page, limit, timestamp: new Date().toISOString() });
     try {
-      // Input validation
       if (!chatId || !userId) {
-        console.error('❌ [BACKEND_MSG_SVC] Missing required fields:', { chatId: !!chatId, userId: !!userId });
         throw new Error('Chat ID and User ID are required');
       }
       
       if (page < 1 || limit < 1 || limit > 100) {
-        console.error('❌ [BACKEND_MSG_SVC] Invalid pagination:', { page, limit });
         throw new Error('Invalid pagination parameters');
       }
       
       // Validate chat access
-      console.log('🔵 [BACKEND_MSG_SVC] Validating chat access...', { chatId, userId });
-      const chat = await Chat.findById(chatId);
+      const chat = await DatingChat.findById(chatId);
       if (!chat) {
-        console.error('❌ [BACKEND_MSG_SVC] Chat not found:', chatId);
-        throw new Error('Chat not found');
+        throw new Error('Dating chat not found');
       }
-      console.log('✅ [BACKEND_MSG_SVC] Chat found:', { chatId, participantsCount: chat.participants.length });
       
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
-        console.error('❌ [BACKEND_MSG_SVC] Access denied - user not participant:', { chatId, userId, participants: chat.participants });
-        throw new Error('Access denied to this chat');
-      }
-      console.log('✅ [BACKEND_MSG_SVC] User is participant');
-      
-      console.log('🔵 [BACKEND_MSG_SVC] Fetching messages from database...', { chatId, page, limit });
-      const messages = await Message.getChatMessages(chatId, page, limit, userId);
-      console.log('✅ [BACKEND_MSG_SVC] Messages fetched:', { messagesCount: messages.length, chatId });
-      
-      // Debug: Log voice messages to check duration
-      const voiceMessages = messages.filter(msg => msg.type === 'voice');
-      if (voiceMessages.length > 0) {
-        console.log('🔵 [BACKEND_MSG_SVC] Voice messages in response:', voiceMessages.map(msg => ({
-          messageId: msg._id,
-          hasMedia: !!msg.media,
-          mediaDuration: msg.media?.duration,
-          mediaKeys: msg.media ? Object.keys(msg.media) : [],
-          mediaUrl: msg.media?.url,
-          fullMedia: msg.media
-        })));
+        throw new Error('Access denied to this dating chat');
       }
       
-      const result = {
+      const messages = await DatingMessage.getChatMessages(chatId, page, limit, userId);
+      
+      return {
         messages,
         pagination: {
           page,
@@ -463,40 +361,36 @@ class MessageService {
           hasMore: messages.length === limit
         }
       };
-      console.log('✅ [BACKEND_MSG_SVC] getChatMessages completed:', { messagesCount: result.messages.length, hasMore: result.pagination.hasMore });
-      return result;
-      
     } catch (error) {
-      console.error('❌ [BACKEND_MSG_SVC] getChatMessages error:', { error: error.message, stack: error.stack, chatId, userId });
+      console.error('[DatingMessageService] getChatMessages error:', error);
       throw error;
     }
   }
   
   /**
-   * Mark messages as read in a chat
+   * Mark messages as read in a dating chat
    * @param {string} chatId - Chat ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Read result
    */
   static async markMessagesAsRead(chatId, userId) {
     try {
-      // Input validation
       if (!chatId || !userId) {
         throw new Error('Chat ID and User ID are required');
       }
       
       // Validate chat access
-      const chat = await Chat.findById(chatId);
+      const chat = await DatingChat.findById(chatId);
       if (!chat) {
-        throw new Error('Chat not found');
+        throw new Error('Dating chat not found');
       }
       
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
-        throw new Error('Access denied to this chat');
+        throw new Error('Access denied to this dating chat');
       }
       
-      const readCount = await Message.markChatAsRead(chatId, userId);
+      const readCount = await DatingMessage.markChatAsRead(chatId, userId);
       
       // Reset unread count for this user in the chat
       chat.resetUnreadCount(userId);
@@ -507,15 +401,14 @@ class MessageService {
         readCount,
         unreadCount: 0
       };
-      
     } catch (error) {
-      console.error('[MessageService] markMessagesAsRead error:', error);
+      console.error('[DatingMessageService] markMessagesAsRead error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Edit a message
+   * Edit a dating message
    * @param {string} messageId - Message ID
    * @param {string} userId - User ID
    * @param {string} newContent - New message content
@@ -523,14 +416,13 @@ class MessageService {
    */
   static async editMessage(messageId, userId, newContent) {
     try {
-      // Input validation
       if (!messageId || !userId || !newContent || newContent.trim() === '') {
         throw new Error('Message ID, User ID, and content are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await DatingMessage.findById(messageId);
       if (!message) {
-        throw new Error('Message not found');
+        throw new Error('Dating message not found');
       }
       
       // Check if user is the sender
@@ -555,17 +447,16 @@ class MessageService {
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`chat:${message.chatId}`).emit('message_update', {
+          realtime.to(`dating-chat:${message.chatId}`).emit('dating_message_update', {
             messageId: message._id,
             chatId: message.chatId,
             content: message.content,
             editedAt: message.editedAt
           });
           
-          // Also emit to all participants' global rooms for chat list updates
-          const chat = await Chat.findById(message.chatId);
+          const chat = await DatingChat.findById(message.chatId);
           chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('message_update', {
+            realtime.to(`user:${participantId}`).emit('dating_message_update', {
               messageId: message._id,
               chatId: message.chatId,
               content: message.content,
@@ -574,8 +465,7 @@ class MessageService {
           });
         }
       } catch (wsError) {
-        console.error('[MessageService] WebSocket emission error:', wsError);
-        // Continue execution - don't fail the message edit because of WebSocket issues
+        console.error('[DatingMessageService] WebSocket emission error:', wsError);
       }
       
       return {
@@ -585,27 +475,26 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] editMessage error:', error);
+      console.error('[DatingMessageService] editMessage error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Delete a message
+   * Delete a dating message
    * @param {string} messageId - Message ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Deletion result
    */
   static async deleteMessage(messageId, userId) {
     try {
-      // Input validation
       if (!messageId || !userId) {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await DatingMessage.findById(messageId);
       if (!message) {
-        throw new Error('Message not found');
+        throw new Error('Dating message not found');
       }
       
       // Check if user is the sender
@@ -626,13 +515,13 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] deleteMessage error:', error);
+      console.error('[DatingMessageService] deleteMessage error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Add reaction to a message
+   * Add reaction to a dating message
    * @param {string} messageId - Message ID
    * @param {string} userId - User ID
    * @param {string} emoji - Emoji reaction
@@ -640,18 +529,17 @@ class MessageService {
    */
   static async reactToMessage(messageId, userId, emoji) {
     try {
-      // Input validation
       if (!messageId || !userId || !emoji) {
         throw new Error('Message ID, User ID, and emoji are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await DatingMessage.findById(messageId);
       if (!message) {
-        throw new Error('Message not found');
+        throw new Error('Dating message not found');
       }
       
       // Check if user is participant in the chat
-      const chat = await Chat.findById(message.chatId);
+      const chat = await DatingChat.findById(message.chatId);
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
         throw new Error('Access denied to this message');
@@ -674,16 +562,14 @@ class MessageService {
             reactions: message.reactions
           };
           
-          realtime.to(`chat:${message.chatId}`).emit('message_reaction', reactionData);
+          realtime.to(`dating-chat:${message.chatId}`).emit('dating_message_reaction', reactionData);
           
-          // Also emit to all participants' global rooms for chat list updates
           chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('message_reaction', reactionData);
+            realtime.to(`user:${participantId}`).emit('dating_message_reaction', reactionData);
           });
         }
       } catch (wsError) {
-        console.error('[MessageService] WebSocket emission error:', wsError);
-        // Continue execution - don't fail the reaction because of WebSocket issues
+        console.error('[DatingMessageService] WebSocket emission error:', wsError);
       }
       
       return {
@@ -692,31 +578,30 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] reactToMessage error:', error);
+      console.error('[DatingMessageService] reactToMessage error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Remove reaction from a message
+   * Remove reaction from a dating message
    * @param {string} messageId - Message ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Updated reactions
    */
   static async removeReaction(messageId, userId) {
     try {
-      // Input validation
       if (!messageId || !userId) {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await DatingMessage.findById(messageId);
       if (!message) {
-        throw new Error('Message not found');
+        throw new Error('Dating message not found');
       }
       
       // Check if user is participant in the chat
-      const chat = await Chat.findById(message.chatId);
+      const chat = await DatingChat.findById(message.chatId);
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
         throw new Error('Access denied to this message');
@@ -728,15 +613,14 @@ class MessageService {
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`chat:${message.chatId}`).emit('message_reaction', {
+          realtime.to(`dating-chat:${message.chatId}`).emit('dating_message_reaction', {
             messageId: message._id,
             chatId: message.chatId,
             reactions: message.reactions
           });
           
-          // Also emit to all participants' global rooms for chat list updates
           chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('message_reaction', {
+            realtime.to(`user:${participantId}`).emit('dating_message_reaction', {
               messageId: message._id,
               chatId: message.chatId,
               reactions: message.reactions
@@ -744,8 +628,7 @@ class MessageService {
           });
         }
       } catch (wsError) {
-        console.error('[MessageService] WebSocket emission error:', wsError);
-        // Continue execution - don't fail the reaction removal because of WebSocket issues
+        console.error('[DatingMessageService] WebSocket emission error:', wsError);
       }
       
       return {
@@ -754,13 +637,13 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] removeReaction error:', error);
+      console.error('[DatingMessageService] removeReaction error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Forward a message to another chat
+   * Forward a dating message to another chat
    * @param {string} messageId - Original message ID
    * @param {string} targetChatId - Target chat ID
    * @param {string} userId - User ID forwarding the message
@@ -768,13 +651,12 @@ class MessageService {
    */
   static async forwardMessage(messageId, targetChatId, userId) {
     try {
-      // Input validation
       if (!messageId || !targetChatId || !userId) {
         throw new Error('Message ID, Target Chat ID, and User ID are required');
       }
       
       // Find the original message
-      const originalMessage = await Message.findById(messageId)
+      const originalMessage = await DatingMessage.findById(messageId)
         .populate('senderId', 'username fullName profilePictureUrl');
       
       if (!originalMessage) {
@@ -782,19 +664,19 @@ class MessageService {
       }
       
       // Check if user has access to the original message
-      const originalChat = await Chat.findById(originalMessage.chatId);
+      const originalChat = await DatingChat.findById(originalMessage.chatId);
       if (!originalChat || !originalChat.participants.includes(userId)) {
         throw new Error('Access denied to original message');
       }
       
       // Check if user has access to target chat
-      const targetChat = await Chat.findById(targetChatId);
+      const targetChat = await DatingChat.findById(targetChatId);
       if (!targetChat || !targetChat.participants.includes(userId)) {
         throw new Error('Access denied to target chat');
       }
       
       // Create forwarded message
-      const forwardedMessage = new Message({
+      const forwardedMessage = new DatingMessage({
         chatId: targetChatId,
         senderId: userId,
         type: 'forwarded',
@@ -821,7 +703,19 @@ class MessageService {
       
       // Emit real-time message to target chat participants
       const realtime = enhancedRealtimeService;
-      if (realtime && realtime.emitNewMessage) {
+      if (realtime && realtime.emitDatingMessage) {
+        realtime.emitDatingMessage(targetChatId, {
+          _id: forwardedMessage._id,
+          chatId: forwardedMessage.chatId,
+          senderId: forwardedMessage.senderId,
+          type: forwardedMessage.type,
+          content: forwardedMessage.content,
+          media: forwardedMessage.media,
+          forwardedFrom: forwardedMessage.forwardedFrom,
+          createdAt: forwardedMessage.createdAt,
+          status: forwardedMessage.status
+        });
+      } else if (realtime && realtime.emitNewMessage) {
         realtime.emitNewMessage(targetChatId, {
           _id: forwardedMessage._id,
           chatId: forwardedMessage.chatId,
@@ -843,23 +737,22 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] forwardMessage error:', error);
+      console.error('[DatingMessageService] forwardMessage error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Search messages in a chat
+   * Search messages in a dating chat
    * @param {string} chatId - Chat ID
    * @param {string} userId - User ID
    * @param {string} query - Search query
    * @param {number} page - Page number
    * @param {number} limit - Items per page
-   * @returns {Promise<Array>} Search results
+   * @returns {Promise<Object>} Search results
    */
   static async searchMessages(chatId, userId, query, page = 1, limit = 20) {
     try {
-      // Input validation
       if (!chatId || !userId || !query || query.trim() === '') {
         throw new Error('Chat ID, User ID, and search query are required');
       }
@@ -869,17 +762,17 @@ class MessageService {
       }
       
       // Validate chat access
-      const chat = await Chat.findById(chatId);
+      const chat = await DatingChat.findById(chatId);
       if (!chat) {
-        throw new Error('Chat not found');
+        throw new Error('Dating chat not found');
       }
       
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
-        throw new Error('Access denied to this chat');
+        throw new Error('Access denied to this dating chat');
       }
       
-      const messages = await Message.searchMessages(chatId, query.trim(), userId, page, limit);
+      const messages = await DatingMessage.searchMessages(chatId, query.trim(), userId, page, limit);
       
       return {
         messages,
@@ -892,23 +785,22 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] searchMessages error:', error);
+      console.error('[DatingMessageService] searchMessages error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Get media messages in a chat
+   * Get media messages in a dating chat
    * @param {string} chatId - Chat ID
    * @param {string} userId - User ID
    * @param {string} type - Media type filter
    * @param {number} page - Page number
    * @param {number} limit - Items per page
-   * @returns {Promise<Array>} Media messages
+   * @returns {Promise<Object>} Media messages
    */
   static async getChatMedia(chatId, userId, type = null, page = 1, limit = 20) {
     try {
-      // Input validation
       if (!chatId || !userId) {
         throw new Error('Chat ID and User ID are required');
       }
@@ -918,17 +810,17 @@ class MessageService {
       }
       
       // Validate chat access
-      const chat = await Chat.findById(chatId);
+      const chat = await DatingChat.findById(chatId);
       if (!chat) {
-        throw new Error('Chat not found');
+        throw new Error('Dating chat not found');
       }
       
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
-        throw new Error('Access denied to this chat');
+        throw new Error('Access denied to this dating chat');
       }
       
-      const mediaMessages = await Message.getChatMedia(chatId, type, userId, page, limit);
+      const mediaMessages = await DatingMessage.getChatMedia(chatId, type, userId, page, limit);
       
       return {
         mediaMessages,
@@ -941,25 +833,24 @@ class MessageService {
       };
       
     } catch (error) {
-      console.error('[MessageService] getChatMedia error:', error);
+      console.error('[DatingMessageService] getChatMedia error:', error);
       throw error;
     }
   }
-  
+
   /**
-   * Get message details
+   * Get dating message details
    * @param {string} messageId - Message ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Message details
    */
   static async getMessageDetails(messageId, userId) {
     try {
-      // Input validation
       if (!messageId || !userId) {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await Message.findById(messageId)
+      const message = await DatingMessage.findById(messageId)
         .populate('senderId', 'username fullName profilePictureUrl')
         .populate('replyTo', 'content type senderId')
         .populate('forwardedFrom', 'content type senderId')
@@ -967,11 +858,11 @@ class MessageService {
         .lean();
       
       if (!message) {
-        throw new Error('Message not found');
+        throw new Error('Dating message not found');
       }
       
       // Check if user is participant in the chat
-      const chat = await Chat.findById(message.chatId);
+      const chat = await DatingChat.findById(message.chatId);
       const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
       if (!isParticipant) {
         throw new Error('Access denied to this message');
@@ -985,7 +876,7 @@ class MessageService {
       return message;
       
     } catch (error) {
-      console.error('[MessageService] getMessageDetails error:', error);
+      console.error('[DatingMessageService] getMessageDetails error:', error);
       throw error;
     }
   }
@@ -997,12 +888,11 @@ class MessageService {
    * @returns {Promise<Object>} Updated message
    */
   static async markOneViewAsViewed(messageId, userId) {
-    console.log('🔵 [BACKEND_MSG_SVC] markOneViewAsViewed called:', { messageId, userId, timestamp: new Date().toISOString() });
     try {
       // Find the message
-      const message = await Message.findById(messageId);
+      const message = await DatingMessage.findById(messageId);
       if (!message) {
-        throw new Error('Message not found');
+        throw new Error('Dating message not found');
       }
       
       // Check if it's a one-view message
@@ -1016,7 +906,6 @@ class MessageService {
       );
       
       if (alreadyViewed) {
-        console.log('✅ [BACKEND_MSG_SVC] Message already viewed by user');
         return message;
       }
       
@@ -1028,7 +917,6 @@ class MessageService {
       
       // Check if message has expired
       if (message.oneViewExpiresAt && new Date() > message.oneViewExpiresAt) {
-        console.log('⚠️ [BACKEND_MSG_SVC] One-view message has expired');
         // Optionally delete the media or mark as expired
         message.isDeleted = true;
       }
@@ -1039,14 +927,14 @@ class MessageService {
         { path: 'viewedBy.userId', select: 'username fullName' }
       ]);
       
-      console.log('✅ [BACKEND_MSG_SVC] One-view message marked as viewed:', { messageId, userId });
       return message;
       
     } catch (error) {
-      console.error('❌ [BACKEND_MSG_SVC] markOneViewAsViewed error:', error);
+      console.error('[DatingMessageService] markOneViewAsViewed error:', error);
       throw error;
     }
   }
 }
 
-module.exports = MessageService;
+module.exports = DatingMessageService;
+

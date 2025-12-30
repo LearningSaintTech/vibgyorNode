@@ -1,22 +1,25 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
-// Enhanced Message Schema with comprehensive validation
-const messageSchema = new Schema({
+/**
+ * Dating Message Schema - Separate from social messages
+ * Collection: datingmessages
+ */
+const datingMessageSchema = new Schema({
   // Core message properties
-		chatId: { 
+  chatId: { 
     type: Schema.Types.ObjectId,
-			ref: 'Chat', 
-			required: true,
-			index: true
-		},
+    ref: 'DatingChat', 
+    required: true,
+    index: true
+  },
   
-		senderId: { 
+  senderId: { 
     type: Schema.Types.ObjectId,
-			ref: 'User', 
-			required: true,
-			index: true
-		},
+    ref: 'User', 
+    required: true,
+    index: true
+  },
   
   // Message content
   content: {
@@ -24,17 +27,17 @@ const messageSchema = new Schema({
     required: function() {
       return this.type === 'text' || this.type === 'system';
     },
-    maxlength: 4096, // 4KB limit for text messages
+    maxlength: 4096,
     trim: true
   },
   
   // Message type with validation
-		type: { 
-			type: String, 
+  type: { 
+    type: String, 
     enum: ['text', 'audio', 'video', 'image', 'document', 'gif', 'location', 'voice', 'system', 'forwarded'],
-			required: true,
-			default: 'text'
-		},
+    required: true,
+    default: 'text'
+  },
   
   // Media properties
   media: {
@@ -45,7 +48,7 @@ const messageSchema = new Schema({
       }
     },
     mimeType: {
-			type: String, 
+      type: String, 
       required: function() {
         return this.url;
       }
@@ -59,20 +62,18 @@ const messageSchema = new Schema({
     duration: {
       type: Number,
       min: 0,
-      default: 0, // Default to 0 if not provided
+      default: 0,
       required: function() {
-        // Duration is required but can be 0 (will be set to 0 if not provided)
         return ['audio', 'video', 'voice'].includes(this.type);
       },
       validate: {
         validator: function(v) {
-          // Allow 0 or positive numbers
           return v >= 0;
         },
         message: 'Duration must be a non-negative number'
       }
     },
-    thumbnail: String, // For video/image thumbnails
+    thumbnail: String,
     dimensions: {
       width: Number,
       height: Number
@@ -90,25 +91,25 @@ const messageSchema = new Schema({
     gifId: String // External GIF ID if from service
   },
   
-		// Message threading
-		replyTo: { 
+  // Message threading
+  replyTo: { 
     type: Schema.Types.ObjectId,
-			ref: 'Message', 
-			default: null 
-		},
+    ref: 'DatingMessage', 
+    default: null 
+  },
   
-		forwardedFrom: { 
+  forwardedFrom: { 
     type: Schema.Types.ObjectId,
-			ref: 'Message', 
-			default: null 
-		},
+    ref: 'DatingMessage', 
+    default: null 
+  },
   
   // Message status tracking
-		status: {
-			type: String,
+  status: {
+    type: String,
     enum: ['sending', 'sent', 'delivered', 'read', 'failed'],
-			default: 'sent'
-		},
+    default: 'sent'
+  },
   
   // Read receipts
   readBy: [{
@@ -156,9 +157,9 @@ const messageSchema = new Schema({
   }],
   
   // Message deletion
-		isDeleted: { 
-			type: Boolean, 
-			default: false 
+  isDeleted: { 
+    type: Boolean, 
+    default: false 
   },
   
   deletedBy: [{
@@ -166,13 +167,13 @@ const messageSchema = new Schema({
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true
-		},
-		deletedAt: { 
-			type: Date, 
+    },
+    deletedAt: { 
+      type: Date, 
       default: Date.now
     }
   }],
-  
+
   // One-view (disappearing message) properties
   isOneView: {
     type: Boolean,
@@ -225,32 +226,33 @@ const messageSchema = new Schema({
     duration: Number, // in seconds
     genre: String
   },
-
+  
   // Message metadata
   createdAt: {
     type: Date,
     default: Date.now,
     index: true
   },
-
+  
   updatedAt: {
-			type: Date, 
+    type: Date, 
     default: Date.now
   }
 }, {
-		timestamps: true,
-  versionKey: false
+  timestamps: true,
+  versionKey: false,
+  collection: 'datingmessages' // Explicit collection name
 });
 
 // Indexes for optimal performance
-messageSchema.index({ chatId: 1, createdAt: -1 });
-messageSchema.index({ senderId: 1, createdAt: -1 });
-messageSchema.index({ type: 1, createdAt: -1 });
-messageSchema.index({ isDeleted: 1, deletedBy: 1 });
-messageSchema.index({ 'readBy.userId': 1 });
+datingMessageSchema.index({ chatId: 1, createdAt: -1 });
+datingMessageSchema.index({ senderId: 1, createdAt: -1 });
+datingMessageSchema.index({ type: 1, createdAt: -1 });
+datingMessageSchema.index({ isDeleted: 1, deletedBy: 1 });
+datingMessageSchema.index({ 'readBy.userId': 1 });
 
 // Pre-save middleware
-messageSchema.pre('save', function(next) {
+datingMessageSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   
   // Validate message content based on type
@@ -284,80 +286,65 @@ messageSchema.pre('save', function(next) {
   
   // Limit edit history
   if (this.editHistory && this.editHistory.length > 10) {
-    this.editHistory = this.editHistory.slice(-10); // Keep only last 10 edits
+    this.editHistory = this.editHistory.slice(-10);
   }
   
   next();
 });
 
 // Static methods
-messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit = 50, userId = null) {
+datingMessageSchema.statics.getChatMessages = async function(chatId, page = 1, limit = 50, userId = null) {
   try {
-	const skip = (page - 1) * limit;
-	
-    // Build query to exclude messages deleted by the user
-	const query = { 
+    const skip = (page - 1) * limit;
+    
+    const query = { 
       chatId: chatId,
-		isDeleted: false 
-	};
-	
-	// If userId provided, exclude messages deleted by that user
-	if (userId) {
+      isDeleted: false 
+    };
+    
+    if (userId) {
       query['deletedBy.userId'] = { $ne: userId };
-	}
-	
-	const messages = await this.find(query)
-		.populate('senderId', 'username fullName profilePictureUrl')
-		.populate('replyTo', 'content type senderId')
-		.populate('forwardedFrom', 'content type senderId')
-		.populate('reactions.userId', 'username fullName')
-		.sort({ createdAt: -1 })
-		.skip(skip)
-		.limit(limit)
-		.lean();
+    }
+    
+    const messages = await this.find(query)
+      .populate('senderId', 'username fullName profilePictureUrl')
+      .populate('replyTo', 'content type senderId')
+      .populate('forwardedFrom', 'content type senderId')
+      .populate('reactions.userId', 'username fullName')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-	// Debug: Log voice messages to check duration
-	const voiceMessages = messages.filter(msg => msg.type === 'voice');
-	if (voiceMessages.length > 0) {
-		console.log('🔵 [MESSAGE_MODEL] Voice messages from database:', voiceMessages.map(msg => ({
-			messageId: msg._id,
-			hasMedia: !!msg.media,
-			mediaDuration: msg.media?.duration,
-			mediaKeys: msg.media ? Object.keys(msg.media) : [],
-			mediaUrl: msg.media?.url,
-			fullMedia: JSON.stringify(msg.media)
-		})));
-	}
-
-	return messages.reverse(); // Return in chronological order
+    return messages.reverse();
   } catch (error) {
-    throw new Error(`Failed to get chat messages: ${error.message}`);
+    throw new Error(`Failed to get dating chat messages: ${error.message}`);
   }
 };
 
-messageSchema.statics.getUnreadCount = async function(chatId, userId) {
+datingMessageSchema.statics.getUnreadCount = async function(chatId, userId) {
   try {
-	const count = await this.countDocuments({
+    const count = await this.countDocuments({
       chatId: chatId,
-		senderId: { $ne: userId },
-		'readBy.userId': { $ne: userId },
-		isDeleted: false,
+      senderId: { $ne: userId },
+      'readBy.userId': { $ne: userId },
+      isDeleted: false,
       'deletedBy.userId': { $ne: userId }
-	});
-	
-	return count;
+    });
+    
+    return count;
   } catch (error) {
     throw new Error(`Failed to get unread count: ${error.message}`);
   }
 };
 
-messageSchema.statics.markChatAsRead = async function(chatId, userId) {
+datingMessageSchema.statics.markChatAsRead = async function(chatId, userId) {
   try {
     const result = await this.updateMany(
       {
         chatId: chatId,
-		senderId: { $ne: userId },
-		'readBy.userId': { $ne: userId },
+        senderId: { $ne: userId },
+        'readBy.userId': { $ne: userId },
         isDeleted: false
       },
       {
@@ -375,14 +362,14 @@ messageSchema.statics.markChatAsRead = async function(chatId, userId) {
     
     return result.modifiedCount;
   } catch (error) {
-    throw new Error(`Failed to mark messages as read: ${error.message}`);
+    throw new Error(`Failed to mark dating messages as read: ${error.message}`);
   }
 };
 
-messageSchema.statics.searchMessages = async function(chatId, query, userId, page = 1, limit = 20) {
+datingMessageSchema.statics.searchMessages = async function(chatId, query, userId, page = 1, limit = 20) {
   try {
-	const skip = (page - 1) * limit;
-	
+    const skip = (page - 1) * limit;
+    
     const searchQuery = {
       chatId: chatId,
       content: { $regex: query, $options: 'i' },
@@ -391,23 +378,23 @@ messageSchema.statics.searchMessages = async function(chatId, query, userId, pag
     };
     
     const messages = await this.find(searchQuery)
-		.populate('senderId', 'username fullName profilePictureUrl')
-		.sort({ createdAt: -1 })
-		.skip(skip)
-		.limit(limit)
-		.lean();
+      .populate('senderId', 'username fullName profilePictureUrl')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-	return messages;
+    return messages;
   } catch (error) {
-    throw new Error(`Failed to search messages: ${error.message}`);
+    throw new Error(`Failed to search dating messages: ${error.message}`);
   }
 };
 
-messageSchema.statics.getChatMedia = async function(chatId, type = null, userId, page = 1, limit = 20) {
-  try {
-	const skip = (page - 1) * limit;
-	
-	const query = {
+datingMessageSchema.statics.getChatMedia = async function(chatId, type = null, userId, page = 1, limit = 20) {
+    try {
+    const skip = (page - 1) * limit;
+    
+    const query = {
       chatId: chatId,
       type: { $in: ['audio', 'video', 'image', 'document', 'gif', 'voice'] },
       isDeleted: false,
@@ -416,25 +403,24 @@ messageSchema.statics.getChatMedia = async function(chatId, type = null, userId,
     
     if (type) {
       query.type = type;
-	}
-	
-	const messages = await this.find(query)
-		.populate('senderId', 'username fullName profilePictureUrl')
-		.sort({ createdAt: -1 })
-		.skip(skip)
-		.limit(limit)
-		.lean();
+    }
+    
+    const messages = await this.find(query)
+      .populate('senderId', 'username fullName profilePictureUrl')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
 
-	return messages;
+    return messages;
   } catch (error) {
-    throw new Error(`Failed to get chat media: ${error.message}`);
+    throw new Error(`Failed to get dating chat media: ${error.message}`);
   }
 };
 
 // Instance methods
-messageSchema.methods.editMessage = async function(newContent) {
+datingMessageSchema.methods.editMessage = async function(newContent) {
   try {
-    // Validate edit permission (24 hours limit)
     const editTimeLimit = 24 * 60 * 60 * 1000; // 24 hours
     const messageAge = Date.now() - this.createdAt.getTime();
     
@@ -442,7 +428,6 @@ messageSchema.methods.editMessage = async function(newContent) {
       throw new Error('Message is too old to edit');
     }
     
-    // Store edit history
     if (this.content !== newContent) {
       this.editHistory.push({
         content: this.content,
@@ -457,13 +442,12 @@ messageSchema.methods.editMessage = async function(newContent) {
     
     return this;
   } catch (error) {
-    throw new Error(`Failed to edit message: ${error.message}`);
+    throw new Error(`Failed to edit dating message: ${error.message}`);
   }
 };
 
-messageSchema.methods.deleteForUser = async function(userId) {
+datingMessageSchema.methods.deleteForUser = async function(userId) {
   try {
-    // Check if already deleted by this user
     const alreadyDeleted = this.deletedBy.some(
       deletion => deletion.userId.toString() === userId.toString()
     );
@@ -477,14 +461,12 @@ messageSchema.methods.deleteForUser = async function(userId) {
       deletedAt: new Date()
     });
     
-    // Mark as deleted if deleted by sender or all participants
-    const Chat = mongoose.model('Chat');
-    const chat = await Chat.findById(this.chatId);
+    const DatingChat = mongoose.model('DatingChat');
+    const chat = await DatingChat.findById(this.chatId);
     
     if (this.senderId.toString() === userId.toString()) {
       this.isDeleted = true;
     } else {
-      // Check if all participants have deleted the message
       const participantIds = chat.participants.map(p => p.toString());
       const deletedByParticipants = this.deletedBy.map(d => d.userId.toString());
       const allParticipantsDeleted = participantIds.every(id => 
@@ -499,18 +481,16 @@ messageSchema.methods.deleteForUser = async function(userId) {
     await this.save();
     return this;
   } catch (error) {
-    throw new Error(`Failed to delete message: ${error.message}`);
+    throw new Error(`Failed to delete dating message: ${error.message}`);
   }
 };
 
-messageSchema.methods.addReaction = async function(userId, emoji) {
+datingMessageSchema.methods.addReaction = async function(userId, emoji) {
   try {
-    // Remove existing reaction from this user
     this.reactions = this.reactions.filter(
       reaction => reaction.userId.toString() !== userId.toString()
     );
     
-    // Add new reaction
     this.reactions.push({
       userId: userId,
       emoji: emoji,
@@ -520,11 +500,11 @@ messageSchema.methods.addReaction = async function(userId, emoji) {
     await this.save();
     return this;
   } catch (error) {
-    throw new Error(`Failed to add reaction: ${error.message}`);
+    throw new Error(`Failed to add reaction to dating message: ${error.message}`);
   }
 };
 
-messageSchema.methods.removeReaction = async function(userId) {
+datingMessageSchema.methods.removeReaction = async function(userId) {
   try {
     this.reactions = this.reactions.filter(
       reaction => reaction.userId.toString() !== userId.toString()
@@ -533,11 +513,11 @@ messageSchema.methods.removeReaction = async function(userId) {
     await this.save();
     return this;
   } catch (error) {
-    throw new Error(`Failed to remove reaction: ${error.message}`);
+    throw new Error(`Failed to remove reaction from dating message: ${error.message}`);
   }
 };
 
-messageSchema.methods.markAsRead = async function(userId) {
+datingMessageSchema.methods.markAsRead = async function(userId) {
   try {
     const alreadyRead = this.readBy.some(
       read => read.userId.toString() === userId.toString()
@@ -549,7 +529,6 @@ messageSchema.methods.markAsRead = async function(userId) {
         readAt: new Date()
       });
       
-      // Update status to delivered if not already read
       if (this.status !== 'read') {
         this.status = 'delivered';
       }
@@ -559,24 +538,25 @@ messageSchema.methods.markAsRead = async function(userId) {
     
     return this;
   } catch (error) {
-    throw new Error(`Failed to mark message as read: ${error.message}`);
+    throw new Error(`Failed to mark dating message as read: ${error.message}`);
   }
 };
 
 // Virtual fields
-messageSchema.virtual('isEdited').get(function() {
+datingMessageSchema.virtual('isEdited').get(function() {
   return !!this.editedAt;
 });
 
-messageSchema.virtual('reactionCount').get(function() {
+datingMessageSchema.virtual('reactionCount').get(function() {
   return this.reactions.length;
 });
 
-messageSchema.virtual('readCount').get(function() {
+datingMessageSchema.virtual('readCount').get(function() {
   return this.readBy.length;
 });
 
 // Export model
-const Message = mongoose.model('Message', messageSchema);
+const DatingMessage = mongoose.model('DatingMessage', datingMessageSchema);
 
-module.exports = Message;
+module.exports = DatingMessage;
+

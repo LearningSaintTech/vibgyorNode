@@ -12,22 +12,44 @@ class MessageController {
    * @param {Object} res - Express response object
    */
   static async sendMessage(req, res) {
+    console.log('🔵 [BACKEND_MSG_CTRL] sendMessage called:', { 
+      userId: req.user?.userId,
+      chatId: req.body?.chatId,
+      type: req.body?.type,
+      hasContent: !!req.body?.content,
+      hasFile: !!req.file,
+      timestamp: new Date().toISOString()
+    });
     try {
       const { chatId, type = 'text', content = '', replyTo = null, forwardedFrom = null } = req.body;
       const userId = req.user.userId;
       const file = req.file || null;
       
+      console.log('🔵 [BACKEND_MSG_CTRL] Processing message:', { chatId, type, contentLength: content?.length, hasFile: !!file, replyTo, forwardedFrom });
+      
       // Input validation
       if (!chatId) {
+        console.warn('⚠️ [BACKEND_MSG_CTRL] Chat ID missing');
         return res.status(400).json(createErrorResponse('Chat ID is required'));
       }
       
       if (type === 'text' && (!content || content.trim() === '')) {
+        console.warn('⚠️ [BACKEND_MSG_CTRL] Content missing for text message');
         return res.status(400).json(createErrorResponse('Message content is required for text messages'));
       }
       
-      if (['audio', 'video', 'image', 'document'].includes(type) && !file) {
+      // Validate file requirement for media messages (except location)
+      if (['audio', 'video', 'image', 'document', 'gif', 'voice'].includes(type) && !file) {
+        console.warn('⚠️ [BACKEND_MSG_CTRL] File missing for media message');
         return res.status(400).json(createErrorResponse('File is required for media messages'));
+      }
+      
+      // Validate location data for location messages
+      if (type === 'location') {
+        if (!req.body.location || typeof req.body.location.latitude !== 'number' || typeof req.body.location.longitude !== 'number') {
+          console.warn('⚠️ [BACKEND_MSG_CTRL] Invalid location data');
+          return res.status(400).json(createErrorResponse('Valid location data (latitude, longitude) is required for location messages'));
+        }
       }
       
       const messageData = {
@@ -36,19 +58,55 @@ class MessageController {
         type,
         content: content.trim(),
         replyTo,
-        forwardedFrom
+        forwardedFrom,
+        // One-view fields
+        isOneView: req.body.isOneView === true || req.body.isOneView === 'true',
+        oneViewExpirationHours: req.body.oneViewExpirationHours || null,
+        // Location data
+        location: req.body.location || null,
+        // GIF fields
+        gifSource: req.body.gifSource || null,
+        gifId: req.body.gifId || null,
+        // Music metadata
+        musicMetadata: req.body.musicMetadata || null,
+        // Duration for video/audio/voice (from FormData)
+        duration: req.body.duration || null,
+        // Dimensions for images/videos (from FormData)
+        width: req.body.width || null,
+        height: req.body.height || null
       };
       
+      // Debug: Log duration for voice/audio/video messages
+      if (['voice', 'audio', 'video'].includes(type)) {
+        console.log('🔵 [BACKEND_MSG_CTRL] Duration received for', type, 'message:', {
+          duration: req.body.duration,
+          durationType: typeof req.body.duration,
+          durationValue: req.body.duration,
+          hasDuration: !!req.body.duration,
+          messageDataDuration: messageData.duration,
+          allBodyKeys: Object.keys(req.body),
+          bodyDuration: req.body.duration
+        });
+      }
+      
+      console.log('🔵 [BACKEND_MSG_CTRL] Calling MessageService.sendMessage...');
       const message = await MessageService.sendMessage(messageData, file);
+      console.log('✅ [BACKEND_MSG_CTRL] MessageService.sendMessage success:', { messageId: message._id || message.messageId, chatId });
       
       res.status(201).json(createResponse(
         'Message sent successfully',
         { message },
         { messageId: message.messageId, chatId }
       ));
+      console.log('✅ [BACKEND_MSG_CTRL] Response sent to client');
       
     } catch (error) {
-      console.error('[MessageController] sendMessage error:', error);
+      console.error('❌ [BACKEND_MSG_CTRL] sendMessage error:', { 
+        error: error.message, 
+        stack: error.stack,
+        chatId: req.body?.chatId,
+        userId: req.user?.userId
+      });
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -69,22 +127,41 @@ class MessageController {
    * @param {Object} res - Express response object
    */
   static async getChatMessages(req, res) {
+    console.log('🔵 [BACKEND_MSG_CTRL] getChatMessages called:', { 
+      chatId: req.params?.chatId,
+      userId: req.user?.userId,
+      page: req.query?.page,
+      limit: req.query?.limit,
+      timestamp: new Date().toISOString()
+    });
     try {
       const { chatId } = req.params;
       const userId = req.user.userId;
       const page = parseInt(req.query.page) || 1;
       const limit = Math.min(parseInt(req.query.limit) || 50, 100);
       
+      console.log('🔵 [BACKEND_MSG_CTRL] Calling MessageService.getChatMessages...', { chatId, userId, page, limit });
       const result = await MessageService.getChatMessages(chatId, userId, page, limit);
+      console.log('✅ [BACKEND_MSG_CTRL] MessageService.getChatMessages success:', { 
+        messagesCount: result.messages?.length || 0,
+        hasPagination: !!result.pagination,
+        chatId
+      });
       
       res.status(200).json(createResponse(
         'Messages retrieved successfully',
         result,
         { chatId, pagination: result.pagination }
       ));
+      console.log('✅ [BACKEND_MSG_CTRL] Response sent to client');
       
     } catch (error) {
-      console.error('[MessageController] getChatMessages error:', error);
+      console.error('❌ [BACKEND_MSG_CTRL] getChatMessages error:', { 
+        error: error.message, 
+        stack: error.stack,
+        chatId: req.params?.chatId,
+        userId: req.user?.userId
+      });
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -403,6 +480,38 @@ class MessageController {
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
         statusCode = 404;
       } else if (error.message.includes('required')) {
+        statusCode = 400;
+      }
+      
+      res.status(statusCode).json(createErrorResponse(error.message));
+    }
+  }
+
+  /**
+   * Mark a one-view message as viewed
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   */
+  static async markOneViewAsViewed(req, res) {
+    try {
+      const { messageId } = req.params;
+      const userId = req.user.userId;
+      
+      const message = await MessageService.markOneViewAsViewed(messageId, userId);
+      
+      res.status(200).json(createResponse(
+        'One-view message marked as viewed',
+        { message },
+        { messageId }
+      ));
+      
+    } catch (error) {
+      console.error('[MessageController] markOneViewAsViewed error:', error);
+      
+      let statusCode = 500;
+      if (error.message.includes('not found')) {
+        statusCode = 404;
+      } else if (error.message.includes('not a one-view') || error.message.includes('already viewed')) {
         statusCode = 400;
       }
       
