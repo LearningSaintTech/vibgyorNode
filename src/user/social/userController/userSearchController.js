@@ -114,6 +114,7 @@ async function searchPeople(req, res) {
 		
 		const searchQuery = {
 			$and: [
+				{ _id: { $ne: new mongoose.Types.ObjectId(currentUserId) } }, // Exclude current user
 				{ _id: { $nin: [...blockedUsers, ...blockedBy] } }, // Exclude blocked users
 				{ isActive: true }, // Only active users
 				{
@@ -185,29 +186,47 @@ async function searchPosts(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		const blockedBy = user.blockedBy || [];
-		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length);
+		const followingIds = user.following || [];
+		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length, 'Following:', followingIds.length);
 
-		// Get private account user IDs to exclude their posts
+		// Get private account user IDs
 		const privateAccountUserIds = await getPrivateAccountUserIds();
 		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
 
-		// Combine all excluded user IDs
+		// Get private account users that the current user is NOT following (these should be excluded)
+		const privateAccountUserIdsArray = privateAccountUserIds.map(id => id.toString());
+		const followingIdsArray = followingIds.map(id => id.toString());
+		const privateAccountsNotFollowing = privateAccountUserIdsArray.filter(
+			privateId => !followingIdsArray.includes(privateId)
+		);
+
+		// Combine all excluded user IDs (including current user and private accounts not being followed)
 		const excludedUserIds = [...new Set([
+			currentUserId.toString(), // Exclude current user's posts
 			...blockedUsers.map(id => id.toString()),
 			...blockedBy.map(id => id.toString()),
-			...privateAccountUserIds.map(id => id.toString())
+			...privateAccountsNotFollowing // Only exclude private accounts that user is NOT following
 		])].map(id => new mongoose.Types.ObjectId(id));
 
 		let searchQuery;
 		
-		// If no keyword, return all public posts
+		// Convert followingIds to ObjectIds for query
+		const followingObjectIds = followingIds.map(id => new mongoose.Types.ObjectId(id.toString()));
+
+		// If no keyword, return all public posts and posts from followed private accounts
 		if (!keyword.trim()) {
 			console.log('[USER][SEARCH] No search keyword - returning all public posts');
 			searchQuery = {
 				$and: [
 					{ status: 'published' },
-					{ visibility: 'public' },
-					{ author: { $nin: excludedUserIds } }
+					{ author: { $nin: excludedUserIds } },
+					{
+						$or: [
+							{ visibility: 'public' },
+							// Include posts from private accounts where user is following
+							{ visibility: 'followers', author: { $in: followingObjectIds } }
+						]
+					}
 				]
 			};
 		} else {
@@ -241,13 +260,30 @@ async function searchPosts(req, res) {
 				searchConditions.push({ 'mentions.user': { $in: mentionedUserIds } });
 			}
 			
+			// Convert followingIds to ObjectIds for query
+			const followingObjectIds = followingIds.map(id => new mongoose.Types.ObjectId(id.toString()));
+
 			searchQuery = {
 				$and: [
 					{ status: 'published' },
-					{ visibility: 'public' },
 					{ author: { $nin: excludedUserIds } },
 					{
-						$or: searchConditions
+						$or: [
+							// Public posts matching search
+							{
+								$and: [
+									{ visibility: 'public' },
+									{ $or: searchConditions }
+								]
+							},
+							// Posts from followed private accounts matching search
+							{
+								$and: [
+									{ visibility: 'followers', author: { $in: followingObjectIds } },
+									{ $or: searchConditions }
+								]
+							}
+						]
 					}
 				]
 			};
@@ -263,7 +299,7 @@ async function searchPosts(req, res) {
 				.populate('author', 'username fullName profilePictureUrl verificationStatus')
 				.populate('mentions.user', 'username fullName')
 				.populate('likes.user', 'username fullName')
-				.sort({ publishedAt: -1 })
+				.sort({ publishedAt: -1 }) // Sort by latest to oldest (descending order)
 				.skip(skip)
 				.limit(parseInt(limit))
 				.lean(),
@@ -339,15 +375,24 @@ async function searchHashtags(req, res) {
 		}
 
 		const blockedUsers = user.blockedUsers || [];
+		const followingIds = user.following || [];
 		
-		// Get private account user IDs to exclude their posts
+		// Get private account user IDs
 		const privateAccountUserIds = await getPrivateAccountUserIds();
 		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
 
-		// Combine all excluded user IDs
+		// Get private account users that the current user is NOT following (these should be excluded)
+		const privateAccountUserIdsArray = privateAccountUserIds.map(id => id.toString());
+		const followingIdsArray = followingIds.map(id => id.toString());
+		const privateAccountsNotFollowing = privateAccountUserIdsArray.filter(
+			privateId => !followingIdsArray.includes(privateId)
+		);
+
+		// Combine all excluded user IDs (including current user and private accounts not being followed)
 		const excludedUserIds = [...new Set([
+			currentUserId.toString(), // Exclude current user's posts
 			...blockedUsers.map(id => id.toString()),
-			...privateAccountUserIds.map(id => id.toString())
+			...privateAccountsNotFollowing // Only exclude private accounts that user is NOT following
 		])].map(id => new mongoose.Types.ObjectId(id));
 		
 		// Process hashtag search terms
@@ -522,28 +567,46 @@ async function searchLocation(req, res) {
 		}
 
 		const blockedUsers = user.blockedUsers || [];
+		const followingIds = user.following || [];
 		
-		// Get private account user IDs to exclude their posts
+		// Get private account user IDs
 		const privateAccountUserIds = await getPrivateAccountUserIds();
 		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
 
-		// Combine all excluded user IDs
+		// Get private account users that the current user is NOT following (these should be excluded)
+		const privateAccountUserIdsArray = privateAccountUserIds.map(id => id.toString());
+		const followingIdsArray = followingIds.map(id => id.toString());
+		const privateAccountsNotFollowing = privateAccountUserIdsArray.filter(
+			privateId => !followingIdsArray.includes(privateId)
+		);
+
+		// Combine all excluded user IDs (including current user and private accounts not being followed)
 		const excludedUserIds = [...new Set([
+			currentUserId.toString(), // Exclude current user's posts
 			...blockedUsers.map(id => id.toString()),
-			...privateAccountUserIds.map(id => id.toString())
+			...privateAccountsNotFollowing // Only exclude private accounts that user is NOT following
 		])].map(id => new mongoose.Types.ObjectId(id));
 		
+		// Convert followingIds to ObjectIds for query
+		const followingObjectIds = followingIds.map(id => new mongoose.Types.ObjectId(id.toString()));
+
 		const searchQuery = {
 			$and: [
 				{ status: 'published' }, // Only published posts
-				{ visibility: 'public' }, // Only public posts
-				{ author: { $nin: excludedUserIds } }, // Exclude blocked users' and private account users' posts
+				{ author: { $nin: excludedUserIds } }, // Exclude blocked users' and private account users' posts (not being followed)
 				{
 					$or: [
 						{ 'location.name': { $regex: keyword, $options: 'i' } },
 						{ 'location.address': { $regex: keyword, $options: 'i' } },
 						{ 'location.city': { $regex: keyword, $options: 'i' } },
 						{ 'location.country': { $regex: keyword, $options: 'i' } }
+					]
+				},
+				{
+					$or: [
+						{ visibility: 'public' }, // Public posts
+						// Include posts from private accounts where user is following
+						{ visibility: 'followers', author: { $in: followingObjectIds } }
 					]
 				}
 			]
@@ -621,17 +684,26 @@ async function searchAll(req, res) {
 
 		const blockedUsers = user.blockedUsers || [];
 		const blockedBy = user.blockedBy || [];
-		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length);
+		const followingIds = user.following || [];
+		console.log('[USER][SEARCH] Blocked users:', blockedUsers.length, 'Blocked by:', blockedBy.length, 'Following:', followingIds.length);
 		
-		// Get private account user IDs to exclude their posts
+		// Get private account user IDs
 		const privateAccountUserIds = await getPrivateAccountUserIds();
 		console.log('[USER][SEARCH] Private account users:', privateAccountUserIds.length);
 
-		// Combine all excluded user IDs
+		// Get private account users that the current user is NOT following (these should be excluded)
+		const privateAccountUserIdsArray = privateAccountUserIds.map(id => id.toString());
+		const followingIdsArray = followingIds.map(id => id.toString());
+		const privateAccountsNotFollowing = privateAccountUserIdsArray.filter(
+			privateId => !followingIdsArray.includes(privateId)
+		);
+
+		// Combine all excluded user IDs (including current user and private accounts not being followed)
 		const excludedUserIds = [...new Set([
+			currentUserId.toString(), // Exclude current user's posts
 			...blockedUsers.map(id => id.toString()),
 			...blockedBy.map(id => id.toString()),
-			...privateAccountUserIds.map(id => id.toString())
+			...privateAccountsNotFollowing // Only exclude private accounts that user is NOT following
 		])].map(id => new mongoose.Types.ObjectId(id));
 		
 		// If no search term provided, return all public posts (explore/discovery feed)
@@ -641,11 +713,20 @@ async function searchAll(req, res) {
 			const skip = (parseInt(page) - 1) * parseInt(limit);
 			console.log('[USER][SEARCH] Pagination - skip:', skip, 'limit:', limit);
 			
+			// Convert followingIds to ObjectIds for query
+			const followingObjectIds = followingIds.map(id => new mongoose.Types.ObjectId(id.toString()));
+			
 			const defaultPostsQuery = {
 				$and: [
 					{ status: 'published' },
-					{ visibility: 'public' },
-					{ author: { $nin: excludedUserIds } }
+					{ author: { $nin: excludedUserIds } },
+					{
+						$or: [
+							{ visibility: 'public' },
+							// Include posts from private accounts where user is following
+							{ visibility: 'followers', author: { $in: followingObjectIds } }
+						]
+					}
 				]
 			};
 			console.log('[USER][SEARCH] Default posts query:', JSON.stringify(defaultPostsQuery));
@@ -655,7 +736,7 @@ async function searchAll(req, res) {
 					.populate('author', 'username fullName profilePictureUrl verificationStatus')
 					.populate('mentions.user', 'username fullName')
 					.populate('likes.user', 'username fullName')
-					.sort({ publishedAt: -1 })
+					.sort({ publishedAt: -1 }) // Sort by latest to oldest (descending order) - excludes current user
 					.skip(skip)
 					.limit(parseInt(limit))
 					.lean(),
@@ -717,6 +798,7 @@ async function searchAll(req, res) {
 		console.log('[USER][SEARCH] Searching people...');
 		const peopleQuery = {
 			$and: [
+				{ _id: { $ne: new mongoose.Types.ObjectId(currentUserId) } }, // Exclude current user
 				{ _id: { $nin: [...blockedUsers, ...blockedBy] } },
 				{ isActive: true },
 				{
@@ -895,3 +977,4 @@ module.exports = {
 	searchLocation,
 	searchAll
 };
+

@@ -11,6 +11,7 @@ const MessageRequest = require('./src/user/social/userModel/messageRequestModel'
 const FollowRequest = require('./src/user/social/userModel/followRequestModel');
 const UserStatus = require('./src/user/social/userModel/userStatusModel');
 const Call = require('./src/user/social/userModel/callModel');
+const UserCatalog = require('./src/user/auth/model/userCatalogModel');
 
 // Import dating models
 const DatingMatch = require('./src/user/dating/models/datingMatchModel');
@@ -229,6 +230,70 @@ const DATING_INTERESTS = [
   'Writing', 'Technology', 'Fashion', 'Animals', 'Nature', 'Adventure'
 ];
 
+// Catalog data with SVG support (admin can upload SVGs later)
+const CATALOG_INTERESTS = [
+  { name: 'Travel' },
+  { name: 'Music' },
+  { name: 'Food' },
+  { name: 'Movies' },
+  { name: 'Sports' },
+  { name: 'Reading' },
+  { name: 'Photography' },
+  { name: 'Art' },
+  { name: 'Dancing' },
+  { name: 'Cooking' },
+  { name: 'Fitness' },
+  { name: 'Gaming' },
+  { name: 'Hiking' },
+  { name: 'Yoga' },
+  { name: 'Writing' },
+  { name: 'Technology' },
+  { name: 'Fashion' },
+  { name: 'Animals' },
+  { name: 'Nature' },
+  { name: 'Adventure' },
+  { name: 'Swimming' },
+  { name: 'Music Production' },
+  { name: 'Traveling' },
+  { name: 'Cooking' },
+  { name: 'Fitness' },
+  { name: 'Art & Crafts' },
+  { name: 'Shopping' },
+  { name: 'Speeches' },
+  { name: 'Drinking' },
+  { name: 'Extreme Sports' }
+];
+
+const CATALOG_LIKES = [
+  { name: 'music' },
+  { name: 'travel' },
+  { name: 'movies' },
+  { name: 'fitness' },
+  { name: 'foodie' },
+  { name: 'gaming' },
+  { name: 'reading' },
+  { name: 'photography' },
+  { name: 'art' },
+  { name: 'dancing' },
+  { name: 'cooking' },
+  { name: 'yoga' },
+  { name: 'hiking' },
+  { name: 'technology' },
+  { name: 'fashion' },
+  { name: 'writing' },
+  { name: 'gardening' },
+  { name: 'business' },
+  { name: 'education' },
+  { name: 'health' },
+  { name: 'nature' },
+  { name: 'adventure' }
+];
+
+const CATALOG_GENDERS = ['male', 'female', 'non-binary', 'transgender', 'agender', 'prefer-not-to-say'];
+const CATALOG_PRONOUNS = ['he/him', 'she/her', 'they/them', 'he/they', 'she/they'];
+const CATALOG_HERE_FOR = ['friendship', 'dating', 'networking', 'fun', 'serious-relationship', 'new-friends', 'chat'];
+const CATALOG_LANGUAGES = ['English', 'Hindi', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Korean', 'Arabic', 'Portuguese', 'Russian', 'Italian'];
+
 const DATING_PREFERENCES_HERETO = ['dating', 'friendship', 'serious_relationship', 'casual', 'networking'];
 const DATING_PREFERENCES_WANTTOMEET = ['men', 'women', 'everyone'];
 
@@ -281,7 +346,48 @@ const seedSocialData = async () => {
     await UserStatus.deleteMany({});
     console.log('   Deleting users...');
     await User.deleteMany({});
+    console.log('   Deleting catalog...');
+    await UserCatalog.deleteMany({});
     console.log('✅ All existing data cleared\n');
+
+    // Create catalog
+    console.log('📋 Creating catalog data...');
+    try {
+      const catalog = new UserCatalog({
+        genderList: CATALOG_GENDERS,
+        pronounList: CATALOG_PRONOUNS,
+        likeList: CATALOG_LIKES,
+        interestList: CATALOG_INTERESTS,
+        hereForList: CATALOG_HERE_FOR,
+        languageList: CATALOG_LANGUAGES,
+        version: 1
+      });
+      await catalog.save();
+      console.log(`   ✅ Catalog created with ${CATALOG_INTERESTS.length} interests and ${CATALOG_LIKES.length} likes`);
+    } catch (error) {
+      console.error('   ❌ Error creating catalog:', error);
+      // Continue with seeding even if catalog fails
+    }
+    console.log('✅ Catalog seeding completed\n');
+
+    // Fetch catalog to use for user interests
+    let catalogData = null;
+    try {
+      catalogData = await UserCatalog.findOne({});
+      if (catalogData) {
+        console.log(`   📋 Using catalog with ${catalogData.interestList?.length || 0} interests and ${catalogData.likeList?.length || 0} likes`);
+      }
+    } catch (error) {
+      console.error('   ⚠️  Could not fetch catalog, using fallback arrays');
+    }
+
+    // Helper function to get interest names from catalog or fallback
+    const getInterestsFromCatalog = () => {
+      if (catalogData && catalogData.interestList && catalogData.interestList.length > 0) {
+        return catalogData.interestList.map(item => typeof item === 'object' && item?.name ? item.name : item);
+      }
+      return DATING_INTERESTS;
+    };
 
     // Create users
     console.log(`👥 Creating ${TOTAL_USERS} users...`);
@@ -304,11 +410,12 @@ const seedSocialData = async () => {
       const gender = genders[i % genders.length];
       const pronouns = gender === 'male' ? 'he/him' : gender === 'female' ? 'she/her' : 'they/them';
       
-      // Generate interests (3-5 random interests)
+      // Generate interests (3-5 random interests) from catalog
+      const availableInterests = getInterestsFromCatalog();
       const userInterests = [];
       const numInterests = Math.floor(Math.random() * 3) + 3;
-      const shuffledInterests = [...DATING_INTERESTS].sort(() => 0.5 - Math.random());
-      for (let j = 0; j < numInterests; j++) {
+      const shuffledInterests = [...availableInterests].sort(() => 0.5 - Math.random());
+      for (let j = 0; j < numInterests && j < shuffledInterests.length; j++) {
         userInterests.push(shuffledInterests[j]);
       }
       
@@ -1426,6 +1533,7 @@ const seedSocialData = async () => {
 
     // Summary
     console.log('📊 Seeding Summary:');
+    console.log(`   ✅ Catalog: Created with ${CATALOG_INTERESTS.length} interests, ${CATALOG_LIKES.length} likes`);
     console.log(`   ✅ Users: ${users.length}`);
     console.log(`   ✅ Posts: ${posts.length}`);
     console.log(`   ✅ Likes: ${likesCreated}`);

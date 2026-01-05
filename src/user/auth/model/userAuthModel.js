@@ -13,7 +13,7 @@ const UserSchema = new mongoose.Schema(
 		bio: { type: String, default: '' },
 		gender: { type: String, default: '' },
 	pronouns: { type: String, default: '' },
-	likes: [{ type: String }],
+	    likes: [{ type: String }],
 	interests: [{ type: String }],
 	preferences: {
 		hereFor: { type: String, default: '' },

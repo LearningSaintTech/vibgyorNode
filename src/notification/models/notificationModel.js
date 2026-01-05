@@ -351,10 +351,12 @@ NotificationSchema.statics.getUserNotifications = function(userId, options = {})
 
   return this.find(query)
     .populate('sender', 'username fullName profilePictureUrl isVerified')
-    .populate('relatedContent.contentId')
+    // Note: relatedContent.contentId is not populated because it can reference different models
+    // (post, story, message, etc.) and requires dynamic population based on contentType
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
-    .limit(limit);
+    .limit(limit)
+    .lean(); // Use lean() for better performance
 };
 
 NotificationSchema.statics.getUnreadCount = function(userId, context = 'all') {

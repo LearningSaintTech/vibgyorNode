@@ -135,18 +135,36 @@ chatSchema.pre('validate', function(next) {
 chatSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   
+  // Clean up invalid userSettings entries (those with undefined/null userId)
+  this.userSettings = (this.userSettings || []).filter(us => us && us.userId != null);
+  
   // Ensure userSettings exists for all participants
-  if (this.isNew || this.isModified('participants')) {
-    const participantIds = this.participants.map(p => p.toString());
-    const existingUserIds = this.userSettings.map(us => us.userId.toString());
+  // Always check to fix existing broken data
+  if (this.participants && this.participants.length > 0) {
+    const participantIds = this.participants.map(p => {
+      return p.toString ? p.toString() : String(p);
+    });
+    const existingUserIds = this.userSettings
+      .filter(us => us.userId)
+      .map(us => {
+        return us.userId.toString ? us.userId.toString() : String(us.userId);
+      });
     
-    participantIds.forEach(participantId => {
+    participantIds.forEach((participantId) => {
       if (!existingUserIds.includes(participantId)) {
-        this.userSettings.push({
-          userId: participantId,
-          unreadCount: 0,
-          lastReadAt: new Date()
+        // Find the participant ObjectId (not string)
+        const participantObjId = this.participants.find(p => {
+          const pId = p.toString ? p.toString() : String(p);
+          return pId === participantId;
         });
+        
+        if (participantObjId) {
+          this.userSettings.push({
+            userId: participantObjId, // Use ObjectId, not string
+            unreadCount: 0,
+            lastReadAt: new Date()
+          });
+        }
       }
     });
   }
@@ -292,7 +310,7 @@ chatSchema.statics.canUsersChat = async function(userId1, userId2) {
 chatSchema.methods.updateUserSettings = async function(userId, updates) {
   try {
     const userSetting = this.userSettings.find(
-      setting => setting.userId.toString() === userId.toString()
+      setting => setting.userId && setting.userId.toString() === userId.toString()
     );
     
     if (!userSetting) {
@@ -328,7 +346,7 @@ chatSchema.methods.getUserSettings = function(userId) {
 
 chatSchema.methods.incrementUnreadCount = function(userId) {
   const userSetting = this.userSettings.find(
-    setting => setting.userId.toString() === userId.toString()
+    setting => setting.userId && setting.userId.toString() === userId.toString()
   );
   
   if (userSetting) {
@@ -338,7 +356,7 @@ chatSchema.methods.incrementUnreadCount = function(userId) {
 
 chatSchema.methods.resetUnreadCount = function(userId) {
   const userSetting = this.userSettings.find(
-    setting => setting.userId.toString() === userId.toString()
+    setting => setting.userId && setting.userId.toString() === userId.toString()
   );
   
   if (userSetting) {

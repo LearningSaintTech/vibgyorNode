@@ -111,6 +111,7 @@ class NotificationService {
    */
   async getUserNotifications(userId, options = {}) {
     try {
+      console.log('[NOTIFICATION SERVICE] getUserNotifications called:', { userId, options });
       const {
         page = 1,
         limit = 20,
@@ -120,6 +121,7 @@ class NotificationService {
         priority = 'all'
       } = options;
 
+      console.log('[NOTIFICATION SERVICE] Calling Notification.getUserNotifications...');
       const notifications = await Notification.getUserNotifications(userId, {
         page,
         limit,
@@ -128,7 +130,9 @@ class NotificationService {
         context,
         priority
       });
+      console.log('[NOTIFICATION SERVICE] getUserNotifications query completed, count:', notifications?.length || 0);
 
+      console.log('[NOTIFICATION SERVICE] Counting total documents...');
       const total = await Notification.countDocuments({
         recipient: userId,
         ...(status !== 'all' && { status }),
@@ -136,6 +140,7 @@ class NotificationService {
         ...(context !== 'all' && { context }),
         ...(priority !== 'all' && { priority })
       });
+      console.log('[NOTIFICATION SERVICE] Total count:', total);
 
       return {
         notifications,
@@ -148,6 +153,7 @@ class NotificationService {
       };
     } catch (error) {
       console.error('[NOTIFICATION SERVICE] Error getting user notifications:', error);
+      console.error('[NOTIFICATION SERVICE] Error stack:', error.stack);
       throw error;
     }
   }
