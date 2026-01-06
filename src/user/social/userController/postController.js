@@ -67,6 +67,48 @@ function addIsLiked(post, userId) {
   return post;
 }
 
+// Helper function to check if a post should be visible based on privacy settings
+// Returns true if post should be visible, false if it should be hidden
+function isPostVisible(post, currentUserId, followingIds = []) {
+  // If no current user, only show public posts from non-private accounts
+  if (!currentUserId) {
+    const author = post.author || {};
+    const isPrivate = author.privacySettings?.isPrivate === true;
+    return !isPrivate;
+  }
+  
+  // Get author ID
+  const author = post.author || {};
+  let authorId;
+  if (author._id) {
+    authorId = author._id.toString();
+  } else if (typeof author === 'string') {
+    authorId = author;
+  } else if (post.author) {
+    authorId = post.author.toString();
+  } else {
+    // Can't determine author, hide post for safety
+    return false;
+  }
+  
+  // If current user is the author, always show
+  if (authorId === currentUserId.toString()) {
+    return true;
+  }
+  
+  // Check if author account is private
+  const isPrivate = author.privacySettings?.isPrivate === true;
+  
+  // If account is not private, show the post (subject to other visibility rules)
+  if (!isPrivate) {
+    return true;
+  }
+  
+  // If account is private, only show if current user is following the author
+  const isFollowing = followingIds.some(id => id.toString() === authorId);
+  return isFollowing;
+}
+
 // Helper function to transform post media into a cleaner structure
 function transformPostMedia(post, userId = null) {
   const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
@@ -272,7 +314,7 @@ function transformPostMedia(post, userId = null) {
 // Create a new post
 async function createPost(req, res) {
   try {
-    const { content, caption, hashtags, mentions, location, visibility, commentVisibility } = req.body;
+    const { content, caption, hashtags, mentions, location, visibility, likeVisibility, commentVisibility } = req.body;
     const userId = req.user?.userId;
 
     if ((!req.files || req.files.length === 0)) {
@@ -436,6 +478,7 @@ async function createPost(req, res) {
       mentions: processedMentions,
       status: 'published',
       visibility: visibility || 'public',
+      likeVisibility: likeVisibility || 'everyone',
       commentVisibility: commentVisibility || 'everyone'
     };
 
@@ -516,7 +559,7 @@ async function getUserPosts(req, res) {
 
     // OPTIMIZED: Limit populate fields and use lean for better performance
     const posts = await Post.find(query)
-      .populate('author', 'username fullName profilePictureUrl isVerified')
+      .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
       .populate({
         path: 'comments.user',
         select: 'username fullName profilePictureUrl',
@@ -533,6 +576,13 @@ async function getUserPosts(req, res) {
       .lean(); // Use lean for better performance
 
     const totalPosts = await Post.countDocuments(query);
+
+    // Get current user's following list for privacy check
+    let followingIds = [];
+    if (currentUserId && userId !== currentUserId) {
+      const currentUser = await User.findById(currentUserId).select('following').lean();
+      followingIds = currentUser?.following?.map(id => id.toString()) || [];
+    }
 
     // Add lastComment field and transform media for each post
     console.log(`[POST][USER] Transforming ${posts.length} posts for user ${userId}`);
@@ -555,18 +605,25 @@ async function getUserPosts(req, res) {
       return transformPostMedia(postObj, currentUserId);
     });
 
+    // Filter out posts from private accounts (unless user is following them or is the author)
+    const visiblePosts = postsWithLastComment.filter(post => 
+      isPostVisible(post, currentUserId, followingIds)
+    );
+
     // DEBUG: Log summary
-    const postsWithMedia = postsWithLastComment.filter(p => p.media && (p.media.images?.length > 0 || p.media.videos?.length > 0));
+    const postsWithMedia = visiblePosts.filter(p => p.media && (p.media.images?.length > 0 || p.media.videos?.length > 0));
     console.log(`[POST][USER] Transformation summary:`, {
       totalPosts: postsWithLastComment.length,
+      visiblePosts: visiblePosts.length,
+      filteredPrivatePosts: postsWithLastComment.length - visiblePosts.length,
       postsWithMedia: postsWithMedia.length,
-      postsWithoutMedia: postsWithLastComment.length - postsWithMedia.length,
-      totalImages: postsWithLastComment.reduce((sum, p) => sum + (p.media?.images?.length || 0), 0),
-      totalVideos: postsWithLastComment.reduce((sum, p) => sum + (p.media?.videos?.length || 0), 0),
+      postsWithoutMedia: visiblePosts.length - postsWithMedia.length,
+      totalImages: visiblePosts.reduce((sum, p) => sum + (p.media?.images?.length || 0), 0),
+      totalVideos: visiblePosts.reduce((sum, p) => sum + (p.media?.videos?.length || 0), 0),
     });
 
     return ApiResponse.success(res, {
-      posts: postsWithLastComment,
+      posts: visiblePosts,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalPosts / limit),
@@ -698,19 +755,39 @@ async function getFeedPosts(req, res) {
     
     const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId));
 
+    // OPTIMIZED: Cache user data (blocked users, following) for 5 minutes
+    const cacheKey = 'feed:userData';
+    let user = getCachedUserData(userId, cacheKey);
+    
+    if (!user) {
+      user = await User.findById(userId).select('following blockedUsers blockedBy').lean();
+      if (user) {
+        cacheUserData(userId, cacheKey, user, 300); // Cache for 5 minutes
+      }
+    }
+    
+    const followingIds = user?.following?.map(id => id.toString()) || [];
+    
+    // Filter out posts from private accounts (unless user is following them or is the author)
+    const visibleFeedPosts = transformedFeedPosts.filter(post => 
+      isPostVisible(post, userId, followingIds)
+    );
+
     // DEBUG: Log summary of transformed posts
-    const postsWithMedia = transformedFeedPosts.filter(p => p.media && (p.media.images?.length > 0 || p.media.videos?.length > 0));
-    const postsWithoutMedia = transformedFeedPosts.filter(p => !p.media || (p.media.images?.length === 0 && p.media.videos?.length === 0));
+    const postsWithMedia = visibleFeedPosts.filter(p => p.media && (p.media.images?.length > 0 || p.media.videos?.length > 0));
+    const postsWithoutMedia = visibleFeedPosts.filter(p => !p.media || (p.media.images?.length === 0 && p.media.videos?.length === 0));
     console.log(`[POST][FEED] Transformation summary:`, {
       totalPosts: transformedFeedPosts.length,
+      visiblePosts: visibleFeedPosts.length,
+      filteredPrivatePosts: transformedFeedPosts.length - visibleFeedPosts.length,
       postsWithMedia: postsWithMedia.length,
       postsWithoutMedia: postsWithoutMedia.length,
-      totalImages: transformedFeedPosts.reduce((sum, p) => sum + (p.media?.images?.length || 0), 0),
-      totalVideos: transformedFeedPosts.reduce((sum, p) => sum + (p.media?.videos?.length || 0), 0),
+      totalImages: visibleFeedPosts.reduce((sum, p) => sum + (p.media?.images?.length || 0), 0),
+      totalVideos: visibleFeedPosts.reduce((sum, p) => sum + (p.media?.videos?.length || 0), 0),
     });
 
     // DEBUG: Log first 3 posts' media structure with FULL video URLs
-    transformedFeedPosts.slice(0, 3).forEach((post, idx) => {
+    visibleFeedPosts.slice(0, 3).forEach((post, idx) => {
       const firstVideo = post.media?.videos?.[0];
       const firstImage = post.media?.images?.[0];
       console.log(`[POST][FEED] Post ${idx} (${post._id || post.id}):`, {
@@ -730,7 +807,7 @@ async function getFeedPosts(req, res) {
     });
     
     // DEBUG: Log ALL video URLs to check if they're correct
-    const allVideos = transformedFeedPosts
+    const allVideos = visibleFeedPosts
       .flatMap(post => (post.media?.videos || []).map(v => ({ postId: post._id || post.id, video: v })))
       .slice(0, 5); // Log first 5 videos
     console.log(`[POST][FEED] Sample video URLs (first 5):`, allVideos.map(({ postId, video }) => ({
@@ -743,25 +820,13 @@ async function getFeedPosts(req, res) {
       thumbnailIsImage: video.thumbnail ? (video.thumbnail.includes('unsplash') || video.thumbnail.includes('placeholder')) : false
     })));
 
-    // OPTIMIZED: Cache user data (blocked users, following) for 5 minutes
-    const cacheKey = 'feed:userData';
-    let user = getCachedUserData(userId, cacheKey);
-    
-    if (!user) {
-      user = await User.findById(userId).select('following blockedUsers blockedBy').lean();
-      if (user) {
-        cacheUserData(userId, cacheKey, user, 300); // Cache for 5 minutes
-      }
-    }
-    
-    const followingIds = user?.following || [];
-    const blockedUserIds = user?.blockedUsers || [];
-    const blockedByIds = user?.blockedBy || [];
+    const blockedUserIds = user?.blockedUsers?.map(id => id.toString()) || [];
+    const blockedByIds = user?.blockedBy?.map(id => id.toString()) || [];
     
     // Combine blocked users and current user
     const excludedUserIds = [...new Set([
-      ...blockedUserIds.map(id => id.toString()), 
-      ...blockedByIds.map(id => id.toString()),
+      ...blockedUserIds, 
+      ...blockedByIds,
       userId // Exclude own posts
     ])];
 
@@ -777,7 +842,7 @@ async function getFeedPosts(req, res) {
     });
 
     // DEBUG: Log final response structure with video URLs
-    const finalVideos = transformedFeedPosts
+    const finalVideos = visibleFeedPosts
       .flatMap(post => (post.media?.videos || []).map(v => ({ postId: post._id || post.id, video: v })))
       .slice(0, 3);
     console.log(`[POST][FEED] Final response video URLs (first 3):`, finalVideos.map(({ postId, video }) => ({
@@ -789,7 +854,7 @@ async function getFeedPosts(req, res) {
     })));
     
     console.log(`[POST][FEED] Sending response with:`, {
-      postsCount: transformedFeedPosts.length,
+      postsCount: visibleFeedPosts.length,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalPosts / limit),
@@ -800,7 +865,7 @@ async function getFeedPosts(req, res) {
     });
 
     return ApiResponse.success(res, {
-      posts: transformedFeedPosts,
+      posts: visibleFeedPosts,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalPosts / limit),
@@ -849,6 +914,22 @@ async function getPost(req, res) {
       }
     }
 
+    // Check if author account is private
+    const author = post.author;
+    const isPrivate = author?.privacySettings?.isPrivate === true;
+    const authorId = author?._id?.toString() || author?.toString();
+    
+    // If account is private and user is not the author, check if user is following
+    if (isPrivate && authorId !== userId) {
+      const currentUser = await User.findById(userId).select('following').lean();
+      const followingIds = currentUser?.following?.map(id => id.toString()) || [];
+      const isFollowing = followingIds.includes(authorId);
+      
+      if (!isFollowing) {
+        return ApiResponse.forbidden(res, 'This account is private. You must follow to view posts.');
+      }
+    }
+
     // Add view if user is not the author
     if (post.author._id.toString() !== userId) {
       await post.addView(userId);
@@ -880,7 +961,7 @@ async function getPost(req, res) {
 async function updatePost(req, res) {
   try {
     const { postId } = req.params;
-    const { content, caption, hashtags, mentions, location, visibility, commentVisibility } = req.body;
+    const { content, caption, hashtags, mentions, location, visibility, likeVisibility, commentVisibility } = req.body;
     const userId = req.user?.userId;
 
     const post = await Post.findById(postId);
@@ -906,6 +987,7 @@ async function updatePost(req, res) {
       }
     }
     if (visibility !== undefined) post.visibility = visibility;
+    if (likeVisibility !== undefined) post.likeVisibility = likeVisibility;
     if (commentVisibility !== undefined) post.commentVisibility = commentVisibility;
 
     // Process hashtags - extract from both content and caption
@@ -1689,6 +1771,18 @@ async function searchPosts(req, res) {
       return transformPostMedia(postObj, userId);
     });
 
+    // Get current user's following list for privacy check
+    let followingIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('following').lean();
+      followingIds = currentUser?.following?.map(id => id.toString()) || [];
+    }
+
+    // Filter out posts from private accounts (unless user is following them or is the author)
+    const visiblePosts = transformedPosts.filter(post => 
+      isPostVisible(post, userId, followingIds)
+    );
+
     // Count total posts excluding blocked users
     const totalCountQuery = {
       status: 'published',
@@ -1706,7 +1800,7 @@ async function searchPosts(req, res) {
     const totalPosts = await Post.countDocuments(totalCountQuery);
 
     return ApiResponse.success(res, {
-      posts: transformedPosts,
+      posts: visiblePosts,
       query,
       pagination: {
         currentPage: parseInt(page),
@@ -1804,8 +1898,20 @@ async function getTrendingPosts(req, res) {
     // Transform media for all trending posts (includes isLiked)
     const transformedPosts = trendingPosts.map(post => transformPostMedia(post, userId));
 
+    // Get current user's following list for privacy check
+    let followingIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('following').lean();
+      followingIds = currentUser?.following?.map(id => id.toString()) || [];
+    }
+
+    // Filter out posts from private accounts (unless user is following them or is the author)
+    const visiblePosts = transformedPosts.filter(post => 
+      isPostVisible(post, userId, followingIds)
+    );
+
     return ApiResponse.success(res, {
-      posts: transformedPosts,
+      posts: visiblePosts,
       timeWindow: `${hours} hours`
     }, 'Trending posts retrieved successfully');
   } catch (error) {
@@ -1835,6 +1941,18 @@ async function getPostsByHashtag(req, res) {
     // Transform media for all hashtag posts (includes isLiked)
     const transformedPosts = posts.map(post => transformPostMedia(post, userId));
 
+    // Get current user's following list for privacy check
+    let followingIds = [];
+    if (userId) {
+      const currentUser = await User.findById(userId).select('following blockedUsers blockedBy').lean();
+      followingIds = currentUser?.following?.map(id => id.toString()) || [];
+    }
+
+    // Filter out posts from private accounts (unless user is following them or is the author)
+    const visiblePosts = transformedPosts.filter(post => 
+      isPostVisible(post, userId, followingIds)
+    );
+
     // Get total count excluding blocked users
     let totalCountQuery = {
       status: 'published',
@@ -1844,12 +1962,12 @@ async function getPostsByHashtag(req, res) {
 
     // Exclude blocked users from total count as well
     if (userId) {
-      const user = await User.findById(userId).select('blockedUsers blockedBy');
-      const blockedUserIds = user?.blockedUsers || [];
-      const blockedByIds = user?.blockedBy || [];
+      const user = await User.findById(userId).select('blockedUsers blockedBy').lean();
+      const blockedUserIds = user?.blockedUsers?.map(id => id.toString()) || [];
+      const blockedByIds = user?.blockedBy?.map(id => id.toString()) || [];
       const allBlockedIds = [...new Set([
-        ...blockedUserIds.map(id => id.toString()), 
-        ...blockedByIds.map(id => id.toString())
+        ...blockedUserIds, 
+        ...blockedByIds
       ])];
       if (allBlockedIds.length > 0) {
         totalCountQuery.author = { $nin: allBlockedIds };
@@ -1859,7 +1977,7 @@ async function getPostsByHashtag(req, res) {
     const totalPosts = await Post.countDocuments(totalCountQuery);
 
     return ApiResponse.success(res, {
-      posts: transformedPosts,
+      posts: visiblePosts,
       hashtag,
       pagination: {
         currentPage: parseInt(page),
@@ -2122,10 +2240,20 @@ module.exports = {
         return transformPostMedia(postObj, userId);
       });
 
+      // Get current user's following list for privacy check
+      const currentUser = await User.findById(userId).select('following').lean();
+      const followingIds = currentUser?.following?.map(id => id.toString()) || [];
+
+      // Filter out posts from private accounts (unless user is following them or is the author)
+      // Note: Even though these are saved posts, we filter private accounts for consistency
+      const visiblePosts = transformedPosts.filter(post => 
+        isPostVisible(post, userId, followingIds)
+      );
+
       const totalPosts = await Post.countDocuments({ _id: { $in: savedIds }, status: { $ne: 'deleted' } });
 
       return ApiResponse.success(res, {
-        posts: transformedPosts,
+        posts: visiblePosts,
         pagination: {
           currentPage: parseInt(page),
           totalPages: Math.ceil(totalPosts / limit),

@@ -1,6 +1,7 @@
 const User = require('../../auth/model/userAuthModel');
 const Report = require('../userModel/userReportModel');
 const FollowRequest = require('../userModel/followRequestModel');
+const Post = require('../userModel/postModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const notificationService = require('../../../notification/services/notificationService');
 
@@ -148,7 +149,12 @@ async function sendFollowRequest(req, res) {
 
 		if (existingPendingRequest) {
 			console.log('[USER][SOCIAL] Follow request already sent');
-			return ApiResponse.badRequest(res, 'Follow request already sent');
+			// Return followStatus in error response to help frontend handle it correctly
+			return ApiResponse.badRequest(res, 'Follow request already sent', 'BAD_REQUEST', {
+				followStatus: 'pending',
+				status: 'pending',
+				isFollowing: false
+			});
 		}
 
 		// Check if there's a rejected request that can be reused
@@ -295,17 +301,53 @@ async function unfollowUser(req, res) {
 		}
 
 		// Check if currently following
+		const isFollowing = currentUser.following.some(f => f.toString() === userId);
 		console.log('[USER][SOCIAL] Checking if currently following:', {
 			currentUserFollowing: currentUser.following,
 			targetUserId: userId,
-			isFollowing: currentUser.following.includes(userId)
+			isFollowing: isFollowing
 		});
 
-		if (!currentUser.following.includes(userId)) {
-			console.log('[USER][SOCIAL] Not currently following this user');
-			return ApiResponse.badRequest(res, 'Not following this user');
+		// Check for pending follow request (if not already following)
+		let hasPendingRequest = false;
+		if (!isFollowing) {
+			const pendingRequest = await FollowRequest.findOne({
+				requester: currentUserId,
+				recipient: userId,
+				status: 'pending'
+			});
+			
+			if (pendingRequest) {
+				hasPendingRequest = true;
+				console.log('[USER][SOCIAL] Found pending follow request, will cancel it');
+			} else {
+				console.log('[USER][SOCIAL] Not currently following this user and no pending request');
+				return ApiResponse.badRequest(res, 'Not following this user');
+			}
 		}
 
+		if (hasPendingRequest) {
+			// Cancel pending follow request
+			console.log('[USER][SOCIAL] Cancelling pending follow request...');
+			await FollowRequest.findOneAndDelete({
+				requester: currentUserId,
+				recipient: userId,
+				status: 'pending'
+			});
+
+			console.log('[USER][SOCIAL] Pending follow request cancelled successfully');
+
+			const responseData = {
+				following: currentUser.following.length,
+				followers: targetUser.followers.length,
+				message: `Follow request cancelled`
+			};
+
+			console.log('[USER][SOCIAL] Follow request cancelled, returning response:', responseData);
+			return ApiResponse.success(res, responseData, 'Follow request cancelled');
+		}
+
+		// User is following - proceed with unfollow
 		console.log('[USER][SOCIAL] Updating following/followers arrays and deleting follow request...');
 		// Update both users' following/followers arrays and delete the follow request
 		await Promise.all([
@@ -910,7 +952,75 @@ async function blockUser(req, res) {
 			})
 		]);
 
-		console.log('[USER][SOCIAL] User blocked successfully and follow requests deleted');
+		// Remove likes from both users' posts and decrement likesCount
+		// Remove likes by currentUser on targetUser's posts
+		await Post.updateMany(
+			{ author: userId, 'likes.user': currentUserId },
+			{ 
+				$pull: { likes: { user: currentUserId } },
+				$inc: { likesCount: -1 }
+			}
+		);
+
+		// Remove likes by targetUser on currentUser's posts
+		await Post.updateMany(
+			{ author: currentUserId, 'likes.user': userId },
+			{ 
+				$pull: { likes: { user: userId } },
+				$inc: { likesCount: -1 }
+			}
+		);
+
+		// Remove comments from both users' posts and decrement commentsCount
+		// First, get count of comments to remove, then update
+		// Remove comments by currentUser on targetUser's posts
+		const postsWithCurrentUserComments = await Post.find(
+			{ author: userId, 'comments.user': currentUserId },
+			{ _id: 1, comments: 1 }
+		);
+		
+		for (const post of postsWithCurrentUserComments) {
+			const commentsCount = post.comments.filter(c => String(c.user) === String(currentUserId)).length;
+			if (commentsCount > 0) {
+				await Post.findByIdAndUpdate(post._id, {
+					$pull: { comments: { user: currentUserId } },
+					$inc: { commentsCount: -commentsCount }
+				});
+			}
+		}
+
+		// Remove comments by targetUser on currentUser's posts
+		const postsWithTargetUserComments = await Post.find(
+			{ author: currentUserId, 'comments.user': userId },
+			{ _id: 1, comments: 1 }
+		);
+		
+		for (const post of postsWithTargetUserComments) {
+			const commentsCount = post.comments.filter(c => String(c.user) === String(userId)).length;
+			if (commentsCount > 0) {
+				await Post.findByIdAndUpdate(post._id, {
+					$pull: { comments: { user: userId } },
+					$inc: { commentsCount: -commentsCount }
+				});
+			}
+		}
+
+		// Remove likes on comments (nested likes)
+		// Remove likes by currentUser on comments in targetUser's posts (using arrayFilters)
+		await Post.updateMany(
+			{ author: userId },
+			{ $pull: { 'comments.$[elem].likes': { user: currentUserId } } },
+			{ arrayFilters: [{ 'elem.likes.user': currentUserId }] }
+		);
+
+		// Remove likes by targetUser on comments in currentUser's posts (using arrayFilters)
+		await Post.updateMany(
+			{ author: currentUserId },
+			{ $pull: { 'comments.$[elem].likes': { user: userId } } },
+			{ arrayFilters: [{ 'elem.likes.user': userId }] }
+		);
+
+		console.log('[USER][SOCIAL] User blocked successfully, follow requests deleted, and all interactions removed');
 		return ApiResponse.success(res, {
 			message: `${targetUser.username || targetUser.fullName} has been blocked`
 		}, 'User blocked successfully');

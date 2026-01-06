@@ -36,7 +36,7 @@ const {
 
 // Validation middleware
 const validateCreatePost = (req, res, next) => {
-  const { content, caption, visibility, commentVisibility } = req.body;
+  const { content, caption, visibility, likeVisibility, commentVisibility } = req.body;
 
   // Check if at least content or media is provided
   if ((!req.files || req.files.length === 0)) {
@@ -68,6 +68,14 @@ const validateCreatePost = (req, res, next) => {
     return res.status(400).json({
       success: false,
       message: 'Invalid visibility. Use public, followers, or private'
+    });
+  }
+
+  const validLikeVisibility = ['everyone', 'followers'];
+  if (likeVisibility && !validLikeVisibility.includes(likeVisibility)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid likeVisibility. Use everyone or followers'
     });
   }
 

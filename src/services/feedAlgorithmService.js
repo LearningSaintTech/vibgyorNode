@@ -167,6 +167,10 @@ class FeedAlgorithmService {
 
       // OPTIMIZED: Use pre-calculated engagementScore from Post document (Phase 3)
       // Get posts that user can see (excluding blocked users and own posts)
+      // Include:
+      // 1. Public posts
+      // 2. Posts with visibility 'followers' from users they're following
+      // 3. Posts from private accounts where the user is following the author
       const posts = await Post.aggregate([
         {
           $match: {
@@ -174,7 +178,9 @@ class FeedAlgorithmService {
             author: { $nin: excludedUserIds }, // Exclude blocked users and own posts
             $or: [
               { visibility: 'public' },
-              { visibility: 'followers', author: { $in: followingIds } }
+              { visibility: 'followers', author: { $in: followingIds } },
+              // Include posts from private accounts if user is following the author
+              { author: { $in: followingIds } }
             ]
           }
         },

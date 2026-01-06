@@ -173,6 +173,11 @@ const PostSchema = new mongoose.Schema(
       default: 'public',
       index: true
     },
+    likeVisibility: {
+      type: String,
+      enum: ['everyone', 'followers'],
+      default: 'everyone'
+    },
     commentVisibility: {
       type: String,
       enum: ['everyone', 'followers', 'none'],

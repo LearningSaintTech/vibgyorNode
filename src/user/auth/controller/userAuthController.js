@@ -5,6 +5,7 @@ const { sendEmail, sendVerificationEmail, sendOtpVerificationEmail } = require('
 const RefreshToken = require("../../social/userModel/refreshTokenModel");
 const DatingInteraction = require('../../dating/models/datingInteractionModel');
 const DatingProfileComment = require('../../dating/models/datingProfileCommentModel');
+const FollowRequest = require('../../social/userModel/followRequestModel');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
 const HARD_CODED_OTP = '123456';
@@ -584,6 +585,36 @@ async function getUserProfile(req, res) {
 		const isFollower = currentUser.followers.some(f => f.toString() === userId);
 		const isBlocked = currentUser.blockedUsers.some(b => b.toString() === userId);
 		const hasBlockedYou = user.blockedUsers.some(b => b.toString() === currentUserId);
+		
+		// Check for pending follow request (only if not already following)
+		let followRequestStatus = 'none';
+		if (!isFollowing && currentUserId !== userId) {
+			const followRequest = await FollowRequest.findOne({
+				requester: currentUserId,
+				recipient: userId,
+				status: 'pending'
+			});
+			
+			if (followRequest) {
+				followRequestStatus = 'pending';
+			} else {
+				// Check for accepted/rejected requests
+				const anyRequest = await FollowRequest.findOne({
+					requester: currentUserId,
+					recipient: userId
+				}).sort({ createdAt: -1 });
+				
+				if (anyRequest) {
+					if (anyRequest.status === 'accepted' || anyRequest.status === 'accept') {
+						followRequestStatus = 'accepted';
+					} else if (anyRequest.status === 'rejected') {
+						followRequestStatus = 'rejected';
+					}
+				}
+			}
+		} else if (isFollowing) {
+			followRequestStatus = 'accepted';
+		}
 
 		// Calculate mutual followers
 		const mutualFollowers = user.followers.filter(f => 
@@ -692,6 +723,15 @@ async function getUserProfile(req, res) {
 		} : null,
 		isVerified: user.verificationStatus === 'approved',
 		isPrivate: user.privacySettings?.isPrivate || false,
+		privacySettings: user.privacySettings || {
+			isPrivate: false,
+			allowFollowRequests: true,
+			showOnlineStatus: true,
+			allowMessages: 'followers',
+			allowCommenting: true,
+			allowTagging: true,
+			allowStoriesSharing: true
+		},
 		followersCount: followersCount,
 		followingCount: followingCount,
 		createdAt: user.createdAt,
@@ -701,6 +741,8 @@ async function getUserProfile(req, res) {
 		isBlocked: isBlocked,
 		hasBlockedYou: hasBlockedYou,
 		mutualFollowers: mutualFollowers,
+		followStatus: followRequestStatus, // 'none', 'pending', 'accepted', 'rejected'
+		followRequestStatus: followRequestStatus, // Alias for compatibility
 		// Dating data added (only show if dating profile is active)
 		dating: user.dating?.isDatingProfileActive ? {
 			photos: user.dating?.photos || [],

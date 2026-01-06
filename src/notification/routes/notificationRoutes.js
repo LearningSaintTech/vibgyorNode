@@ -37,7 +37,10 @@ router.validateFCMToken = validateFCMToken;
  */
 router.get('/', authorize(), async (req, res) => {
   try {
+    console.log('[NOTIFICATION ROUTES] GET /api/v1/notifications - Request received');
     const userId = req.user.id;
+    console.log('[NOTIFICATION ROUTES] User ID:', userId);
+    
     const {
       page = 1,
       limit = 20,
@@ -47,6 +50,9 @@ router.get('/', authorize(), async (req, res) => {
       priority = 'all'
     } = req.query;
 
+    console.log('[NOTIFICATION ROUTES] Query params:', { page, limit, status, type, context, priority });
+
+    console.log('[NOTIFICATION ROUTES] Calling notificationService.getUserNotifications...');
     const result = await notificationService.getUserNotifications(userId, {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -56,12 +62,18 @@ router.get('/', authorize(), async (req, res) => {
       priority
     });
 
+    console.log('[NOTIFICATION ROUTES] getUserNotifications completed:', {
+      notificationsCount: result.notifications?.length || 0,
+      pagination: result.pagination
+    });
+
     return ApiResponse.createResponse(res, {
       notifications: result.notifications,
       pagination: result.pagination
     }, 'Notifications retrieved successfully');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error getting notifications:', error);
+    console.error('[NOTIFICATION ROUTES] Error stack:', error.stack);
     return ApiResponse.createErrorResponse(res, error.message || 'Failed to get notifications', 500);
   }
 });

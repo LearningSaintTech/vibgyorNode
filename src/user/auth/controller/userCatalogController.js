@@ -4,11 +4,45 @@ const ApiResponse = require('../../../utils/apiResponse');
 const DEFAULT_CATALOG = {
 	genderList: ['male', 'female', 'non-binary', 'transgender', 'agender', 'prefer-not-to-say'],
 	pronounList: ['he/him', 'she/her', 'they/them', 'he/they', 'she/they'],
-	likeList: ['music', 'travel', 'movies', 'fitness', 'foodie', 'gaming', 'reading'],
-	interestList: ['hiking', 'photography', 'coding', 'dancing', 'yoga', 'art', 'pets'],
+	// Convert string arrays to object arrays with SVG support (for backward compatibility, can also accept strings)
+	likeList: [
+		{ name: 'music' },
+		{ name: 'travel' },
+		{ name: 'movies' },
+		{ name: 'fitness' },
+		{ name: 'foodie' },
+		{ name: 'gaming' },
+		{ name: 'reading' }
+	],
+	interestList: [
+		{ name: 'hiking' },
+		{ name: 'photography' },
+		{ name: 'coding' },
+		{ name: 'dancing' },
+		{ name: 'yoga' },
+		{ name: 'art' },
+		{ name: 'pets' }
+	],
 	hereForList: ['friendship', 'dating', 'networking', 'fun', 'serious-relationship', 'new-friends', 'chat'],
 	languageList: ['English', 'Hindi', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Korean', 'Arabic', 'Portuguese', 'Russian', 'Italian']
 };
+
+// Helper function to normalize interest/like data - converts strings to objects for backward compatibility
+function normalizeInterestItems(items) {
+	if (!items || !Array.isArray(items)) return [];
+	return items.map(item => {
+		// If it's already an object with name, return as is
+		if (typeof item === 'object' && item !== null && item.name) {
+			return item;
+		}
+		// If it's a string, convert to object
+		if (typeof item === 'string') {
+			return { name: item };
+		}
+		// Invalid format, return null (will be filtered)
+		return null;
+	}).filter(item => item !== null);
+}
 
 // Helper function to map listType to database field name
 function getFieldName(listType) {
@@ -51,11 +85,15 @@ async function getCatalog(req, res) {
 			});
 		}
 		
+		// Normalize interest/like items (convert strings to objects if needed)
+		const normalizedLikes = normalizeInterestItems(catalog.likeList || []);
+		const normalizedInterests = normalizeInterestItems(catalog.interestList || []);
+		
 		const responseData = {
 			gender: catalog.genderList || [],
 			pronouns: catalog.pronounList || [],
-			likes: catalog.likeList || [],
-			interests: catalog.interestList || [],
+			likes: normalizedLikes,
+			interests: normalizedInterests,
 			hereFor: catalog.hereForList || [],
 			languages: catalog.languageList || [],
 			version: catalog.version || 1,
@@ -96,8 +134,8 @@ async function createCatalog(req, res) {
 		const catalogData = {
 			genderList: genderList || DEFAULT_CATALOG.genderList,
 			pronounList: pronounList || DEFAULT_CATALOG.pronounList,
-			likeList: likeList || DEFAULT_CATALOG.likeList,
-			interestList: interestList || DEFAULT_CATALOG.interestList,
+			likeList: likeList ? normalizeInterestItems(likeList) : DEFAULT_CATALOG.likeList,
+			interestList: interestList ? normalizeInterestItems(interestList) : DEFAULT_CATALOG.interestList,
 			hereForList: hereForList || DEFAULT_CATALOG.hereForList,
 			languageList: languageList || DEFAULT_CATALOG.languageList,
 		};
@@ -106,12 +144,16 @@ async function createCatalog(req, res) {
 		const catalog = await UserCatalog.create(catalogData);
 		console.log('[USER][CATALOG] Catalog created successfully with ID:', catalog._id);
 
+		// Normalize interest/like items for response
+		const normalizedLikes = normalizeInterestItems(catalog.likeList || []);
+		const normalizedInterests = normalizeInterestItems(catalog.interestList || []);
+		
 		const responseData = {
 			id: catalog._id,
 			gender: catalog.genderList,
 			pronouns: catalog.pronounList,
-			likes: catalog.likeList,
-			interests: catalog.interestList,
+			likes: normalizedLikes,
+			interests: normalizedInterests,
 			hereFor: catalog.hereForList,
 			languages: catalog.languageList,
 			version: catalog.version,
@@ -147,8 +189,8 @@ async function updateCatalog(req, res) {
 			const catalogData = {
 				genderList: genderList || DEFAULT_CATALOG.genderList,
 				pronounList: pronounList || DEFAULT_CATALOG.pronounList,
-				likeList: likeList || DEFAULT_CATALOG.likeList,
-				interestList: interestList || DEFAULT_CATALOG.interestList,
+				likeList: likeList ? normalizeInterestItems(likeList) : DEFAULT_CATALOG.likeList,
+				interestList: interestList ? normalizeInterestItems(interestList) : DEFAULT_CATALOG.interestList,
 				hereForList: hereForList || DEFAULT_CATALOG.hereForList,
 				languageList: languageList || DEFAULT_CATALOG.languageList,
 			};
@@ -178,11 +220,11 @@ async function updateCatalog(req, res) {
 			}
 			if (likeList) {
 				console.log('[USER][CATALOG] Updating likeList from', catalog.likeList, 'to', likeList);
-				catalog.likeList = likeList;
+				catalog.likeList = normalizeInterestItems(likeList);
 			}
 			if (interestList) {
 				console.log('[USER][CATALOG] Updating interestList from', catalog.interestList, 'to', interestList);
-				catalog.interestList = interestList;
+				catalog.interestList = normalizeInterestItems(interestList);
 			}
 			if (hereForList) {
 				console.log('[USER][CATALOG] Updating hereForList from', catalog.hereForList, 'to', hereForList);
@@ -199,12 +241,16 @@ async function updateCatalog(req, res) {
 			console.log('[USER][CATALOG] Catalog saved successfully');
 		}
 
+		// Normalize interest/like items for response
+		const normalizedLikes = normalizeInterestItems(catalog.likeList || []);
+		const normalizedInterests = normalizeInterestItems(catalog.interestList || []);
+		
 		const responseData = {
 			id: catalog._id,
 			gender: catalog.genderList,
 			pronouns: catalog.pronounList,
-			likes: catalog.likeList,
-			interests: catalog.interestList,
+			likes: normalizedLikes,
+			interests: normalizedInterests,
 			hereFor: catalog.hereForList,
 			languages: catalog.languageList,
 			version: catalog.version,
@@ -260,7 +306,15 @@ async function addToList(req, res) {
 		console.log('[USER][CATALOG] Current list for', listType, ':', currentList);
 		console.log('[USER][CATALOG] Items to add:', items);
 		
-		const newItems = items.filter(item => !currentList.includes(item));
+		// Normalize items to add (convert strings to objects)
+		const normalizedItems = normalizeInterestItems(items);
+		
+		// Check for duplicates by comparing names
+		const existingNames = currentList.map(item => {
+			return typeof item === 'string' ? item : (item?.name || '');
+		});
+		
+		const newItems = normalizedItems.filter(item => !existingNames.includes(item.name));
 		console.log('[USER][CATALOG] New items (not duplicates):', newItems);
 		
 		if (newItems.length === 0) {
@@ -333,7 +387,11 @@ async function removeFromList(req, res) {
 		console.log('[USER][CATALOG] Current list for', listType, ':', currentList);
 		console.log('[USER][CATALOG] Items to remove:', items);
 		
-		const removedItems = items.filter(item => currentList.includes(item));
+		// Normalize items to remove (handle both strings and objects)
+		const itemsToRemove = items.map(item => typeof item === 'string' ? item : (item?.name || item));
+		const existingNames = currentList.map(item => typeof item === 'string' ? item : (item?.name || ''));
+		
+		const removedItems = itemsToRemove.filter(item => existingNames.includes(item));
 		console.log('[USER][CATALOG] Items that exist and will be removed:', removedItems);
 		
 		if (removedItems.length === 0) {
@@ -341,7 +399,11 @@ async function removeFromList(req, res) {
 			return ApiResponse.badRequest(res, 'None of the items exist in the list');
 		}
 
-		catalog[listField] = currentList.filter(item => !items.includes(item));
+		// Filter out items by name comparison
+		catalog[listField] = currentList.filter(item => {
+			const itemName = typeof item === 'string' ? item : (item?.name || '');
+			return !itemsToRemove.includes(itemName);
+		});
 		catalog.version = (catalog.version || 1) + 1;
 		console.log('[USER][CATALOG] Updated list after removal:', catalog[listField]);
 		console.log('[USER][CATALOG] Incremented version to:', catalog.version);
@@ -425,13 +487,15 @@ async function getList(req, res) {
 		const listField = getFieldName(listType);
 		console.log('[USER][CATALOG] Field mapping:', listType, '->', listField);
 		const items = catalog[listField] || [];
-		console.log('[USER][CATALOG] Retrieved items for', listType, ':', items);
-		console.log('[USER][CATALOG] Item count:', items.length);
+		// Normalize items (convert strings to objects for consistency)
+		const normalizedItems = normalizeInterestItems(items);
+		console.log('[USER][CATALOG] Retrieved items for', listType, ':', normalizedItems);
+		console.log('[USER][CATALOG] Item count:', normalizedItems.length);
 
 		const responseData = {
 			listType,
-			items,
-			count: items.length,
+			items: normalizedItems,
+			count: normalizedItems.length,
 			version: catalog.version,
 		};
 		console.log('[USER][CATALOG] Returning response data:', responseData);
