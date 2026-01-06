@@ -30,17 +30,66 @@ class PushNotificationService {
       
       if (!serviceAccountPath) {
         console.warn('[PUSH] ⚠️ FCM service account path not provided. Push notifications will be disabled.');
+        console.warn('[PUSH] 💡 Add FCM_SERVICE_ACCOUNT_PATH to your .env file');
+        console.warn('[PUSH] 📖 See FIREBASE_SETUP_GUIDE.md for instructions');
         return;
       }
 
-      // Check if file exists
-      const fullPath = path.resolve(serviceAccountPath);
+      // Resolve path relative to project root (two levels up from src/services/)
+      // If path is absolute, use it as-is; if relative, resolve from project root
+      let fullPath;
+      if (path.isAbsolute(serviceAccountPath)) {
+        fullPath = serviceAccountPath;
+      } else {
+        // Resolve from project root (__dirname is src/services, so go up 2 levels)
+        const projectRoot = path.resolve(__dirname, '../../');
+        fullPath = path.resolve(projectRoot, serviceAccountPath);
+      }
+      
+      // Normalize the path to handle any .. or . segments
+      fullPath = path.normalize(fullPath);
+      
       if (!fs.existsSync(fullPath)) {
         console.warn('[PUSH] ⚠️ FCM service account file not found:', fullPath);
+        console.warn('[PUSH] 💡 Expected path:', fullPath);
+        console.warn('[PUSH] 💡 Resolved from:', serviceAccountPath);
+        console.warn('[PUSH] 💡 Project root:', path.resolve(__dirname, '../../'));
+        console.warn('[PUSH] 📖 See FIREBASE_SETUP_GUIDE.md for setup instructions');
+        console.warn('[PUSH] 📁 Check config/firebase-service-account.json.example for file format');
         return;
       }
 
-      const serviceAccount = require(fullPath);
+      // Validate service account file structure
+      let serviceAccount;
+      try {
+        serviceAccount = require(fullPath);
+      } catch (requireError) {
+        console.error('[PUSH] ❌ Error loading service account file:', requireError.message);
+        console.error('[PUSH] 💡 Check that the JSON file is valid and properly formatted');
+        return;
+      }
+
+      // Validate required fields
+      if (!serviceAccount.type || serviceAccount.type !== 'service_account') {
+        console.error('[PUSH] ❌ Invalid service account file: missing or incorrect "type" field');
+        console.error('[PUSH] 💡 Expected: "type": "service_account"');
+        return;
+      }
+
+      if (!serviceAccount.project_id) {
+        console.error('[PUSH] ❌ Invalid service account file: missing "project_id" field');
+        return;
+      }
+
+      if (!serviceAccount.private_key) {
+        console.error('[PUSH] ❌ Invalid service account file: missing "private_key" field');
+        return;
+      }
+
+      if (!serviceAccount.client_email) {
+        console.error('[PUSH] ❌ Invalid service account file: missing "client_email" field');
+        return;
+      }
       
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
@@ -49,8 +98,12 @@ class PushNotificationService {
 
       this.fcmInitialized = true;
       console.log('[PUSH] ✅ FCM initialized successfully');
+      console.log('[PUSH] 📱 Firebase project:', serviceAccount.project_id);
+      console.log('[PUSH] ✅ Push notifications are now enabled');
     } catch (error) {
       console.error('[PUSH] ❌ Error initializing FCM:', error.message);
+      console.error('[PUSH] 💡 Check that the service account JSON file is valid');
+      console.error('[PUSH] 📖 See FIREBASE_SETUP_GUIDE.md for troubleshooting');
       this.fcmInitialized = false;
     }
   }
@@ -122,7 +175,7 @@ class PushNotificationService {
             channelId: this.getAndroidChannel(data.type),
             clickAction: 'FLUTTER_NOTIFICATION_CLICK',
             icon: 'notification_icon',
-            color: '#FF5722',
+            color: '#8A52F3', // Purple theme color matching app
             ...(notification.image && { imageUrl: notification.image })
           }
         },
@@ -225,6 +278,7 @@ class PushNotificationService {
             sound: 'default',
             channelId: this.getAndroidChannel(data.type),
             clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+            color: '#8A52F3', // Purple theme color matching app
             ...(notification.image && { imageUrl: notification.image })
           }
         },

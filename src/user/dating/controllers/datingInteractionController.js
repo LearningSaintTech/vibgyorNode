@@ -6,6 +6,7 @@ const DatingProfileComment = require('../models/datingProfileCommentModel');
 const FollowRequest = require('../../social/userModel/followRequestModel');
 const Report = require('../../social/userModel/userReportModel');
 const { invalidateUserCache } = require('../../../middleware/cacheMiddleware');
+const notificationService = require('../../../notification/services/notificationService');
 
 async function loadUsers(currentUserId, targetUserId) {
 	console.log('[DATING][INTERACTION] loadUsers payload', { currentUserId, targetUserId });
@@ -123,6 +124,25 @@ async function likeProfile(req, res) {
 			action: 'like'
 		}).lean(); // Use lean() for better performance since we only need the existence check
 
+		// Send like notification if not a match (matches get match notification instead)
+		if (!reciprocal) {
+			try {
+				await notificationService.create({
+					context: 'dating',
+					type: 'like',
+					recipientId: targetUserId.toString(),
+					senderId: currentUserId.toString(),
+					data: {
+						interactionId: interaction._id.toString(),
+						contentType: 'dating_profile'
+					}
+				});
+			} catch (notificationError) {
+				console.error('[DATING][LIKE] Notification error:', notificationError);
+				// Don't fail like action if notification fails
+			}
+		}
+
 		if (reciprocal) {
 			console.log('[DATING][LIKE] reciprocal like found', { reciprocalId: reciprocal._id });
 			isMatch = true;
@@ -151,6 +171,35 @@ async function likeProfile(req, res) {
 			match = createdMatch;
 			interaction = updatedInteraction || interaction;
 			console.log('[DATING][LIKE] match created and interactions updated', { matchId: match?._id });
+
+			// Notify both users about the match
+			try {
+				await Promise.all([
+					notificationService.create({
+						context: 'dating',
+						type: 'match',
+						recipientId: currentUserId.toString(),
+						senderId: targetUserId.toString(),
+						data: {
+							matchId: match._id.toString(),
+							contentType: 'match'
+						}
+					}),
+					notificationService.create({
+						context: 'dating',
+						type: 'match',
+						recipientId: targetUserId.toString(),
+						senderId: currentUserId.toString(),
+						data: {
+							matchId: match._id.toString(),
+							contentType: 'match'
+						}
+					})
+				]);
+			} catch (notificationError) {
+				console.error('[DATING][MATCH] Notification error:', notificationError);
+				// Don't fail match creation if notification fails
+			}
 		}
 
 		console.log('[DATING][LIKE] response', { isMatch, matchId: match?._id });

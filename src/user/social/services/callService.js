@@ -3,6 +3,7 @@ const Chat = require('../userModel/chatModel');
 const User = require('../../auth/model/userAuthModel');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 const { v4: uuidv4 } = require('uuid');
+const notificationService = require('../../../notification/services/notificationService');
 
 /**
  * Enhanced Call Service with comprehensive error handling and edge cases
@@ -122,6 +123,26 @@ class CallService {
         status: call.status,
         initiator: initiatorId
       });
+      
+      // Send incoming call notification to recipient
+      try {
+        await notificationService.create({
+          context: 'social',
+          type: 'call_incoming',
+          recipientId: otherParticipant.toString(),
+          senderId: initiatorId.toString(),
+          priority: 'urgent',
+          data: {
+            callId: call.callId,
+            chatId: chatId,
+            callType: type,
+            contentType: 'call'
+          }
+        });
+      } catch (notificationError) {
+        console.error('[CallService] Incoming call notification error:', notificationError);
+        // Don't fail call initiation if notification fails
+      }
       
       // Update chat with active call info
       await chat.setActiveCall({
@@ -260,6 +281,26 @@ class CallService {
       
       // Update call status
       await call.rejectCall(reason);
+      
+      // Send missed call notification to initiator
+      try {
+        await notificationService.create({
+          context: 'social',
+          type: 'call_missed',
+          recipientId: call.initiator.toString(),
+          senderId: userId.toString(),
+          data: {
+            callId: call.callId,
+            chatId: call.chatId.toString(),
+            callType: call.type,
+            reason: reason,
+            contentType: 'call'
+          }
+        });
+      } catch (notificationError) {
+        console.error('[CallService] Missed call notification error:', notificationError);
+        // Don't fail call rejection if notification fails
+      }
       
       // Clear active call from chat
       const chat = await Chat.findById(call.chatId);

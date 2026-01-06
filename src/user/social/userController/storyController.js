@@ -5,6 +5,7 @@ const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const contentModeration = require('../userModel/contentModerationModel');
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
+const notificationService = require('../../../notification/services/notificationService');
 
 // Create a new story
 async function createStory(req, res) {
@@ -112,6 +113,30 @@ async function createStory(req, res) {
 
     const story = new Story(storyData);
     await story.save();
+
+    // Send notifications for mentions
+    if (processedMentions && processedMentions.length > 0) {
+      processedMentions.forEach(async (mention) => {
+        const mentionedUserId = mention.user.toString ? mention.user.toString() : mention.user;
+        if (mentionedUserId !== userId.toString()) {
+          try {
+            await notificationService.create({
+              context: 'social',
+              type: 'story_mention',
+              recipientId: mentionedUserId,
+              senderId: userId.toString(),
+              data: {
+                storyId: story._id.toString(),
+                contentType: 'story'
+              }
+            });
+          } catch (notificationError) {
+            console.error('[STORY] Mention notification error:', notificationError);
+            // Don't fail story creation if notification fails
+          }
+        }
+      });
+    }
 
     // Populate author information
     await story.populate('author', 'username fullName profilePictureUrl isVerified');
@@ -668,6 +693,25 @@ async function replyToStory(req, res) {
 
     await story.addReply(userId, content.trim(), isDirectMessage);
 
+    // Send notification to story author
+    if (story.author.toString() !== userId.toString()) {
+      try {
+        await notificationService.create({
+          context: 'social',
+          type: 'story_reply',
+          recipientId: story.author.toString(),
+          senderId: userId.toString(),
+          data: {
+            storyId: storyId,
+            contentType: 'story'
+          }
+        });
+      } catch (notificationError) {
+        console.error('[STORY] Reply notification error:', notificationError);
+        // Don't fail reply if notification fails
+      }
+    }
+
     // Fetch story again with populated replies
     const updatedStory = await Story.findById(storyId)
       .populate('replies.user', 'username fullName profilePictureUrl isVerified');
@@ -966,16 +1010,35 @@ async function toggleLikeStory(req, res) {
     // Toggle like status
     await story.toggleLike(userId);
     
-    // OPTIMIZED: Invalidate feed cache when story is liked/unliked
-    invalidateUserCache(userId, 'feed:stories:*');
-
-    // Find the updated view to check isLiked status
-    // Handle both populated and unpopulated view.user cases
-    const userView = story.views.find(view => {
+    // Reload story to get updated like status
+    const updatedStory = await Story.findById(storyId);
+    const userView = updatedStory.views.find(view => {
       const viewUserId = (view.user._id || view.user).toString();
       return viewUserId === userId.toString();
     });
     const isLiked = userView ? userView.isLiked : false;
+    
+    // Send notification if story was liked (not unliked)
+    if (isLiked && story.author._id.toString() !== userId.toString()) {
+      try {
+        await notificationService.create({
+          context: 'social',
+          type: 'story_reaction',
+          recipientId: story.author._id.toString(),
+          senderId: userId.toString(),
+          data: {
+            storyId: storyId,
+            contentType: 'story'
+          }
+        });
+      } catch (notificationError) {
+        console.error('[STORY] Reaction notification error:', notificationError);
+        // Don't fail like action if notification fails
+      }
+    }
+    
+    // OPTIMIZED: Invalidate feed cache when story is liked/unliked
+    invalidateUserCache(userId, 'feed:stories:*');
 
     console.log('[STORY] Story like toggled successfully:', {
       storyId: story._id,

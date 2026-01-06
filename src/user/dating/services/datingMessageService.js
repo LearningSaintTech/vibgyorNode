@@ -4,6 +4,7 @@ const DatingMatch = require('../models/datingMatchModel');
 const User = require('../../auth/model/userAuthModel');
 const { uploadBuffer } = require('../../../services/s3Service');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
+const notificationService = require('../../../notification/services/notificationService');
 
 /**
  * Dating Message Service - Separate from social messages
@@ -239,6 +240,29 @@ class DatingMessageService {
       });
       
       await chat.save();
+      
+      // Send notifications to all participants except sender
+      chat.participants.forEach(async (participantId) => {
+        if (participantId.toString() !== senderId.toString()) {
+          try {
+            await notificationService.create({
+              context: 'dating',
+              type: 'message_received',
+              recipientId: participantId.toString(),
+              senderId: senderId.toString(),
+              data: {
+                chatId: chatId,
+                messageId: message._id.toString(),
+                messageType: type,
+                contentType: 'message'
+              }
+            });
+          } catch (notificationError) {
+            console.error('[DATING_MESSAGE_SERVICE] Notification error for participant:', participantId, notificationError);
+            // Don't fail message send if notification fails
+          }
+        }
+      });
       
       // Emit real-time message to chat participants (dating-specific room)
       const realtime = enhancedRealtimeService;

@@ -28,7 +28,7 @@ const DATING_NOTIFICATION_TYPES = {
     priority: 'normal',
     defaultChannels: {
       inApp: true,
-      push: false,
+      push: true,
       email: false,
       sms: false
     },
@@ -177,6 +177,36 @@ const DATING_NOTIFICATION_TYPES = {
       push: true,
       email: true,
       sms: true
+    },
+    expiry: 7 * 24 * 60 * 60 * 1000 // 7 days
+  },
+  
+  // Call notifications
+  call_incoming: {
+    context: 'dating',
+    type: 'call_incoming',
+    defaultTitle: 'Incoming Call',
+    defaultMessage: '{sender} is calling you',
+    priority: 'urgent',
+    defaultChannels: {
+      inApp: true,
+      push: true,
+      email: false,
+      sms: false
+    },
+    expiry: 1 * 60 * 60 * 1000 // 1 hour
+  },
+  call_missed: {
+    context: 'dating',
+    type: 'call_missed',
+    defaultTitle: 'Missed Call',
+    defaultMessage: 'You missed a call from {sender}',
+    priority: 'high',
+    defaultChannels: {
+      inApp: true,
+      push: true,
+      email: false,
+      sms: false
     },
     expiry: 7 * 24 * 60 * 60 * 1000 // 7 days
   }

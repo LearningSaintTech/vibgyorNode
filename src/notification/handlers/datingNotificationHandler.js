@@ -4,12 +4,12 @@ const deliveryManager = require('../services/deliveryManager');
 const enhancedRealtimeService = require('../../services/enhancedRealtimeService');
 
 /**
- * Social Notification Handler
- * Handles social notification creation and delivery
+ * Dating Notification Handler
+ * Handles dating notification creation and delivery
  */
-class SocialNotificationHandler {
+class DatingNotificationHandler {
   constructor() {
-    this.context = 'social';
+    this.context = 'dating';
   }
 
   /**
@@ -19,13 +19,6 @@ class SocialNotificationHandler {
    */
   async handle(options) {
     try {
-      console.log(`[SOCIAL HANDLER] 📝 Creating notification:`, {
-        type: options.type,
-        context: this.context,
-        recipientId: options.recipientId,
-        senderId: options.senderId
-      });
-      
       // Create notification data using factory
       const notificationData = await notificationFactory.create({
         ...options,
@@ -35,28 +28,22 @@ class SocialNotificationHandler {
       // Create notification in database
       const notification = new Notification(notificationData);
       await notification.save();
-      
-      console.log(`[SOCIAL HANDLER] ✅ Notification created: ${notification._id} (type: ${notification.type}, recipient: ${notification.recipient})`);
 
       // Deliver notification (includes in-app real-time emission via deliveryManager)
-      console.log(`[SOCIAL HANDLER] 🚀 Starting delivery for notification ${notification._id}`);
       await deliveryManager.deliver(notification);
-      console.log(`[SOCIAL HANDLER] ✅ Delivery completed for notification ${notification._id}`);
 
-      // Note: Real-time event is emitted by deliveryManager.deliverInApp() to avoid duplicates
-      // Specific event types (e.g., social:post_liked) are still emitted for specialized handling
+      // Emit specific event types for specialized handling
       this.emitSpecificEvents(notification);
 
       return notification;
     } catch (error) {
-      console.error('[SOCIAL HANDLER] ❌ Error handling notification:', error);
-      console.error('[SOCIAL HANDLER] Error stack:', error.stack);
+      console.error('[DATING HANDLER] Error handling notification:', error);
       throw error;
     }
   }
 
   /**
-   * Emit specific event types for specialized handling (e.g., social:post_liked)
+   * Emit specific event types for specialized handling (e.g., dating:match)
    * Main notification event is emitted by deliveryManager to avoid duplicates
    * @param {Object} notification - Notification document
    */
@@ -69,7 +56,7 @@ class SocialNotificationHandler {
         // This is in addition to the main 'notification' event emitted by deliveryManager
         const eventType = this.getEventType(notification.type);
         if (eventType) {
-          enhancedRealtimeService.io.to(`user:${recipientId}`).emit(`social:${eventType}`, {
+          enhancedRealtimeService.io.to(`user:${recipientId}`).emit(`dating:${eventType}`, {
             notificationId: notification._id,
             notification: notification._id,
             data: notification.data instanceof Map ? Object.fromEntries(notification.data) : (notification.data || {}),
@@ -80,7 +67,7 @@ class SocialNotificationHandler {
         }
       }
     } catch (error) {
-      console.error('[SOCIAL HANDLER] Error emitting specific events:', error);
+      console.error('[DATING HANDLER] Error emitting specific events:', error);
     }
   }
 
@@ -91,37 +78,49 @@ class SocialNotificationHandler {
    */
   getEventType(type) {
     const eventMap = {
-      'post_like': 'post_liked',
-      'post_comment': 'post_commented',
-      'post_share': 'post_shared',
-      'post_mention': 'post_mentioned',
-      'story_view': 'story_viewed',
-      'story_reaction': 'story_reacted',
-      'story_reply': 'story_replied',
-      'story_mention': 'story_mentioned',
-      'follow_request': 'follow_requested',
-      'follow_accepted': 'follow_accepted',
-      'follow': 'followed',
+      'match': 'matched',
+      'like': 'liked',
+      'super_like': 'super_liked',
       'message_received': 'message_received',
-      'message_request': 'message_requested',
-      'call_incoming': 'call_incoming',
-      'call_missed': 'call_missed',
-      'call_ended': 'call_ended'
+      'match_request': 'match_requested',
+      'match_accepted': 'match_accepted',
+      'match_rejected': 'match_rejected',
+      'date_suggestion': 'date_suggested',
+      'date_accepted': 'date_accepted',
+      'date_rejected': 'date_rejected',
+      'reminder': 'reminder'
     };
 
     return eventMap[type] || null;
   }
 
   /**
-   * Create notification for post like
+   * Create notification for match
    * @param {string} recipientId - Recipient user ID
    * @param {string} senderId - Sender user ID
    * @param {Object} data - Additional data
    * @returns {Promise<Object>} Created notification
    */
-  async createPostLike(recipientId, senderId, data = {}) {
+  async createMatch(recipientId, senderId, data = {}) {
     return this.handle({
-      type: 'post_like',
+      type: 'match',
+      recipientId,
+      senderId,
+      data,
+      priority: 'high'
+    });
+  }
+
+  /**
+   * Create notification for profile like
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createLike(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'like',
       recipientId,
       senderId,
       data
@@ -129,71 +128,24 @@ class SocialNotificationHandler {
   }
 
   /**
-   * Create notification for post comment
+   * Create notification for super like
    * @param {string} recipientId - Recipient user ID
    * @param {string} senderId - Sender user ID
    * @param {Object} data - Additional data
    * @returns {Promise<Object>} Created notification
    */
-  async createPostComment(recipientId, senderId, data = {}) {
+  async createSuperLike(recipientId, senderId, data = {}) {
     return this.handle({
-      type: 'post_comment',
+      type: 'super_like',
       recipientId,
       senderId,
-      data
+      data,
+      priority: 'high'
     });
   }
 
   /**
-   * Create notification for follow request
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} senderId - Sender user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createFollowRequest(recipientId, senderId, data = {}) {
-    return this.handle({
-      type: 'follow_request',
-      recipientId,
-      senderId,
-      data
-    });
-  }
-
-  /**
-   * Create notification for follow accepted
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} senderId - Sender user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createFollowAccepted(recipientId, senderId, data = {}) {
-    return this.handle({
-      type: 'follow_accepted',
-      recipientId,
-      senderId,
-      data
-    });
-  }
-
-  /**
-   * Create notification for new follower
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} senderId - Sender user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createFollow(recipientId, senderId, data = {}) {
-    return this.handle({
-      type: 'follow',
-      recipientId,
-      senderId,
-      data
-    });
-  }
-
-  /**
-   * Create notification for message received
+   * Create notification for dating message received
    * @param {string} recipientId - Recipient user ID
    * @param {string} senderId - Sender user ID
    * @param {Object} data - Additional data
@@ -204,93 +156,114 @@ class SocialNotificationHandler {
       type: 'message_received',
       recipientId,
       senderId,
-      data
-    });
-  }
-
-  /**
-   * Create notification for message request
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} senderId - Sender user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createMessageRequest(recipientId, senderId, data = {}) {
-    return this.handle({
-      type: 'message_request',
-      recipientId,
-      senderId,
-      data
-    });
-  }
-
-  /**
-   * Create notification for incoming call
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} senderId - Sender user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createCallIncoming(recipientId, senderId, data = {}) {
-    return this.handle({
-      type: 'call_incoming',
-      recipientId,
-      senderId,
-      data,
-      priority: 'urgent'
-    });
-  }
-
-  /**
-   * Create notification for missed call
-   * @param {string} recipientId - Recipient user ID
-   * @param {string} senderId - Sender user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createCallMissed(recipientId, senderId, data = {}) {
-    return this.handle({
-      type: 'call_missed',
-      recipientId,
-      senderId,
-      data
-    });
-  }
-
-  /**
-   * Create notification for system announcement
-   * @param {string} recipientId - Recipient user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createSystemAnnouncement(recipientId, data = {}) {
-    return this.handle({
-      type: 'system_announcement',
-      recipientId,
-      senderId: null,
-      data
-    });
-  }
-
-  /**
-   * Create notification for content moderation
-   * @param {string} recipientId - Recipient user ID
-   * @param {Object} data - Additional data
-   * @returns {Promise<Object>} Created notification
-   */
-  async createContentModeration(recipientId, data = {}) {
-    return this.handle({
-      type: 'content_moderation',
-      recipientId,
-      senderId: null,
       data,
       priority: 'high'
+    });
+  }
+
+  /**
+   * Create notification for match request
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createMatchRequest(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'match_request',
+      recipientId,
+      senderId,
+      data,
+      priority: 'high'
+    });
+  }
+
+  /**
+   * Create notification for match accepted
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createMatchAccepted(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'match_accepted',
+      recipientId,
+      senderId,
+      data,
+      priority: 'high'
+    });
+  }
+
+  /**
+   * Create notification for match rejected
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createMatchRejected(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'match_rejected',
+      recipientId,
+      senderId,
+      data
+    });
+  }
+
+  /**
+   * Create notification for date suggestion
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createDateSuggestion(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'date_suggestion',
+      recipientId,
+      senderId,
+      data,
+      priority: 'high'
+    });
+  }
+
+  /**
+   * Create notification for date accepted
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createDateAccepted(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'date_accepted',
+      recipientId,
+      senderId,
+      data,
+      priority: 'high'
+    });
+  }
+
+  /**
+   * Create notification for date rejected
+   * @param {string} recipientId - Recipient user ID
+   * @param {string} senderId - Sender user ID
+   * @param {Object} data - Additional data
+   * @returns {Promise<Object>} Created notification
+   */
+  async createDateRejected(recipientId, senderId, data = {}) {
+    return this.handle({
+      type: 'date_rejected',
+      recipientId,
+      senderId,
+      data
     });
   }
 }
 
 // Singleton instance
-const socialNotificationHandler = new SocialNotificationHandler();
+const datingNotificationHandler = new DatingNotificationHandler();
 
-module.exports = socialNotificationHandler;
+module.exports = datingNotificationHandler;
 

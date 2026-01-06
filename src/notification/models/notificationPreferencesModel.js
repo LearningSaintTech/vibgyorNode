@@ -215,9 +215,17 @@ NotificationPreferencesSchema.methods.isNotificationEnabled = function(context, 
   
   // Check type-specific settings in context
   const typeSettings = contextSettings.types.get(type);
-  if (!typeSettings || !typeSettings.enabled) {
-    // If type not configured, use default (enabled for inApp)
-    return channel === 'inApp';
+  if (!typeSettings) {
+    // If type not configured, default to enabled for inApp and push channels
+    // This matches the default behavior of most notification types
+    if (channel === 'inApp' || channel === 'push') {
+      return true;
+    }
+    return false;
+  }
+  
+  if (!typeSettings.enabled) {
+    return false;
   }
   
   // Check channel-specific settings for this type

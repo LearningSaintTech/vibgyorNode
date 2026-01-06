@@ -13,7 +13,7 @@ const SOCIAL_NOTIFICATION_TYPES = {
     priority: 'normal',
     defaultChannels: {
       inApp: true,
-      push: false,
+      push: true,
       email: false,
       sms: false
     },
@@ -85,7 +85,7 @@ const SOCIAL_NOTIFICATION_TYPES = {
     priority: 'normal',
     defaultChannels: {
       inApp: true,
-      push: false,
+      push: true,
       email: false,
       sms: false
     },
@@ -157,7 +157,7 @@ const SOCIAL_NOTIFICATION_TYPES = {
     priority: 'normal',
     defaultChannels: {
       inApp: true,
-      push: false,
+      push: true,
       email: false,
       sms: false
     },

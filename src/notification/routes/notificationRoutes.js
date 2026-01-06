@@ -163,27 +163,6 @@ router.put('/:id/archive', authorize(), async (req, res) => {
 });
 
 /**
- * @route   DELETE /api/v1/notifications/:id
- * @desc    Delete notification
- * @access  Private
- */
-router.delete('/:id', authorize(), async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { id } = req.params;
-
-    const notification = await notificationService.delete(id, userId);
-
-    return ApiResponse.createResponse(res, {
-      notification
-    }, 'Notification deleted');
-  } catch (error) {
-    console.error('[NOTIFICATION ROUTES] Error deleting notification:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to delete notification', 500);
-  }
-});
-
-/**
  * @route   GET /api/notification/test
  * @desc    Test route to verify routing works
  * @access  Public
@@ -292,10 +271,11 @@ router.post('/save-fcm-token', authorize(), async (req, res) => {
  * @route   DELETE /api/notification/remove-fcm-token
  * @desc    Remove FCM token
  * @access  Private
+ * @note    This route MUST come before DELETE /:id to avoid route conflict
  */
 router.delete('/remove-fcm-token', authorize(), async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.id || req.user.userId;
     const { fcmToken, deviceId } = req.body;
 
     console.log('[NOTIFICATION ROUTES] 🗑️ FCM Token Remove Request:', {
@@ -327,6 +307,33 @@ router.delete('/remove-fcm-token', authorize(), async (req, res) => {
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error removing FCM token:', error);
     return ApiResponse.createErrorResponse(res, error.message || 'Failed to remove FCM token', 500);
+  }
+});
+
+/**
+ * @route   DELETE /api/v1/notifications/:id
+ * @desc    Delete notification
+ * @access  Private
+ * @note    This route MUST come AFTER specific routes like /remove-fcm-token
+ */
+router.delete('/:id', authorize(), async (req, res) => {
+  try {
+    const userId = req.user.id || req.user.userId;
+    const { id } = req.params;
+
+    // Validate that id is a valid ObjectId (not a route name)
+    if (!id || id.match(/^[0-9a-fA-F]{24}$/) === null) {
+      return ApiResponse.createErrorResponse(res, 'Invalid notification ID', 400);
+    }
+
+    const notification = await notificationService.delete(id, userId);
+
+    return ApiResponse.createResponse(res, {
+      notification
+    }, 'Notification deleted');
+  } catch (error) {
+    console.error('[NOTIFICATION ROUTES] Error deleting notification:', error);
+    return ApiResponse.createErrorResponse(res, error.message || 'Failed to delete notification', 500);
   }
 });
 

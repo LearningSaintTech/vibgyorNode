@@ -502,6 +502,29 @@ async function createPost(req, res) {
       await post.save();
     }
 
+    // Send notifications for mentions
+    if (processedMentions && processedMentions.length > 0) {
+      processedMentions.forEach(async (mentionedUserId) => {
+        if (mentionedUserId.toString() !== userId.toString()) {
+          try {
+            await notificationService.create({
+              context: 'social',
+              type: 'post_mention',
+              recipientId: mentionedUserId.toString(),
+              senderId: userId.toString(),
+              data: {
+                postId: post._id.toString(),
+                contentType: 'post'
+              }
+            });
+          } catch (notificationError) {
+            console.error('[POST] Mention notification error:', notificationError);
+            // Don't fail post creation if notification fails
+          }
+        }
+      });
+    }
+
     // Populate author information
     await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
 
@@ -1050,6 +1073,32 @@ async function updatePost(req, res) {
       }
       
       post.mentions = processedMentions;
+      
+      // Send notifications for new mentions (only for newly added mentions)
+      if (processedMentions && processedMentions.length > 0) {
+        const existingMentions = post.mentions.map(m => m.user.toString());
+        processedMentions.forEach(async (mentionedUserId) => {
+          // Only notify if this is a new mention (not in existing mentions)
+          if (!existingMentions.includes(mentionedUserId.toString()) && 
+              mentionedUserId.toString() !== userId.toString()) {
+            try {
+              await notificationService.create({
+                context: 'social',
+                type: 'post_mention',
+                recipientId: mentionedUserId.toString(),
+                senderId: userId.toString(),
+                data: {
+                  postId: post._id.toString(),
+                  contentType: 'post'
+                }
+              });
+            } catch (notificationError) {
+              console.error('[POST] Mention notification error:', notificationError);
+              // Don't fail post update if notification fails
+            }
+          }
+        });
+      }
     }
 
     await post.save();

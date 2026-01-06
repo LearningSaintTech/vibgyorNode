@@ -2,6 +2,7 @@ const DatingCall = require('../models/datingCallModel');
 const DatingChat = require('../models/datingChatModel');
 const User = require('../../auth/model/userAuthModel');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
+const notificationService = require('../../../notification/services/notificationService');
 const { v4: uuidv4 } = require('uuid');
 
 /**
@@ -130,6 +131,26 @@ class DatingCallService {
         status: 'ringing',
         startedAt: call.startedAt
       });
+      
+      // Send incoming call notification to recipient
+      try {
+        await notificationService.create({
+          context: 'dating',
+          type: 'call_incoming',
+          recipientId: otherParticipant.toString(),
+          senderId: initiatorId.toString(),
+          data: {
+            callId: call.callId,
+            chatId: chat._id.toString(),
+            callType: type,
+            contentType: 'call'
+          },
+          priority: 'urgent'
+        });
+      } catch (notificationError) {
+        console.error('[DatingCallService] Error creating call_incoming notification:', notificationError);
+        // Don't fail call initiation if notification fails
+      }
       
       // Populate call data for response
       await call.populate([
@@ -260,6 +281,26 @@ class DatingCallService {
       
       // Update call status
       await call.rejectCall(reason);
+      
+      // Send missed call notification to initiator
+      try {
+        await notificationService.create({
+          context: 'dating',
+          type: 'call_missed',
+          recipientId: call.initiator.toString(),
+          senderId: userId.toString(),
+          data: {
+            callId: call.callId,
+            chatId: call.chatId.toString(),
+            callType: call.type,
+            reason: reason,
+            contentType: 'call'
+          }
+        });
+      } catch (notificationError) {
+        console.error('[DatingCallService] Missed call notification error:', notificationError);
+        // Don't fail call rejection if notification fails
+      }
       
       // Clear active call from chat
       const chat = await DatingChat.findById(call.chatId);

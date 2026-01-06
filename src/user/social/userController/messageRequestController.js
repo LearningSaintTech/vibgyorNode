@@ -3,6 +3,7 @@ const Chat = require('../userModel/chatModel');
 const User = require('../../auth/model/userAuthModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const mongoose = require('mongoose');
+const notificationService = require('../../../notification/services/notificationService');
 
 // Send message request
 async function sendMessageRequest(req, res) {
@@ -48,6 +49,24 @@ async function sendMessageRequest(req, res) {
 
 		// Create message request
 		const request = await MessageRequest.createRequest(currentUserId, userId, message);
+
+		// Send notification to target user
+		try {
+			await notificationService.create({
+				context: 'social',
+				type: 'message_request',
+				recipientId: userId, // Target user
+				senderId: currentUserId,
+				data: {
+					requestId: request._id.toString(),
+					message: message || '',
+					contentType: 'message_request'
+				}
+			});
+		} catch (notificationError) {
+			console.error('[MESSAGE_REQUEST] Notification error:', notificationError);
+			// Don't fail request creation if notification fails
+		}
 
 		console.log('[USER][MESSAGE_REQUEST] Message request sent successfully');
 		return ApiResponse.created(res, {
@@ -152,6 +171,25 @@ async function acceptMessageRequest(req, res) {
 
 		// Accept the request
 		const chat = await request.accept(responseMessage);
+
+		// Notify original requester that request was accepted
+		try {
+			await notificationService.create({
+				context: 'social',
+				type: 'message_request',
+				recipientId: request.fromUserId.toString(),
+				senderId: request.toUserId.toString(),
+				data: {
+					requestId: request._id.toString(),
+					chatId: chat._id.toString(),
+					status: 'accepted',
+					contentType: 'message_request'
+				}
+			});
+		} catch (notificationError) {
+			console.error('[MESSAGE_REQUEST] Notification error:', notificationError);
+			// Don't fail acceptance if notification fails
+		}
 
 		console.log('[USER][MESSAGE_REQUEST] Message request accepted successfully');
 		return ApiResponse.success(res, {

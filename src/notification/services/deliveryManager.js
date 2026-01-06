@@ -48,17 +48,22 @@ class DeliveryManager {
         return results;
       }
 
-      // Check if notification type is enabled for user
-      const isEnabled = preferences.isNotificationEnabled(
-        notification.context,
-        notification.type,
-        'inApp'
-      );
+      // Check if notification context is enabled
+      const contextSettings = preferences.contexts[notification.context];
+      if (!contextSettings || !contextSettings.enabled) {
+        console.log(`[DELIVERY] Context ${notification.context} disabled for user: ${notification.recipient}`);
+        return results;
+      }
 
-      if (!isEnabled) {
+      // Check if notification type is enabled (check type-level setting, not channel-specific)
+      const typeSettings = contextSettings.types.get(notification.type);
+      if (typeSettings && !typeSettings.enabled) {
         console.log(`[DELIVERY] Notification type ${notification.type} disabled for user: ${notification.recipient}`);
         return results;
       }
+      
+      // If type not configured, it's enabled by default (will be checked per-channel below)
+      console.log(`[DELIVERY] 📬 Starting delivery for notification ${notification._id} (type: ${notification.type}, context: ${notification.context}, recipient: ${notification.recipient})`);
 
       // Deliver through each channel
       const deliveryPromises = [];
@@ -90,17 +95,30 @@ class DeliveryManager {
           notification.type,
           'push'
         );
+        console.log(`[DELIVERY] 🔔 Push notification check for ${notification.type}:`, {
+          enabled: pushEnabled,
+          channelEnabled: preferences.channels.push?.enabled,
+          contextEnabled: preferences.contexts[notification.context]?.enabled,
+          typeConfigured: !!contextSettings.types.get(notification.type),
+          typeEnabled: typeSettings?.enabled !== false
+        });
         if (pushEnabled) {
           deliveryPromises.push(
             this.deliverToChannel('push', notification, preferences)
               .then(result => {
                 results.push = result;
+                console.log(`[DELIVERY] 📱 Push delivery result for ${notification._id}:`, result);
               })
               .catch(error => {
                 results.push = { delivered: false, error: error.message };
+                console.error(`[DELIVERY] ❌ Push delivery error for ${notification._id}:`, error);
               })
           );
+        } else {
+          console.log(`[DELIVERY] ⏭️ Push notification skipped for ${notification.type} (not enabled for user ${notification.recipient})`);
         }
+      } else {
+        console.log(`[DELIVERY] ⏭️ Push notification skipped (skipPush flag set)`);
       }
 
       // Email delivery
@@ -203,10 +221,9 @@ class DeliveryManager {
           createdAt: notification.createdAt
         });
 
-        // Update delivery status
+        // Update delivery status (don't save - will be saved at end)
         notification.deliveryChannels.inApp.delivered = true;
         notification.deliveryChannels.inApp.deliveredAt = new Date();
-        await notification.updateDeliveryStatus('inApp', 'delivered');
       } else {
         console.warn('[DELIVERY] Socket.IO not initialized, skipping in-app delivery');
       }
@@ -223,27 +240,36 @@ class DeliveryManager {
    */
   async deliverPush(notification, preferences) {
     try {
+      console.log(`[DELIVERY] 🚀 Starting push delivery for notification ${notification._id}`);
+      
       if (!pushNotificationService.isInitialized()) {
-        console.warn('[DELIVERY] Push notification service not initialized. Skipping push delivery.');
+        console.warn('[DELIVERY] ⚠️ Push notification service not initialized. Skipping push delivery.');
+        console.warn('[DELIVERY] 💡 Check FCM_SERVICE_ACCOUNT_PATH in .env file');
+        // Update status without saving (will be saved at end)
         notification.deliveryChannels.push.delivered = false;
-        await notification.updateDeliveryStatus('push', 'failed');
+        notification.deliveryChannels.push.deliveredAt = null;
         return;
       }
 
       // Get user's active device tokens
       const user = await User.findById(notification.recipient);
       if (!user) {
-        throw new Error('User not found');
+        throw new Error(`User not found: ${notification.recipient}`);
       }
 
       const deviceTokens = user.getActiveDeviceTokens();
+      console.log(`[DELIVERY] 📱 Found ${deviceTokens.length} active device token(s) for user ${notification.recipient}`);
       
       if (deviceTokens.length === 0) {
-        console.log(`[DELIVERY] No active device tokens for user: ${notification.recipient}`);
+        console.log(`[DELIVERY] ⚠️ No active device tokens for user: ${notification.recipient} (notification type: ${notification.type})`);
+        console.log(`[DELIVERY] 💡 User may need to login again to register FCM token`);
+        // Update status without saving (will be saved at end)
         notification.deliveryChannels.push.delivered = false;
-        await notification.updateDeliveryStatus('push', 'failed');
+        notification.deliveryChannels.push.deliveredAt = null;
         return;
       }
+      
+      console.log(`[DELIVERY] 📤 Sending push notification to ${deviceTokens.length} device(s) for notification ${notification._id} (type: ${notification.type}, context: ${notification.context})`);
 
       // Prepare notification payload
       const pushNotification = {
@@ -336,8 +362,8 @@ class DeliveryManager {
           token: dt.token,
           platform: dt.platform
         }));
-        await notification.updateDeliveryStatus('push', 'delivered');
-        console.log(`[DELIVERY] ✅ Push notification sent to ${successCount} device(s)`);
+        // Don't save here - will be saved at end by updateDeliveryStatus
+        console.log(`[DELIVERY] ✅ Push notification sent to ${successCount} device(s) for notification ${notification._id} (type: ${notification.type}, context: ${notification.context})`);
       } else {
         // Check if error is retryable (not invalid tokens)
         const hasRetryableErrors = results.some(r => 
@@ -354,7 +380,8 @@ class DeliveryManager {
         } else {
           // Permanent failure (all invalid tokens or other non-retryable errors)
           notification.deliveryChannels.push.delivered = false;
-          await notification.updateDeliveryStatus('push', 'failed');
+          notification.deliveryChannels.push.deliveredAt = null;
+          // Don't save here - will be saved at end by updateDeliveryStatus
           console.log(`[DELIVERY] ❌ Failed to send push notification (non-retryable)`);
         }
       }
@@ -371,7 +398,8 @@ class DeliveryManager {
         await pushNotificationRetryQueue.addToQueue(notification, 0);
       } else {
         notification.deliveryChannels.push.delivered = false;
-        await notification.updateDeliveryStatus('push', 'failed');
+        notification.deliveryChannels.push.deliveredAt = null;
+        // Don't save here - will be saved at end by updateDeliveryStatus
       }
     }
   }

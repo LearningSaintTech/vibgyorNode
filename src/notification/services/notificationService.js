@@ -4,6 +4,7 @@ const notificationRegistry = require('./notificationRegistry');
 const notificationFactory = require('./notificationFactory');
 const deliveryManager = require('./deliveryManager');
 const socialNotificationHandler = require('../handlers/socialNotificationHandler');
+const datingNotificationHandler = require('../handlers/datingNotificationHandler');
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../middleware/cacheMiddleware');
 
 /**
@@ -27,9 +28,10 @@ class NotificationService {
     this.registry.registerHandler('social', socialNotificationHandler);
     this.handlers.set('social', socialNotificationHandler);
     
-    // TODO: Register dating notification handler when implemented
-    // this.registry.registerHandler('dating', datingNotificationHandler);
-    // this.handlers.set('dating', datingNotificationHandler);
+    // Register dating notification handler
+    this.registry.registerHandler('dating', datingNotificationHandler);
+    this.handlers.set('dating', datingNotificationHandler);
+    console.log('[NOTIFICATION SERVICE] Dating handler registered successfully');
   }
 
   /**
