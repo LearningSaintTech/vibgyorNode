@@ -650,7 +650,7 @@ async function getUserProfile(req, res) {
 		}
 
 	// Get dating statistics for other user
-	const [datingCommentsReceived, datingLikesReceived] = await Promise.all([
+	const [datingCommentsReceived, datingLikesReceived, currentUserInteraction, reciprocalInteraction, targetUserDislikedMe] = await Promise.all([
 		DatingProfileComment.countDocuments({
 			targetUser: userId,
 			isDeleted: false
@@ -658,8 +658,50 @@ async function getUserProfile(req, res) {
 		DatingInteraction.countDocuments({
 			targetUser: userId,
 			action: 'like'
-		})
+		}),
+		// Check if current user has liked/disliked this profile (only if viewing another user's profile)
+		currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
+			user: currentUserId,
+			targetUser: userId
+		}) : Promise.resolve(null),
+		// Check if target user has liked current user (for isMatch flag)
+		currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
+			user: userId,
+			targetUser: currentUserId,
+			action: 'like'
+		}).lean() : Promise.resolve(null),
+		// Check if target user has disliked current user (for disliked flag)
+		currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
+			user: userId,
+			targetUser: currentUserId,
+			action: 'dislike'
+		}).lean() : Promise.resolve(null)
 	]);
+
+	// Set liked/disliked flags based on interaction
+	let liked = false;
+	let disliked = false;
+	let isMatch = false;
+	let isLiked = false; // Whether current user has liked this profile
+	let dislikedByOther = false; // Whether the other user has disliked current user's profile
+	
+	if (currentUserInteraction) {
+		if (currentUserInteraction.action === 'like') {
+			liked = true;
+			isLiked = true;
+			// Check if it's a match (both users have liked each other)
+			if (reciprocalInteraction && reciprocalInteraction.action === 'like') {
+				isMatch = true;
+			}
+		} else if (currentUserInteraction.action === 'dislike') {
+			disliked = true;
+		}
+	}
+	
+	// Check if target user has disliked current user
+	if (targetUserDislikedMe && targetUserDislikedMe.action === 'dislike') {
+		dislikedByOther = true;
+	}
 
 	// Calculate distance between current user and target user
 	let distance = null;
@@ -756,7 +798,13 @@ async function getUserProfile(req, res) {
 			isDatingProfileActive: false,
 			likesReceived: 0,
 			commentsReceived: 0
-		}
+		},
+		// Dating interaction flags (only for other users, not own profile)
+		liked: currentUserId && currentUserId !== userId ? liked : false,
+		disliked: currentUserId && currentUserId !== userId ? disliked : false,
+		isMatch: currentUserId && currentUserId !== userId ? isMatch : false,
+		isLiked: currentUserId && currentUserId !== userId ? isLiked : false, // Whether current user has liked this profile
+		dislikedByOther: currentUserId && currentUserId !== userId ? dislikedByOther : false // Whether the other user has disliked current user's profile
 	};
 
 	console.log('[USER][AUTH] Profile returned for user:', userId);

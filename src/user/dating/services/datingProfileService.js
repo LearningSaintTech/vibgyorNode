@@ -282,13 +282,13 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		]
 	};
 
-	// OPTIMIZED: Use text search index if available, fallback to regex (Phase 3)
+	// Search by name or username using regex (MongoDB $text search cannot be combined with regex in $or)
 	if (search && search.trim()) {
+		const searchRegex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); // Escape special regex characters
 		query.$and.push({
 			$or: [
-				{ $text: { $search: search.trim() } }, // Text index search (faster)
-				{ fullName: { $regex: search.trim(), $options: 'i' } }, // Fallback regex
-				{ username: { $regex: search.trim(), $options: 'i' } }
+				{ fullName: { $regex: searchRegex } },
+				{ username: { $regex: searchRegex } }
 			]
 		});
 	}
@@ -455,17 +455,52 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 		// Get users that the current user has already interacted with (liked or disliked)
 		// Exception: Don't exclude when filter is 'liked_by_you' or 'liked_you' (we want to show those)
 		let excludedUserIds = [];
+		let currentUserLikedMap = new Map(); // Map to store which profiles the current user has liked
+		let dislikedByUserIdsMap = new Map(); // Map to store which users have disliked the current user (reverse check)
+		
 		if (filters.filter !== 'liked_by_you' && filters.filter !== 'liked_you') {
 			const userInteractions = await DatingInteraction.find({
 				user: currentUserId,
 				action: { $in: ['like', 'dislike'] }
-			}).select('targetUser').lean();
+			}).select('targetUser action').lean();
 			
-			// Extract targetUser IDs and remove duplicates
+			// Extract targetUser IDs and track which ones are liked by current user
+			userInteractions.forEach(interaction => {
+				const targetUserId = interaction.targetUser.toString();
+				if (interaction.action === 'like') {
+					currentUserLikedMap.set(targetUserId, true);
+				}
+			});
+			
+			// Extract targetUser IDs and remove duplicates for exclusion
 			excludedUserIds = [...new Set(
 				userInteractions.map(interaction => interaction.targetUser.toString())
 			)].map(id => new mongoose.Types.ObjectId(id));
+		} else {
+			// Even if we're showing liked_by_you or liked_you, we still need to know which ones current user has liked
+			const currentUserLikedInteractions = await DatingInteraction.find({
+				user: currentUserId,
+				action: 'like'
+			}).select('targetUser').lean();
+			
+			currentUserLikedInteractions.forEach(interaction => {
+				const targetUserId = interaction.targetUser.toString();
+				currentUserLikedMap.set(targetUserId, true);
+			});
 		}
+		
+		// Get all users who have disliked the current user (to populate disliked field)
+		// This checks: has the profile (other user) disliked me (current user)?
+		const usersWhoDislikedMe = await DatingInteraction.find({
+			targetUser: currentUserId,
+			action: 'dislike'
+		}).select('user').lean();
+		
+		// Populate map: key = user who disliked me, value = true
+		usersWhoDislikedMe.forEach(interaction => {
+			const userIdWhoDislikedMe = interaction.user.toString();
+			dislikedByUserIdsMap.set(userIdWhoDislikedMe, true);
+		});
 
 		// Build search query with excluded user IDs
 		const query = buildSearchQuery(currentUser, filters, excludedUserIds);
@@ -836,9 +871,18 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			// Calculate match percentage
 			profile.matchPercentage = calculateMatchPercentage(currentUser, profile);
 			
+			// Add isLiked field - check if current user has liked this profile
+			// isLiked = true means: "I (current user) have liked this profile"
+			const profileIdStr = profile._id.toString();
+			profile.isLiked = currentUserLikedMap.has(profileIdStr) || false;
+			
+			// Add disliked field - check if this profile (other user) has disliked the current user
+			// disliked = true means: "This person has disliked my profile"
+			profile.disliked = dislikedByUserIdsMap.has(profileIdStr) || false;
+			
 			// Debug logging (can be removed in production)
 			if (process.env.NODE_ENV === 'development') {
-				console.log(`[MATCH] Profile ${profile.username || profile._id}: ${profile.matchPercentage}% match`);
+				console.log(`[MATCH] Profile ${profile.username || profile._id}: ${profile.matchPercentage}% match, isLiked: ${profile.isLiked}, disliked: ${profile.disliked}`);
 			}
 
 			return profile;

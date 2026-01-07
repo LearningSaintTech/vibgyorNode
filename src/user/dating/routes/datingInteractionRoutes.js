@@ -11,7 +11,8 @@ const {
 	blockProfile,
 	unblockProfile,
 	unmatchUser,
-	getDatingProfileLikes
+	getDatingProfileLikes,
+	getMatchProfilePictures
 } = require('../controllers/datingInteractionController');
 
 router.use(authorize([Roles.USER]));
@@ -21,6 +22,9 @@ router.post('/profiles/:userId/dislike', dislikeProfile);
 
 // Get all likes on a dating profile (MUST come before other routes)
 router.get('/profiles/:userId/likes', getDatingProfileLikes);
+
+// Get profile pictures for match (current user and matched user)
+router.get('/profiles/:userId/match-pictures', getMatchProfilePictures);
 
 router.post('/profiles/:userId/comments', addProfileComment);
 router.get('/profiles/:userId/comments', getProfileComments);
