@@ -29,36 +29,47 @@ function authorize(allowedRoles = AllRoles) {
 			// role check (optional)
 			if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
 				const userRole = payload?.role;
+				// Normalize allowedRoles to lowercase strings for comparison
+				const normalizedAllowedRoles = allowedRoles.map(role => String(role).toLowerCase());
+				const normalizedUserRole = userRole ? String(userRole).toLowerCase() : null;
+				
 				// eslint-disable-next-line no-console
-				console.log('[AUTH] Role check', { userRole, allowedRoles });
-				if (!userRole || !allowedRoles.includes(String(userRole).toLowerCase())) {
+				console.log('[AUTH] Role check', { 
+					userRole, 
+					normalizedUserRole,
+					allowedRoles, 
+					normalizedAllowedRoles,
+					isAllowed: normalizedAllowedRoles.includes(normalizedUserRole)
+				});
+				
+				if (!normalizedUserRole || !normalizedAllowedRoles.includes(normalizedUserRole)) {
 					return ApiResponse.forbidden(res, 'Forbidden: insufficient role', 'ROLE_FORBIDDEN');
 				}
 
 				// Additional check for SubAdmin approval status
-				if (userRole === 'subadmin') {
+				if (normalizedUserRole === 'subadmin') {
 					try {
 						const subAdmin = await SubAdmin.findById(payload.userId);
 						if (!subAdmin) {
 							return ApiResponse.notFound(res, 'SubAdmin not found');
 						}
-						
+
 						// Allow profile updates even for pending SubAdmins
 						const isProfileUpdate = req.method === 'PUT' && req.path.includes('/profile');
 						const isAuthEndpoint = req.path.includes('/auth/');
-						
+
 						// Allow auth endpoints and profile updates for pending SubAdmins
-						if (!isProfileUpdate && !isAuthEndpoint && subAdmin.approvalStatus !== 'approved') {
-							// eslint-disable-next-line no-console
-							console.log('[AUTH] SubAdmin not approved', { 
-								approvalStatus: subAdmin.approvalStatus,
-								subAdminId: subAdmin._id,
-								path: req.path,
-								method: req.method
-							});
-							return ApiResponse.forbidden(res, 'SubAdmin account is pending approval or has been rejected', 'SUBADMIN_NOT_APPROVED');
-						}
-						
+						// if (!isProfileUpdate && !isAuthEndpoint && subAdmin.approvalStatus !== 'approved') {
+						// 	// eslint-disable-next-line no-console
+						// 	console.log('[AUTH] SubAdmin not approved', { 
+						// 		approvalStatus: subAdmin.approvalStatus,
+						// 		subAdminId: subAdmin._id,
+						// 		path: req.path,
+						// 		method: req.method
+						// 	});
+						// 	return ApiResponse.forbidden(res, 'SubAdmin account is pending approval or has been rejected', 'SUBADMIN_NOT_APPROVED');
+						// }
+
 						// Only check isActive for approved SubAdmins (except profile updates)
 						if (!isProfileUpdate && subAdmin.approvalStatus === 'approved' && !subAdmin.isActive) {
 							// eslint-disable-next-line no-console

@@ -1,0 +1,170 @@
+{
+  "info": {
+    "name": "Admin User Count API",
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "description": "Postman collection for Admin User Count API endpoint. Base URL stored in {{baseUrl}}. Admin token uses {{adminToken}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get User Counts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}",
+            "type": "text",
+            "description": "Admin access token"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/counts",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "counts"]
+        },
+        "description": "Get user counts including total users, verified users, and verification pending users. Requires admin authentication."
+      },
+      "response": [
+        {
+          "name": "Success Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/counts",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "counts"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": true,\n  \"status\": 200,\n  \"message\": \"User counts fetched successfully\",\n  \"data\": {\n    \"totalUsers\": 24000,\n    \"verifiedUsers\": 18000,\n    \"verificationPending\": 2400\n  }\n}"
+        },
+        {
+          "name": "Unauthorized Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/counts",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "counts"]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"status\": 401,\n  \"message\": \"Missing or invalid Authorization header\"\n}"
+        },
+        {
+          "name": "Forbidden Response",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userToken}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/counts",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "counts"]
+            }
+          },
+          "status": "Forbidden",
+          "code": 403,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "cookie": [],
+          "body": "{\n  \"success\": false,\n  \"status\": 403,\n  \"message\": \"Forbidden: insufficient role\",\n  \"code\": \"ROLE_FORBIDDEN\"\n}"
+        }
+      ],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response has success field\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "});",
+              "",
+              "pm.test(\"Response has data with counts\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.have.property('totalUsers');",
+              "    pm.expect(jsonData.data).to.have.property('verifiedUsers');",
+              "    pm.expect(jsonData.data).to.have.property('verificationPending');",
+              "});",
+              "",
+              "pm.test(\"Counts are numbers\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.data.totalUsers).to.be.a('number');",
+              "    pm.expect(jsonData.data.verifiedUsers).to.be.a('number');",
+              "    pm.expect(jsonData.data.verificationPending).to.be.a('number');",
+              "});",
+              "",
+              "pm.test(\"Verified users <= total users\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.data.verifiedUsers).to.be.at.most(jsonData.data.totalUsers);",
+              "});",
+              "",
+              "pm.test(\"Verification pending <= total users\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.data.verificationPending).to.be.at.most(jsonData.data.totalUsers);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string",
+      "description": "Admin access token obtained from /admin-auth/verify-otp"
+    }
+  ]
+}
+

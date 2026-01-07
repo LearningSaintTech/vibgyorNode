@@ -107,7 +107,7 @@ async function likeProfile(req, res) {
 			updatePayload.comment = { text: comment.trim().slice(0, 280), createdAt: new Date() };
 		}
 
-		const interaction = await DatingInteraction.findOneAndUpdate(
+		let interaction = await DatingInteraction.findOneAndUpdate(
 			{ user: currentUserId, targetUser: targetUserId },
 			{ $set: updatePayload },
 			{ upsert: true, new: true, setDefaultsOnInsert: true }
@@ -617,6 +617,52 @@ async function unmatchUser(req, res) {
 	}
 }
 
+async function getMatchProfilePictures(req, res) {
+	try {
+		console.log('[DATING][MATCH_PROFILE_PICTURES] payload', { params: req.params, userId: req.user?.userId });
+		const { userId: targetUserId } = req.params;
+		const currentUserId = req.user?.userId;
+
+		if (!targetUserId || targetUserId === currentUserId) {
+			return ApiResponse.badRequest(res, 'Invalid user ID');
+		}
+
+		// Fetch both users' profile data
+		const [currentUserData, targetUserData] = await Promise.all([
+			User.findById(currentUserId).select('profilePictureUrl fullName username').lean(),
+			User.findById(targetUserId).select('profilePictureUrl fullName username').lean()
+		]);
+
+		if (!currentUserData || !targetUserData) {
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		console.log('[DATING][MATCH_PROFILE_PICTURES] Profile pictures fetched', {
+			currentUserId: currentUserId,
+			targetUserId: targetUserId,
+			currentUserHasImage: !!currentUserData?.profilePictureUrl,
+			targetUserHasImage: !!targetUserData?.profilePictureUrl
+		});
+
+		return ApiResponse.success(res, {
+			currentUser: {
+				id: currentUserId,
+				name: currentUserData?.fullName || currentUserData?.username || 'User',
+				profilePictureUrl: currentUserData?.profilePictureUrl || null
+			},
+			matchedUser: {
+				id: targetUserId,
+				name: targetUserData?.fullName || targetUserData?.username || 'User',
+				profilePictureUrl: targetUserData?.profilePictureUrl || null
+			}
+		}, 'Profile pictures fetched successfully');
+
+	} catch (error) {
+		console.error('[DATING][MATCH_PROFILE_PICTURES] Error:', error);
+		return ApiResponse.serverError(res, 'Failed to fetch profile pictures');
+	}
+}
+
 async function getDatingProfileLikes(req, res) {
 	try {
 		console.log('[DATING][LIKES] payload', { params: req.params, query: req.query, userId: req.user?.userId });
@@ -742,6 +788,7 @@ module.exports = {
 	blockProfile,
 	unblockProfile,
 	unmatchUser,
-	getDatingProfileLikes
+	getDatingProfileLikes,
+	getMatchProfilePictures
 };
 
