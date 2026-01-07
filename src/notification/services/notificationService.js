@@ -135,13 +135,20 @@ class NotificationService {
       console.log('[NOTIFICATION SERVICE] getUserNotifications query completed, count:', notifications?.length || 0);
 
       console.log('[NOTIFICATION SERVICE] Counting total documents...');
-      const total = await Notification.countDocuments({
+      const countQuery = {
         recipient: userId,
         ...(status !== 'all' && { status }),
         ...(type !== 'all' && { type }),
         ...(context !== 'all' && { context }),
         ...(priority !== 'all' && { priority })
-      });
+      };
+      
+      // Add status filter for 'all' case
+      if (status === 'all') {
+        countQuery.status = { $in: ['unread', 'read', 'archived'] };
+      }
+      
+      const total = await Notification.countDocuments(countQuery).maxTimeMS(10000);
       console.log('[NOTIFICATION SERVICE] Total count:', total);
 
       return {

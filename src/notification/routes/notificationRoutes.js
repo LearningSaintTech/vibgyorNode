@@ -38,8 +38,9 @@ router.validateFCMToken = validateFCMToken;
 router.get('/', authorize(), async (req, res) => {
   try {
     console.log('[NOTIFICATION ROUTES] GET /api/v1/notifications - Request received');
-    const userId = req.user.id;
+    const userId = req.user?.userId || req.user?.id;
     console.log('[NOTIFICATION ROUTES] User ID:', userId);
+    console.log('[NOTIFICATION ROUTES] req.user:', req.user);
     
     const {
       page = 1,
@@ -67,14 +68,53 @@ router.get('/', authorize(), async (req, res) => {
       pagination: result.pagination
     });
 
-    return ApiResponse.createResponse(res, {
-      notifications: result.notifications,
+    // Optimize response - only send essential fields
+    const optimizedNotifications = result.notifications.map(notif => ({
+      _id: notif._id,
+      id: notif._id,
+      title: notif.title,
+      message: notif.message,
+      type: notif.type,
+      context: notif.context,
+      status: notif.status,
+      priority: notif.priority,
+      createdAt: notif.createdAt,
+      readAt: notif.readAt,
+      sender: notif.sender ? {
+        _id: notif.sender._id,
+        username: notif.sender.username,
+        fullName: notif.sender.fullName,
+        profilePictureUrl: notif.sender.profilePictureUrl,
+        isVerified: notif.sender.isVerified
+      } : null,
+      relatedContent: notif.relatedContent || {},
+      data: notif.data || {}
+    }));
+
+    console.log('[NOTIFICATION ROUTES] Sending response with', optimizedNotifications.length, 'notifications');
+    console.log('[NOTIFICATION ROUTES] Response data size:', JSON.stringify(optimizedNotifications).length, 'bytes');
+    console.log('[NOTIFICATION ROUTES] First notification sample:', optimizedNotifications[0] ? {
+      id: optimizedNotifications[0]._id,
+      type: optimizedNotifications[0].type,
+      title: optimizedNotifications[0].title?.substring(0, 50),
+      hasSender: !!optimizedNotifications[0].sender
+    } : 'none');
+    
+    const responseData = {
+      notifications: optimizedNotifications,
       pagination: result.pagination
-    }, 'Notifications retrieved successfully');
+    };
+
+    const responseStartTime = Date.now();
+    // Use ApiResponse.success() which actually sends the response
+    ApiResponse.success(res, responseData, 'Notifications retrieved successfully');
+    const responseTime = Date.now() - responseStartTime;
+    console.log('[NOTIFICATION ROUTES] Response sent in', responseTime, 'ms');
+    console.log('[NOTIFICATION ROUTES] Response status:', res.statusCode);
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error getting notifications:', error);
     console.error('[NOTIFICATION ROUTES] Error stack:', error.stack);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to get notifications', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to get notifications');
   }
 });
 
@@ -85,17 +125,15 @@ router.get('/', authorize(), async (req, res) => {
  */
 router.get('/unread-count', authorize(), async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.userId || req.user?.id;
     const { context = 'all' } = req.query;
 
     const count = await notificationService.getUnreadCount(userId, context);
 
-    return ApiResponse.createResponse(res, {
-      count
-    }, 'Unread count retrieved successfully');
+    return ApiResponse.success(res, { count }, 'Unread count retrieved successfully');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error getting unread count:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to get unread count', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to get unread count');
   }
 });
 
@@ -106,17 +144,15 @@ router.get('/unread-count', authorize(), async (req, res) => {
  */
 router.put('/:id/read', authorize(), async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.userId || req.user?.id;
     const { id } = req.params;
 
     const notification = await notificationService.markAsRead(id, userId);
 
-    return ApiResponse.createResponse(res, {
-      notification
-    }, 'Notification marked as read');
+    return ApiResponse.success(res, { notification }, 'Notification marked as read');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error marking notification as read:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to mark notification as read', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to mark notification as read');
   }
 });
 
@@ -127,17 +163,15 @@ router.put('/:id/read', authorize(), async (req, res) => {
  */
 router.put('/read-all', authorize(), async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.userId || req.user?.id;
     const { context = 'all' } = req.body;
 
     const result = await notificationService.markAllAsRead(userId, context);
 
-    return ApiResponse.createResponse(res, {
-      modifiedCount: result.modifiedCount || 0
-    }, 'All notifications marked as read');
+    return ApiResponse.success(res, { modifiedCount: result.modifiedCount || 0 }, 'All notifications marked as read');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error marking all as read:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to mark all as read', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to mark all as read');
   }
 });
 
@@ -148,17 +182,15 @@ router.put('/read-all', authorize(), async (req, res) => {
  */
 router.put('/:id/archive', authorize(), async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.userId || req.user?.id;
     const { id } = req.params;
 
     const notification = await notificationService.archive(id, userId);
 
-    return ApiResponse.createResponse(res, {
-      notification
-    }, 'Notification archived');
+    return ApiResponse.success(res, { notification }, 'Notification archived');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error archiving notification:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to archive notification', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to archive notification');
   }
 });
 
@@ -169,7 +201,7 @@ router.put('/:id/archive', authorize(), async (req, res) => {
  */
 router.get('/test', (req, res) => {
   console.log('[NOTIFICATION ROUTES] ✅ Test route hit!');
-  return ApiResponse.createResponse(res, { message: 'Notification routes are working!' }, 'Test successful');
+  return ApiResponse.success(res, { message: 'Notification routes are working!' }, 'Test successful');
 });
 
 /**
@@ -204,7 +236,7 @@ router.post('/save-fcm-token', authorize(), async (req, res) => {
   console.log('[NOTIFICATION ROUTES] 🔍 Starting FCM token save process...');
 
   try {
-    const userId = req.user?.id || req.user?.userId;
+    const userId = req.user?.userId || req.user?.id;
     console.log('[NOTIFICATION ROUTES] 🔑 Extracted userId:', userId);
     const { fcmToken, deviceId, platform } = req.body;
 
@@ -220,26 +252,26 @@ router.post('/save-fcm-token', authorize(), async (req, res) => {
 
     if (!fcmToken || !platform) {
       console.warn('[NOTIFICATION ROUTES] ⚠️ Missing required fields:', { fcmToken: !!fcmToken, platform: !!platform });
-      return ApiResponse.createErrorResponse(res, 'FCM token and platform are required', 400);
+      return ApiResponse.badRequest(res, 'FCM token and platform are required');
     }
 
     // Validate FCM token format
     if (!validateFCMToken(fcmToken)) {
       console.warn('[NOTIFICATION ROUTES] ⚠️ Invalid FCM token format:', fcmToken.substring(0, 30));
-      return ApiResponse.createErrorResponse(res, 'Invalid FCM token format', 400);
+      return ApiResponse.badRequest(res, 'Invalid FCM token format');
     }
 
     // Validate platform
     const validPlatforms = ['ios', 'android', 'web'];
     if (!validPlatforms.includes(platform.toLowerCase())) {
       console.warn('[NOTIFICATION ROUTES] ⚠️ Invalid platform:', platform);
-      return ApiResponse.createErrorResponse(res, 'Invalid platform. Must be ios, android, or web', 400);
+      return ApiResponse.badRequest(res, 'Invalid platform. Must be ios, android, or web');
     }
 
     const user = await User.findById(userId);
     if (!user) {
       console.error('[NOTIFICATION ROUTES] ❌ User not found:', userId);
-      return ApiResponse.createErrorResponse(res, 'User not found', 404);
+      return ApiResponse.notFound(res, 'User not found');
     }
 
     // Add device token using User model method
@@ -254,16 +286,14 @@ router.post('/save-fcm-token', authorize(), async (req, res) => {
     console.log('[NOTIFICATION ROUTES] ✅ FCM Token saved successfully for user:', userId);
     console.log('[NOTIFICATION ROUTES] 📤 Sending success response...');
 
-    return ApiResponse.createResponse(res, {
-      success: true
-    }, 'FCM token saved successfully');
+    return ApiResponse.success(res, { success: true }, 'FCM token saved successfully');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] ❌ Error saving FCM token:', error);
     console.error('[NOTIFICATION ROUTES] ❌ Error name:', error.name);
     console.error('[NOTIFICATION ROUTES] ❌ Error message:', error.message);
     console.error('[NOTIFICATION ROUTES] ❌ Error stack:', error.stack);
     console.error('[NOTIFICATION ROUTES] ❌ Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to save FCM token', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to save FCM token');
   }
 });
 
@@ -287,13 +317,13 @@ router.delete('/remove-fcm-token', authorize(), async (req, res) => {
 
     if (!fcmToken) {
       console.warn('[NOTIFICATION ROUTES] ⚠️ FCM token is required');
-      return ApiResponse.createErrorResponse(res, 'FCM token is required', 400);
+      return ApiResponse.badRequest(res, 'FCM token is required');
     }
 
     const user = await User.findById(userId);
     if (!user) {
       console.error('[NOTIFICATION ROUTES] ❌ User not found:', userId);
-      return ApiResponse.createErrorResponse(res, 'User not found', 404);
+      return ApiResponse.notFound(res, 'User not found');
     }
 
     // Remove device token using User model method
@@ -301,12 +331,10 @@ router.delete('/remove-fcm-token', authorize(), async (req, res) => {
 
     console.log('[NOTIFICATION ROUTES] ✅ FCM Token removed successfully for user:', userId);
 
-    return ApiResponse.createResponse(res, {
-      success: true
-    }, 'FCM token removed successfully');
+    return ApiResponse.success(res, { success: true }, 'FCM token removed successfully');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error removing FCM token:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to remove FCM token', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to remove FCM token');
   }
 });
 
@@ -323,17 +351,15 @@ router.delete('/:id', authorize(), async (req, res) => {
 
     // Validate that id is a valid ObjectId (not a route name)
     if (!id || id.match(/^[0-9a-fA-F]{24}$/) === null) {
-      return ApiResponse.createErrorResponse(res, 'Invalid notification ID', 400);
+      return ApiResponse.badRequest(res, 'Invalid notification ID');
     }
 
     const notification = await notificationService.delete(id, userId);
 
-    return ApiResponse.createResponse(res, {
-      notification
-    }, 'Notification deleted');
+    return ApiResponse.success(res, { notification }, 'Notification deleted');
   } catch (error) {
     console.error('[NOTIFICATION ROUTES] Error deleting notification:', error);
-    return ApiResponse.createErrorResponse(res, error.message || 'Failed to delete notification', 500);
+    return ApiResponse.serverError(res, error.message || 'Failed to delete notification');
   }
 });
 

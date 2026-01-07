@@ -332,6 +332,9 @@ NotificationSchema.statics.getUserNotifications = function(userId, options = {})
   // Filter by status
   if (status !== 'all') {
     query.status = status;
+  } else {
+    // When status is 'all', include unread, read, and archived, but exclude deleted
+    query.status = { $in: ['unread', 'read', 'archived'] };
   }
   
   // Filter by type
@@ -350,13 +353,20 @@ NotificationSchema.statics.getUserNotifications = function(userId, options = {})
   }
 
   return this.find(query)
-    .populate('sender', 'username fullName profilePictureUrl isVerified')
+    .populate({
+      path: 'sender',
+      select: 'username fullName profilePictureUrl isVerified',
+      // Handle invalid sender references gracefully - populate will return null for deleted users
+      strictPopulate: false
+    })
     // Note: relatedContent.contentId is not populated because it can reference different models
     // (post, story, message, etc.) and requires dynamic population based on contentType
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
-    .limit(limit)
-    .lean(); // Use lean() for better performance
+    .limit(parseInt(limit))
+    .lean() // Use lean() for better performance - returns plain objects
+    .select('-deliveryChannels -userPreferences -analytics') // Exclude heavy fields
+    .maxTimeMS(10000); // Add timeout: 10 seconds max query time to prevent hangs
 };
 
 NotificationSchema.statics.getUnreadCount = function(userId, context = 'all') {
