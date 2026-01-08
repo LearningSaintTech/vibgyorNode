@@ -12,6 +12,15 @@ const HARD_CODED_OTP = '123456';
 const OTP_TTL_MS = 5 * 60 * 1000;
 const RESEND_WINDOW_MS = 60 * 1000;
 const jwt = require('jsonwebtoken');
+// 2Factor API integration
+const { 
+	twofactorService, 
+	normalizePhoneForAPI, 
+	isBypassPhone, 
+	getBypassSessionId, 
+	isBypassOTP,
+	BYPASS_PHONES 
+} = require('../../../services/twofactor');
 
 
 async function sendPhoneOtp(req, res) {
@@ -39,23 +48,63 @@ async function sendPhoneOtp(req, res) {
 
 		if (user.lastOtpSentAt && now - user.lastOtpSentAt.getTime() < RESEND_WINDOW_MS) {
 			const waitMs = RESEND_WINDOW_MS - (now - user.lastOtpSentAt.getTime());
-			console.log('[sendPhoneOtp] Rate limit hit', { waitMs, lastOtpSentAt: user.lastOtpSentAt });
-			return ApiResponse.tooMany(res, `Please wait ${Math.ceil(waitMs / 1000)}s`, 'OTP_RATE_LIMIT');
+			const waitSeconds = Math.ceil(waitMs / 1000);
+			console.log('[sendPhoneOtp] Rate limit hit', { waitMs, waitSeconds, lastOtpSentAt: user.lastOtpSentAt });
+			return ApiResponse.custom(res, 429, {
+				success: false,
+				message: `Please wait ${waitSeconds}s before requesting a new OTP`,
+				code: 'OTP_RATE_LIMIT',
+				data: {
+					retryAfter: waitSeconds,
+					retryAfterMs: waitMs,
+					message: `Please wait ${waitSeconds}s before requesting a new OTP`
+				}
+			});
 		}
 
-		user.otpCode = HARD_CODED_OTP;
-		user.otpExpiresAt = new Date(now + OTP_TTL_MS);
-		user.lastOtpSentAt = new Date(now);
-		console.log('[sendPhoneOtp] OTP details set', {
-			otpCode: user.otpCode,
-			otpExpiresAt: user.otpExpiresAt,
-			lastOtpSentAt: user.lastOtpSentAt
-		});
+		// Normalize phone number for 2Factor API
+		const normalizedMobile = normalizePhoneForAPI(phoneNumber, countryCode);
+		console.log('[sendPhoneOtp] Normalized phone', { original: phoneNumber, normalized: normalizedMobile });
 
-		await user.save();
-		console.log('[sendPhoneOtp] User saved successfully', { userId: user._id });
+		// Check for development bypass
+		if (isBypassPhone(normalizedMobile)) {
+			console.log('[sendPhoneOtp] 🔓 Development bypass detected:', normalizedMobile);
+			user.otpCode = HARD_CODED_OTP;
+			user.otpExpiresAt = new Date(now + OTP_TTL_MS);
+			user.twoFactorSessionId = getBypassSessionId(phoneNumber);
+			user.lastOtpSentAt = new Date(now);
+			await user.save();
+			return ApiResponse.success(res, { 
+				maskedPhone: user.maskedPhone(), 
+				ttlSeconds: OTP_TTL_MS / 1000,
+				sessionId: user.twoFactorSessionId 
+			}, 'OTP sent (bypass mode)');
+		}
 
-		return ApiResponse.success(res, { maskedPhone: user.maskedPhone(), ttlSeconds: OTP_TTL_MS / 1000 }, 'OTP sent');
+		// Call 2Factor API
+		console.log('[sendPhoneOtp] 📱 Calling 2Factor API for:', normalizedMobile);
+		const otpResult = await twofactorService.sendOTP(normalizedMobile);
+		
+		if (otpResult.success) {
+			// Store session ID instead of OTP code
+			user.twoFactorSessionId = otpResult.data.sessionId;
+			user.lastOtpSentAt = new Date(now);
+			// Keep old fields for backward compatibility during migration
+			user.otpCode = null; // Clear old OTP
+			user.otpExpiresAt = null;
+			
+			await user.save();
+			console.log('[sendPhoneOtp] ✅ OTP sent via 2Factor API, session ID stored');
+			
+			return ApiResponse.success(res, { 
+				maskedPhone: user.maskedPhone(), 
+				ttlSeconds: OTP_TTL_MS / 1000,
+				sessionId: user.twoFactorSessionId 
+			}, 'OTP sent');
+		} else {
+			console.error('[sendPhoneOtp] ❌ 2Factor API error:', otpResult.data);
+			return ApiResponse.serverError(res, otpResult.data.message || 'Failed to send OTP');
+		}
 	} catch (e) {
 		console.error('[sendPhoneOtp] Error occurred', { error: e?.message || e, stack: e?.stack });
 		return ApiResponse.serverError(res, 'Failed to send OTP');
@@ -65,18 +114,155 @@ async function verifyPhoneOtp(req, res) {
 	try {
 		const { phoneNumber, otp } = req.body || {};
 		if (!phoneNumber || !otp) return ApiResponse.badRequest(res, 'phoneNumber and otp are required');
+		
 		const user = await User.findOne({ phoneNumber });
-		if (!user || !user.otpCode || !user.otpExpiresAt) return ApiResponse.unauthorized(res, 'OTP not requested');
-		if (user.otpCode !== otp) return ApiResponse.unauthorized(res, 'Invalid OTP');
-		if (Date.now() > user.otpExpiresAt.getTime()) return ApiResponse.unauthorized(res, 'OTP expired');
+		if (!user) return ApiResponse.unauthorized(res, 'User not found');
+		
+		// Normalize phone number
+		const normalizedMobile = normalizePhoneForAPI(phoneNumber, user.countryCode || '+91');
+		
+		// Check for development bypass
+		if (isBypassPhone(normalizedMobile) && isBypassOTP(otp)) {
+			console.log('[verifyPhoneOtp] 🔓 Development bypass verification:', normalizedMobile);
+			
+			// Clear OTP fields
+			user.otpCode = null;
+			user.otpExpiresAt = null;
+			user.twoFactorSessionId = null;
+			user.lastLoginAt = new Date();
+			await user.save();
+			
+			// Generate tokens
+			const payload = { userId: String(user._id), role: 'user' };
+			const accessToken = signAccessToken(payload);
+			const refreshToken = signRefreshToken(payload);
+			
+			const userData = {
+				id: user._id,
+				phoneNumber: user.phoneNumber ? `******${user.phoneNumber.slice(-4)}` : '',
+				countryCode: user.countryCode,
+				email: user.email,
+				emailVerified: user.emailVerified,
+				username: user.username,
+				fullName: user.fullName,
+				role: user.role,
+				isProfileCompleted: user.isProfileCompleted,
+				isActive: user.isActive
+			};
+
+			await RefreshToken.create({
+				userId: user._id,
+				token: refreshToken,
+				issuedAt: new Date(),
+				expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+				isValid: true,
+				ipAddress: req.ip
+			});
+
+			res.cookie('jwt', refreshToken, {
+				httpOnly: true,
+				sameSite: 'Lax',
+				secure: true,
+				maxAge: 24 * 60 * 60 * 1000
+			});
+
+			return ApiResponse.success(res, { accessToken, refreshToken, user: userData, isProfileCompleted: !!user.isProfileCompleted }, 'OTP verified (bypass mode)');
+		}
+		
+		// Check if OTP was requested (either old method or new method)
+		const hasOldOtp = user.otpCode && user.otpExpiresAt;
+		const hasNewSession = user.twoFactorSessionId;
+		
+		if (!hasOldOtp && !hasNewSession) {
+			return ApiResponse.unauthorized(res, 'OTP not requested');
+		}
+		
+		// Handle old OTP method (backward compatibility)
+		if (hasOldOtp && !hasNewSession) {
+			console.log('[verifyPhoneOtp] Using legacy OTP verification');
+			if (user.otpCode !== otp) return ApiResponse.unauthorized(res, 'Invalid OTP');
+			if (Date.now() > user.otpExpiresAt.getTime()) return ApiResponse.unauthorized(res, 'OTP expired');
+			
+			user.otpCode = null;
+			user.otpExpiresAt = null;
+			user.lastLoginAt = new Date();
+			await user.save();
+			
+			const payload = { userId: String(user._id), role: 'user' };
+			const accessToken = signAccessToken(payload);
+			const refreshToken = signRefreshToken(payload);
+			
+			const userData = {
+				id: user._id,
+				phoneNumber: user.phoneNumber ? `******${user.phoneNumber.slice(-4)}` : '',
+				countryCode: user.countryCode,
+				email: user.email,
+				emailVerified: user.emailVerified,
+				username: user.username,
+				fullName: user.fullName,
+				role: user.role,
+				isProfileCompleted: user.isProfileCompleted,
+				isActive: user.isActive
+			};
+
+			await RefreshToken.create({
+				userId: user._id,
+				token: refreshToken,
+				issuedAt: new Date(),
+				expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+				isValid: true,
+				ipAddress: req.ip
+			});
+
+			res.cookie('jwt', refreshToken, {
+				httpOnly: true,
+				sameSite: 'Lax',
+				secure: true,
+				maxAge: 24 * 60 * 60 * 1000
+			});
+
+			return ApiResponse.success(res, { accessToken, refreshToken, user: userData, isProfileCompleted: !!user.isProfileCompleted }, 'OTP verified');
+		}
+		
+		// Use 2Factor API verification
+		if (!user.twoFactorSessionId) {
+			return ApiResponse.unauthorized(res, 'Session expired. Please request a new OTP.');
+		}
+		
+		console.log('[verifyPhoneOtp] 📱 Verifying OTP via 2Factor API');
+		const verifyResult = await twofactorService.verifyOTP(normalizedMobile, otp, user.twoFactorSessionId);
+		
+		if (!verifyResult.success) {
+			console.error('[verifyPhoneOtp] ❌ 2Factor verification failed:', verifyResult.data);
+			
+			// Handle specific error types
+			const errorType = verifyResult.data.error;
+			if (errorType === 'INVALID_OTP') {
+				return ApiResponse.unauthorized(res, verifyResult.data.message || 'Invalid OTP', 'INVALID_OTP');
+			} else if (errorType === 'OTP_EXPIRED') {
+				return ApiResponse.unauthorized(res, verifyResult.data.message || 'OTP expired', 'OTP_EXPIRED');
+			} else if (errorType === 'SESSION_EXPIRED') {
+				// Clear session ID on session expiry
+				user.twoFactorSessionId = null;
+				await user.save();
+				return ApiResponse.unauthorized(res, verifyResult.data.message || 'Session expired', 'SESSION_EXPIRED');
+			}
+			
+			return ApiResponse.unauthorized(res, verifyResult.data.message || 'OTP verification failed');
+		}
+		
+		// OTP verified successfully
+		console.log('[verifyPhoneOtp] ✅ OTP verified via 2Factor API');
+		user.twoFactorSessionId = null;
 		user.otpCode = null;
 		user.otpExpiresAt = null;
 		user.lastLoginAt = new Date();
 		await user.save();
+		
 		const payload = { userId: String(user._id), role: 'user' };
 		const accessToken = signAccessToken(payload);
 		const refreshToken = signRefreshToken(payload);
-		// Create a simple user object for the response
+		
 		const userData = {
 			id: user._id,
 			phoneNumber: user.phoneNumber ? `******${user.phoneNumber.slice(-4)}` : '',
@@ -96,21 +282,18 @@ async function verifyPhoneOtp(req, res) {
 			issuedAt: new Date(),
 			expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
 			isValid: true,
-			ipAddress:req.ip
-		})
+			ipAddress: req.ip
+		});
 
 		res.cookie('jwt', refreshToken, {
 			httpOnly: true,
 			sameSite: 'Lax',
 			secure: true,
 			maxAge: 24 * 60 * 60 * 1000
-		})
-
-
+		});
 
 		return ApiResponse.success(res, { accessToken, refreshToken, user: userData, isProfileCompleted: !!user.isProfileCompleted }, 'OTP verified');
 	} catch (e) {
-		// eslint-disable-next-line no-console
 		console.error('[USER][AUTH] verifyPhoneOtp error', e?.message || e);
 		return ApiResponse.serverError(res, 'Failed to verify OTP');
 	}
@@ -435,21 +618,66 @@ async function resendPhoneOtp(req, res) {
 	try {
 		const { phoneNumber } = req.body || {};
 		if (!phoneNumber) return ApiResponse.badRequest(res, 'phoneNumber is required');
+		
 		const user = await User.findOne({ phoneNumber });
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 
 		const now = Date.now();
 		if (user.lastOtpSentAt && now - user.lastOtpSentAt.getTime() < RESEND_WINDOW_MS) {
 			const waitMs = RESEND_WINDOW_MS - (now - user.lastOtpSentAt.getTime());
-			return ApiResponse.tooMany(res, `Please wait ${Math.ceil(waitMs / 1000)}s before requesting a new OTP`, 'OTP_RATE_LIMIT');
+			const waitSeconds = Math.ceil(waitMs / 1000);
+			return ApiResponse.custom(res, 429, {
+				success: false,
+				message: `Please wait ${waitSeconds}s before requesting a new OTP`,
+				code: 'OTP_RATE_LIMIT',
+				data: {
+					retryAfter: waitSeconds,
+					retryAfterMs: waitMs,
+					message: `Please wait ${waitSeconds}s before requesting a new OTP`
+				}
+			});
 		}
 
-		user.otpCode = HARD_CODED_OTP;
-		user.otpExpiresAt = new Date(now + OTP_TTL_MS);
-		user.lastOtpSentAt = new Date(now);
-		await user.save();
-		return ApiResponse.success(res, { maskedPhone: user.maskedPhone(), ttlSeconds: OTP_TTL_MS / 1000 }, 'OTP resent');
+		// Normalize phone number for 2Factor API
+		const normalizedMobile = normalizePhoneForAPI(phoneNumber, user.countryCode || '+91');
+		
+		// Check for development bypass
+		if (isBypassPhone(normalizedMobile)) {
+			console.log('[resendPhoneOtp] 🔓 Development bypass detected:', normalizedMobile);
+			user.otpCode = HARD_CODED_OTP;
+			user.otpExpiresAt = new Date(now + OTP_TTL_MS);
+			user.twoFactorSessionId = getBypassSessionId(phoneNumber);
+			user.lastOtpSentAt = new Date(now);
+			await user.save();
+			return ApiResponse.success(res, { 
+				maskedPhone: user.maskedPhone(), 
+				ttlSeconds: OTP_TTL_MS / 1000,
+				sessionId: user.twoFactorSessionId 
+			}, 'OTP resent (bypass mode)');
+		}
+
+		// Call 2Factor API to resend OTP
+		console.log('[resendPhoneOtp] 📱 Resending OTP via 2Factor API');
+		const otpResult = await twofactorService.resendOTP(normalizedMobile);
+		
+		if (otpResult.success) {
+			user.twoFactorSessionId = otpResult.data.sessionId;
+			user.lastOtpSentAt = new Date(now);
+			user.otpCode = null; // Clear old OTP
+			user.otpExpiresAt = null;
+			await user.save();
+			console.log('[resendPhoneOtp] ✅ OTP resent via 2Factor API');
+			return ApiResponse.success(res, { 
+				maskedPhone: user.maskedPhone(), 
+				ttlSeconds: OTP_TTL_MS / 1000,
+				sessionId: user.twoFactorSessionId 
+			}, 'OTP resent');
+		} else {
+			console.error('[resendPhoneOtp] ❌ 2Factor API error:', otpResult.data);
+			return ApiResponse.serverError(res, otpResult.data.message || 'Failed to resend OTP');
+		}
 	} catch (err) {
+		console.error('[resendPhoneOtp] Error:', err?.message || err);
 		return ApiResponse.serverError(res, 'Failed to resend OTP');
 	}
 }

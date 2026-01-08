@@ -85,6 +85,7 @@ MessageRequestSchema.methods.isExpired = function() {
 // Method to accept request
 MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 	const Chat = mongoose.model('Chat');
+	const Message = mongoose.model('Message');
 	
 	this.status = 'accepted';
 	this.respondedAt = new Date();
@@ -100,6 +101,70 @@ MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 	
 	this.chatId = chat._id;
 	await this.save();
+	
+	// ALWAYS send initial message if one was included in the request
+	// Extract and validate message from request
+	const requestMessage = this.message ? String(this.message).trim() : '';
+	
+	if (requestMessage && requestMessage !== '') {
+		try {
+			console.log('[MESSAGE_REQUEST] Sending initial message from request:', {
+				chatId: chat._id,
+				senderId: this.fromUserId,
+				toUserId: this.toUserId,
+				messageLength: requestMessage.length,
+				messagePreview: requestMessage.substring(0, 50) + (requestMessage.length > 50 ? '...' : ''),
+				requestId: this._id
+			});
+			
+			// Create the initial message from the request (MANDATORY: always send the message from the request)
+			const initialMessage = new Message({
+				chatId: chat._id,
+				senderId: this.fromUserId,
+				type: 'text',
+				content: requestMessage,
+				status: 'sent'
+			});
+			
+			await initialMessage.save();
+			console.log('[MESSAGE_REQUEST] Initial message saved:', { messageId: initialMessage._id });
+			
+			// Update chat's last message
+			chat.lastMessage = initialMessage._id;
+			chat.lastMessageAt = new Date();
+			
+			// Increment unread count for the recipient (toUserId) using chat method
+			chat.incrementUnreadCount(this.toUserId);
+			
+			await chat.save();
+			console.log('[MESSAGE_REQUEST] Chat updated with initial message');
+			
+			console.log('[MESSAGE_REQUEST] ✅ Initial message sent successfully:', {
+				messageId: initialMessage._id,
+				chatId: chat._id,
+				senderId: this.fromUserId,
+				toUserId: this.toUserId,
+				contentLength: requestMessage.length
+			});
+		} catch (error) {
+			console.error('[MESSAGE_REQUEST] ❌ Error sending initial message:', {
+				error: error.message,
+				stack: error.stack,
+				chatId: chat._id,
+				senderId: this.fromUserId,
+				messageLength: requestMessage.length
+			});
+			// Don't fail the acceptance if message sending fails
+			// The chat is already created, so continue
+		}
+	} else {
+		console.log('[MESSAGE_REQUEST] No initial message to send (empty message in request):', {
+			requestId: this._id,
+			chatId: chat._id,
+			hasMessage: !!this.message,
+			messageValue: this.message
+		});
+	}
 	
 	return chat;
 };
@@ -156,11 +221,25 @@ MessageRequestSchema.statics.createRequest = async function(fromUserId, toUserId
 		throw new Error('Request already sent and pending');
 	}
 	
-	// Create new request
+	// Create new request with message (always save message, even if empty)
+	const messageText = message ? message.trim() : '';
+	console.log('[MESSAGE_REQUEST] Creating request with message:', {
+		fromUserId,
+		toUserId,
+		messageLength: messageText.length,
+		hasMessage: messageText.length > 0
+	});
+	
 	const request = await this.create({
 		fromUserId,
 		toUserId,
-		message: message.trim()
+		message: messageText
+	});
+	
+	console.log('[MESSAGE_REQUEST] Request created:', {
+		requestId: request._id,
+		savedMessage: request.message,
+		messageLength: request.message?.length || 0
 	});
 	
 	await request.populate([

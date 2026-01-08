@@ -43,8 +43,22 @@ class ChatService {
       
       // Check if users can chat
       const canChatResult = await Chat.canUsersChat(userId1, userId2);
+      console.log('[ChatService] canUsersChat result:', {
+        canChat: canChatResult.canChat,
+        reason: canChatResult.reason,
+        userId1: userId1.toString(),
+        userId2: userId2.toString()
+      });
       
       if (!canChatResult.canChat) {
+        if (canChatResult.reason === 'user_not_found') {
+          throw new Error('One or both users not found');
+        }
+        
+        if (canChatResult.reason === 'user_inactive') {
+          throw new Error('Cannot chat with inactive users');
+        }
+        
         if (canChatResult.reason === 'no_permission') {
           // Check for existing message request
           const existingRequest = await MessageRequest.findOne({
@@ -56,11 +70,35 @@ class ChatService {
           });
           
           if (existingRequest) {
-            throw new Error('Message request already sent and pending');
+            // Return structured response instead of throwing error
+            return {
+              canChat: false,
+              needsMessageRequest: true,
+              messageRequestExists: true,
+              messageRequestId: existingRequest._id,
+              reason: 'message_request_pending',
+              message: 'Message request already sent and pending'
+            };
           }
           
-          throw new Error('Cannot start chat. Send a message request first.');
+          // Return structured response indicating message request is needed
+          return {
+            canChat: false,
+            needsMessageRequest: true,
+            messageRequestExists: false,
+            reason: 'no_permission',
+            message: 'Cannot start chat. Send a message request first.'
+          };
         }
+        
+        // Handle any other unknown reasons - return structured response
+        return {
+          canChat: false,
+          needsMessageRequest: true,
+          messageRequestExists: false,
+          reason: canChatResult.reason || 'unknown',
+          message: 'Cannot start chat. Send a message request first.'
+        };
       }
       
       // Create or get existing chat

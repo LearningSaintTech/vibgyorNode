@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sendOtp, verifyOtp, resendOtp } = require('../adminController/unifiedAdminAuthController');
 const { authorize, Roles } = require('../../middleware/authMiddleware');
+const { check2FactorStatus } = require('../../services/twofactor/controllers/twoFactorStatusController');
 
 /**
  * Unified Admin/SubAdmin Authentication Routes
@@ -33,6 +34,9 @@ router.get('/me', authorize([Roles.ADMIN, Roles.SUBADMIN]), (req, res) => {
 		role: req.user.role
 	}); 
 });
+
+// Check 2Factor service status
+router.get('/2factor-status', check2FactorStatus);
 
 module.exports = router;
 

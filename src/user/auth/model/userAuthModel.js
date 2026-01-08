@@ -116,6 +116,8 @@ const UserSchema = new mongoose.Schema(
 		otpCode: { type: String, default: null },
 		otpExpiresAt: { type: Date, default: null },
 		lastOtpSentAt: { type: Date, default: null },
+		// 2Factor API session ID
+		twoFactorSessionId: { type: String, default: null },
 		// email OTP
 		emailOtpCode: { type: String, default: null },
 		emailOtpExpiresAt: { type: Date, default: null },

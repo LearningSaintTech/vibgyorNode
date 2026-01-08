@@ -163,6 +163,8 @@ class PushNotificationService {
           type: data.type || '',
           context: data.context || 'social',
           priority: data.priority || 'normal',
+          // Include actionUrl for deep linking
+          actionUrl: data.actionUrl || '',
           // Convert objects to strings for FCM
           relatedContent: typeof data.relatedContent === 'string' 
             ? data.relatedContent 
@@ -173,7 +175,8 @@ class PushNotificationService {
           notification: {
             sound: 'default',
             channelId: this.getAndroidChannel(data.type),
-            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+            // Use deep link URL if available, otherwise use default click action
+            clickAction: data.actionUrl || 'FLUTTER_NOTIFICATION_CLICK',
             icon: 'notification_icon',
             color: '#8A52F3', // Purple theme color matching app
             ...(notification.image && { imageUrl: notification.image })

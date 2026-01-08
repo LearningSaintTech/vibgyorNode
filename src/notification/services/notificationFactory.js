@@ -1,5 +1,6 @@
 const notificationRegistry = require('./notificationRegistry');
 const User = require('../../user/auth/model/userAuthModel');
+const URLGenerator = require('../../utils/urlGenerator');
 
 /**
  * Notification Factory
@@ -108,9 +109,54 @@ class NotificationFactory {
       notificationData.image = data.image;
     }
 
-    // Add action URL if available
+    // Generate action URL automatically if not provided
+    // This ensures all notifications have deep link URLs
     if (data.actionUrl) {
+      // Use provided actionUrl if explicitly set
       notificationData.actionUrl = data.actionUrl;
+    } else {
+      // Auto-generate actionUrl based on notification type and data
+      try {
+        // Prepare data for URL generation - include relatedContent and all data fields
+        const urlGenerationData = {
+          ...data,
+          // Include relatedContent with contentId
+          relatedContent: notificationData.relatedContent,
+          // Include senderId for user-related notifications
+          senderId: senderId,
+          // Extract IDs from various possible locations
+          postId: data.postId || notificationData.relatedContent?.contentId || null,
+          storyId: data.storyId || notificationData.relatedContent?.contentId || null,
+          chatId: data.chatId || notificationData.relatedContent?.contentId || null,
+          userId: data.userId || data.senderId || notificationData.relatedContent?.contentId || null,
+          matchId: data.matchId || notificationData.relatedContent?.contentId || null,
+          callId: data.callId || notificationData.relatedContent?.contentId || null,
+        };
+        
+        const generatedUrl = URLGenerator.generateUrlFromNotification(
+          type,
+          context,
+          urlGenerationData
+        );
+        
+        if (generatedUrl) {
+          notificationData.actionUrl = generatedUrl;
+          console.log(`[NotificationFactory] Generated actionUrl for ${type}: ${generatedUrl}`);
+        } else {
+          console.warn(`[NotificationFactory] Could not generate actionUrl for ${type} (context: ${context})`);
+          console.warn(`[NotificationFactory] Data available:`, {
+            hasPostId: !!urlGenerationData.postId,
+            hasStoryId: !!urlGenerationData.storyId,
+            hasChatId: !!urlGenerationData.chatId,
+            hasUserId: !!urlGenerationData.userId,
+            hasRelatedContent: !!urlGenerationData.relatedContent,
+            relatedContentId: urlGenerationData.relatedContent?.contentId
+          });
+        }
+      } catch (error) {
+        console.error(`[NotificationFactory] Error generating actionUrl for ${type}:`, error);
+        // Continue without actionUrl if generation fails
+      }
     }
 
     // Add channel overrides if provided

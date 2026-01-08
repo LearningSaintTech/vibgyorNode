@@ -264,8 +264,8 @@ chatSchema.statics.canUsersChat = async function(userId1, userId2) {
     // Check if users exist and are active
 	const User = mongoose.model('User');
 	const [user1, user2] = await Promise.all([
-      User.findById(userId1).select('isActive'),
-      User.findById(userId2).select('isActive')
+      User.findById(userId1).select('isActive following privacySettings'),
+      User.findById(userId2).select('isActive following privacySettings')
     ]);
     
     if (!user1 || !user2) {
@@ -284,6 +284,56 @@ chatSchema.statics.canUsersChat = async function(userId1, userId2) {
     
     if (existingChat) {
       return { canChat: true, reason: 'existing_chat' };
+    }
+    
+    // Check if users follow each other and privacy settings
+    const user1FollowingIds = (user1.following || []).map(id => id.toString());
+    const user2FollowingIds = (user2.following || []).map(id => id.toString());
+    
+    const user1FollowsUser2 = user1FollowingIds.includes(userId2.toString());
+    const user2FollowsUser1 = user2FollowingIds.includes(userId1.toString());
+    const isMutualFollow = user1FollowsUser2 && user2FollowsUser1;
+    
+    // Get privacy settings
+    const user1AllowMessages = user1.privacySettings?.allowMessages || 'followers';
+    const user2AllowMessages = user2.privacySettings?.allowMessages || 'followers';
+    
+    console.log('[ChatModel] canUsersChat - Follow & Privacy check:', {
+      userId1: userId1.toString(),
+      userId2: userId2.toString(),
+      user1FollowingCount: user1FollowingIds.length,
+      user2FollowingCount: user2FollowingIds.length,
+      user1FollowsUser2,
+      user2FollowsUser1,
+      isMutualFollow,
+      user1AllowMessages,
+      user2AllowMessages
+    });
+    
+    // Mutual follow - always allows chat
+    if (isMutualFollow) {
+      return { canChat: true, reason: 'mutual_follow' };
+    }
+    
+    // Check privacy settings for one-way following
+    // If user2 allows messages from followers and user1 follows user2
+    if (user2AllowMessages === 'followers' && user1FollowsUser2) {
+      return { canChat: true, reason: 'follower_can_message' };
+    }
+    
+    // If user1 allows messages from followers and user2 follows user1
+    if (user1AllowMessages === 'followers' && user2FollowsUser1) {
+      return { canChat: true, reason: 'follower_can_message' };
+    }
+    
+    // If user2 allows messages from everyone
+    if (user2AllowMessages === 'everyone') {
+      return { canChat: true, reason: 'public_messaging_allowed' };
+    }
+    
+    // If user1 allows messages from everyone
+    if (user1AllowMessages === 'everyone') {
+      return { canChat: true, reason: 'public_messaging_allowed' };
     }
     
     // Check message request permissions

@@ -36,6 +36,26 @@ class ChatController {
       
       console.log('🔵 [BACKEND_CHAT_CTRL] Calling ChatService.createOrGetChat...', { userId, otherUserId });
       const result = await ChatService.createOrGetChat(userId, otherUserId, userId);
+      
+      // Check if result indicates message request is needed
+      if (result && result.canChat === false && result.needsMessageRequest) {
+        console.log('🔵 [BACKEND_CHAT_CTRL] Message request needed:', {
+          messageRequestExists: result.messageRequestExists,
+          reason: result.reason
+        });
+        
+        return res.status(400).json(createErrorResponse(
+          result.message || 'Cannot start chat. Send a message request first.',
+          400,
+          {
+            needsMessageRequest: true,
+            messageRequestExists: result.messageRequestExists || false,
+            messageRequestId: result.messageRequestId || null,
+            reason: result.reason
+          }
+        ));
+      }
+      
       console.log('✅ [BACKEND_CHAT_CTRL] ChatService.createOrGetChat success:', { chatId: result.chat._id, canChat: result.canChat });
       
       res.status(200).json(createResponse(
@@ -53,16 +73,32 @@ class ChatController {
         otherUserId: req.body?.otherUserId
       });
       
+      // Normalize error message for comparison (case-insensitive)
+      const errorMsg = (error.message || '').toLowerCase();
+      
       let statusCode = 500;
-      if (error.message.includes('not found') || error.message.includes('Access denied')) {
+      if (errorMsg.includes('not found') || errorMsg.includes('access denied')) {
         statusCode = 404;
-      } else if (error.message.includes('permission') || error.message.includes('inactive')) {
+      } else if (errorMsg.includes('permission') || errorMsg.includes('inactive')) {
         statusCode = 403;
-      } else if (error.message.includes('required') || error.message.includes('Invalid')) {
-        statusCode = 400;
+      } else if (
+        errorMsg.includes('required') || 
+        errorMsg.includes('invalid') ||
+        errorMsg.includes('message request') ||
+        errorMsg.includes('cannot start chat') ||
+        errorMsg.includes('send a message request')
+      ) {
+        statusCode = 400; // Bad Request for business logic errors
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      console.log('🔵 [BACKEND_CHAT_CTRL] Returning error response:', {
+        statusCode,
+        errorMessage: error.message,
+        errorMsg
+      });
+      
+      // Pass statusCode to createErrorResponse to ensure response object has correct status
+      res.status(statusCode).json(createErrorResponse(error.message, statusCode));
     }
   }
   

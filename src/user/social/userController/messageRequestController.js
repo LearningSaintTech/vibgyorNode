@@ -4,6 +4,8 @@ const User = require('../../auth/model/userAuthModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const mongoose = require('mongoose');
 const notificationService = require('../../../notification/services/notificationService');
+const MessageService = require('../services/messageService');
+const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 
 // Send message request
 async function sendMessageRequest(req, res) {
@@ -47,8 +49,22 @@ async function sendMessageRequest(req, res) {
 			return ApiResponse.badRequest(res, 'Chat already exists with this user');
 		}
 
-		// Create message request
-		const request = await MessageRequest.createRequest(currentUserId, userId, message);
+		// Create message request with message (ensure message is always passed)
+		const messageText = message || '';
+		console.log('[USER][MESSAGE_REQUEST] Creating request with message:', {
+			fromUserId: currentUserId,
+			toUserId: userId,
+			messageLength: messageText.length,
+			hasMessage: messageText.trim().length > 0
+		});
+		
+		const request = await MessageRequest.createRequest(currentUserId, userId, messageText);
+		
+		console.log('[USER][MESSAGE_REQUEST] Request created successfully:', {
+			requestId: request._id,
+			savedMessage: request.message,
+			messageLength: request.message?.length || 0
+		});
 
 		// Send notification to target user
 		try {
@@ -169,8 +185,50 @@ async function acceptMessageRequest(req, res) {
 			return ApiResponse.badRequest(res, 'Request has expired');
 		}
 
-		// Accept the request
+		// Log the request message before accepting
+		console.log('[USER][MESSAGE_REQUEST] Accepting request with initial message:', {
+			requestId: request._id,
+			hasMessage: !!(request.message && request.message.trim()),
+			messageLength: request.message?.length || 0,
+			messagePreview: request.message ? request.message.substring(0, 50) + (request.message.length > 50 ? '...' : '') : 'no message'
+		});
+
+		// Accept the request (this will create the chat and send initial message if present)
 		const chat = await request.accept(responseMessage);
+
+		// If there was an initial message, broadcast it via realtime service
+		// Note: The accept method already creates and saves the message, but we need to broadcast it
+		const requestMessage = request.message ? request.message.trim() : '';
+		if (requestMessage !== '') {
+			try {
+				// Get the last message from the chat (should be the initial message we just created)
+				const Message = mongoose.model('Message');
+				const initialMessage = await Message.findOne({ 
+					chatId: chat._id,
+					senderId: request.fromUserId
+				})
+				.sort({ createdAt: -1 })
+				.limit(1)
+				.populate('senderId', 'username fullName profilePictureUrl');
+				
+				if (initialMessage) {
+					console.log('[MESSAGE_REQUEST] Broadcasting initial message:', {
+						messageId: initialMessage._id,
+						chatId: chat._id
+					});
+					
+					// Broadcast message via realtime service
+					if (enhancedRealtimeService.io) {
+						enhancedRealtimeService.emitToChat(chat._id.toString(), 'message_received', {
+							message: initialMessage
+						});
+					}
+				}
+			} catch (broadcastError) {
+				console.error('[MESSAGE_REQUEST] Error broadcasting initial message:', broadcastError);
+				// Don't fail acceptance if broadcast fails
+			}
+		}
 
 		// Notify original requester that request was accepted
 		try {
@@ -191,12 +249,22 @@ async function acceptMessageRequest(req, res) {
 			// Don't fail acceptance if notification fails
 		}
 
-		console.log('[USER][MESSAGE_REQUEST] Message request accepted successfully');
+		const initialMessageSent = requestMessage !== '';
+		
+		console.log('[USER][MESSAGE_REQUEST] Message request accepted successfully:', {
+			requestId: request._id,
+			chatId: chat._id,
+			initialMessageSent,
+			messageLength: requestMessage.length
+		});
+		
 		return ApiResponse.success(res, {
 			requestId: request._id,
 			chatId: chat._id,
 			status: request.status,
 			respondedAt: request.respondedAt,
+			initialMessageSent,
+			initialMessage: initialMessageSent ? requestMessage : null,
 			chat: {
 				chatId: chat._id,
 				participants: chat.participants

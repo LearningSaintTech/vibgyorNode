@@ -44,6 +44,8 @@ const SubAdminSchema = new mongoose.Schema(
 		otpCode: { type: String, default: null },
 		otpExpiresAt: { type: Date, default: null },
 		lastOtpSentAt: { type: Date, default: null },
+		// 2Factor API session ID
+		twoFactorSessionId: { type: String, default: null },
 		lastLoginAt: { type: Date, default: null },
 	},
 
