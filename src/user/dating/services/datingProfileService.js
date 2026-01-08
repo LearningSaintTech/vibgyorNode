@@ -261,6 +261,17 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		filter = 'all' // 'all', 'liked_you', 'liked_by_you', 'new_dater', 'near_by', 'same_interests'
 	} = filters;
 
+	console.log('[FILTER] buildSearchQuery called with filters:', {
+		ageMin,
+		ageMax,
+		hereTo,
+		wantToMeet,
+		languages,
+		location,
+		distanceMax,
+		filter
+	});
+
 	// Combine all excluded user IDs (blocked users + already interacted users)
 	// Convert all to strings first to remove duplicates, then back to ObjectIds for consistency
 	const allExcludedIdsStrings = [
@@ -295,21 +306,68 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 
 	// Filter by "Here To" preference (check both preferences.hereFor and dating.preferences.hereTo)
 	if (hereTo) {
-		query.$and.push({
-			$or: [
-				{ 'preferences.hereFor': { $regex: hereTo, $options: 'i' } },
-				{ 'dating.preferences.hereTo': { $regex: hereTo, $options: 'i' } }
-			]
+		// Map common frontend values to database values
+		const hereToLower = hereTo.toLowerCase();
+		const hereToValues = [hereTo]; // Always include original value
+		
+		// Map frontend display values to database values
+		const hereToMapping = {
+			'make new friends': 'friendship',
+			'find a date': 'dating',
+			'find a partner': 'relationship',
+			'serious relationship': 'relationship',
+			'casual': 'casual',
+			'networking': 'networking',
+			'not sure': 'not sure'
+		};
+		
+		if (hereToMapping[hereToLower]) {
+			hereToValues.push(hereToMapping[hereToLower]);
+		}
+		
+		// Remove duplicates
+		const uniqueValues = [...new Set(hereToValues)];
+		
+		// Build $or conditions for each value
+		const hereToConditions = [];
+		uniqueValues.forEach(value => {
+			hereToConditions.push(
+				{ 'preferences.hereFor': { $regex: new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+				{ 'dating.preferences.hereTo': { $regex: new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+			);
 		});
+		
+		query.$and.push({ $or: hereToConditions });
+		console.log(`[FILTER] HereTo: "${hereTo}" → searching for:`, uniqueValues);
 	}
 
 	// Filter by "Want to Meet" (gender preference)
 	if (wantToMeet) {
 		// If user wants to meet "Everyone", don't filter by gender
 		if (wantToMeet.toLowerCase() !== 'everyone') {
-			query.$and.push({
-				gender: { $regex: wantToMeet, $options: 'i' }
-			});
+			// Map frontend values to database gender values
+			const wantToMeetLower = wantToMeet.toLowerCase();
+			let genderValue = null;
+			
+			if (wantToMeetLower === 'men' || wantToMeetLower === 'man') {
+				genderValue = 'male';
+			} else if (wantToMeetLower === 'women' || wantToMeetLower === 'woman') {
+				genderValue = 'female';
+			} else if (wantToMeetLower === 'non-binary' || wantToMeetLower === 'nonbinary') {
+				genderValue = 'non-binary';
+			} else {
+				// Fallback: try to match directly (case-insensitive)
+				genderValue = wantToMeet;
+			}
+			
+			if (genderValue) {
+				query.$and.push({
+					gender: { $regex: new RegExp(`^${genderValue}$`, 'i') }
+				});
+				console.log(`[FILTER] WantToMeet: "${wantToMeet}" → gender: "${genderValue}"`);
+			}
+		} else {
+			console.log('[FILTER] WantToMeet: "Everyone" → No gender filter applied');
 		}
 	}
 
@@ -321,16 +379,21 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 			const currentYear = new Date().getFullYear();
 			const maxBirthYear = currentYear - ageMin;
 			ageQuery.$lte = new Date(`${maxBirthYear}-12-31`);
+			console.log(`[FILTER] Age Min: ${ageMin} → Max Birth Year: ${maxBirthYear} → DOB <= ${maxBirthYear}-12-31`);
 		}
 		if (ageMax !== null) {
 			// Calculate min birth year for maximum age
 			const currentYear = new Date().getFullYear();
 			const minBirthYear = currentYear - ageMax;
 			ageQuery.$gte = new Date(`${minBirthYear}-01-01`);
+			console.log(`[FILTER] Age Max: ${ageMax} → Min Birth Year: ${minBirthYear} → DOB >= ${minBirthYear}-01-01`);
 		}
 		if (Object.keys(ageQuery).length > 0) {
 			query.$and.push({ dob: ageQuery });
+			console.log('[FILTER] Age filter applied:', ageQuery);
 		}
+	} else {
+		console.log('[FILTER] Age filter NOT applied (ageMin and ageMax are null)');
 	}
 
 	// Filter by languages

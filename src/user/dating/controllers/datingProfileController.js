@@ -69,7 +69,62 @@ async function getAllDatingProfiles(req, res) {
 			limit = 20
 		} = req.query;
 
-		// Parse languages if provided as string
+		// Fetch user's stored preferences to use as default filters
+		const user = await User.findById(currentUserId).select('preferences dating.preferences location').lean();
+		const userPreferences = user?.dating?.preferences || {};
+		const userLocation = user?.location || {};
+
+		console.log('[DATING][PROFILE] User preferences:', {
+			ageRange: userPreferences.ageRange,
+			hereTo: userPreferences.hereTo,
+			wantToMeet: userPreferences.wantToMeet,
+			languages: userPreferences.languages,
+			distanceRange: userPreferences.distanceRange,
+			location: userLocation
+		});
+
+		// Use query parameters if provided, otherwise fall back to user's stored preferences
+		// IMPORTANT: Only use preferences if they are explicitly set (not empty strings)
+		// This ensures new profiles see all profiles without filters initially
+		let finalHereTo = null;
+		if (hereTo !== null && hereTo !== undefined) {
+			finalHereTo = hereTo;
+		} else {
+			const prefHereTo = userPreferences.hereTo || user?.preferences?.hereFor;
+			if (prefHereTo && prefHereTo.trim() !== '') {
+				finalHereTo = prefHereTo;
+			}
+		}
+		
+		let finalWantToMeet = null;
+		if (wantToMeet !== null && wantToMeet !== undefined) {
+			finalWantToMeet = wantToMeet;
+		} else {
+			const prefWantToMeet = userPreferences.wantToMeet || user?.preferences?.wantToMeet;
+			if (prefWantToMeet && prefWantToMeet.trim() !== '') {
+				finalWantToMeet = prefWantToMeet;
+			}
+		}
+		
+		// Age range: use query params or user's stored preferences
+		// Only use preferences if they are explicitly set (not default values 18-100)
+		let finalAgeMin = null;
+		let finalAgeMax = null;
+		if (ageMin !== null && ageMin !== undefined && ageMin !== '') {
+			finalAgeMin = parseInt(ageMin, 10);
+		} else if (userPreferences.ageRange?.min && userPreferences.ageRange.min !== 18) {
+			// Only use if not the default value
+			finalAgeMin = userPreferences.ageRange.min;
+		}
+		if (ageMax !== null && ageMax !== undefined && ageMax !== '') {
+			finalAgeMax = parseInt(ageMax, 10);
+		} else if (userPreferences.ageRange?.max && userPreferences.ageRange.max !== 100) {
+			// Only use if not the default value
+			finalAgeMax = userPreferences.ageRange.max;
+		}
+
+		// Languages: use query params or user's stored preferences
+		// Only use if explicitly set (not empty array)
 		let languagesArray = null;
 		if (languages) {
 			if (typeof languages === 'string') {
@@ -77,32 +132,62 @@ async function getAllDatingProfiles(req, res) {
 			} else if (Array.isArray(languages)) {
 				languagesArray = languages;
 			}
+		} else if (userPreferences.languages && Array.isArray(userPreferences.languages) && userPreferences.languages.length > 0) {
+			const filteredLangs = userPreferences.languages.filter(lang => lang && lang.trim() !== '');
+			if (filteredLangs.length > 0) {
+				languagesArray = filteredLangs;
+			}
 		}
 
-		// Build location object (note: schema only has city and country, no state)
+		// Location: use query params or user's stored preferences
+		// Only use if explicitly set (not empty strings)
 		const location = {};
-		if (city) location.city = city;
-		if (country) location.country = country;
+		if (city) {
+			location.city = city;
+		} else if (userLocation.city && userLocation.city.trim() !== '') {
+			location.city = userLocation.city;
+		}
+		if (country) {
+			location.country = country;
+		} else if (userLocation.country && userLocation.country.trim() !== '') {
+			location.country = userLocation.country;
+		}
 
-		// Set default distanceMax for "near_by" filter if not provided
+		// Distance: use query params or user's stored preferences
+		// Only use if explicitly set (not default value 100)
 		let finalDistanceMax = distanceMax ? parseFloat(distanceMax) : null;
+		if (!finalDistanceMax && userPreferences.distanceRange?.max && userPreferences.distanceRange.max !== 100) {
+			finalDistanceMax = userPreferences.distanceRange.max;
+		}
 		if (filter === 'near_by' && !finalDistanceMax) {
 			// Default to 50km for "near_by" filter
 			finalDistanceMax = 50;
 		}
 
-		// Build filters object
+		// Build filters object (query params override user preferences)
 		const filters = {
 			search: search.trim(),
-			hereTo,
-			wantToMeet,
-			ageMin: ageMin ? parseInt(ageMin, 10) : null,
-			ageMax: ageMax ? parseInt(ageMax, 10) : null,
+			hereTo: finalHereTo,
+			wantToMeet: finalWantToMeet,
+			ageMin: finalAgeMin,
+			ageMax: finalAgeMax,
 			languages: languagesArray,
 			location: Object.keys(location).length > 0 ? location : null,
 			distanceMax: finalDistanceMax,
 			filter
 		};
+
+		console.log('[DATING][PROFILE] Final filters applied:', {
+			fromQuery: { hereTo, wantToMeet, ageMin, ageMax, languages, city, country, distanceMax },
+			fromPreferences: {
+				hereTo: userPreferences.hereTo || user?.preferences?.hereFor,
+				wantToMeet: userPreferences.wantToMeet,
+				ageRange: userPreferences.ageRange,
+				languages: userPreferences.languages,
+				distanceRange: userPreferences.distanceRange
+			},
+			finalFilters: filters
+		});
 
 		// Get profiles
 		const result = await datingProfileService.getAllDatingProfiles(
@@ -210,21 +295,20 @@ async function updateDatingPreferences(req, res) {
 				user.dating.preferences.ageRange.max = parseInt(ageMax, 10);
 			}
 		}
+		// IMPORTANT: Location in preferences is ONLY for filtering other users, NOT for setting user's actual location
+		// User's actual location (user.location) should be set separately via profile update
+		// Only update the filter preference location, not the user's actual location
 		if (location !== undefined) {
-			user.location = {
+			// Only update dating preferences location (for filtering), NOT user's actual location
+			user.dating.preferences.location = {
 				city: location.city || '',
 				country: location.country || '',
-				lat: location.coordinates?.lat ?? location.lat ?? null,
-				lng: location.coordinates?.lng ?? location.lng ?? null
-			};
-			user.dating.preferences.location = {
-				city: user.location.city,
-				country: user.location.country,
 				coordinates: {
-					lat: user.location.lat,
-					lng: user.location.lng
+					lat: location.coordinates?.lat ?? location.lat ?? null,
+					lng: location.coordinates?.lng ?? location.lng ?? null
 				}
 			};
+			// DO NOT update user.location - that's the user's actual location, not a filter preference
 		}
 		if (distanceMin !== undefined || distanceMax !== undefined) {
 			if (!user.dating.preferences.distanceRange) {
