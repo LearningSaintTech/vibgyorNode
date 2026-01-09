@@ -245,15 +245,20 @@ async function getUserStories(req, res) {
 
     console.log('[STORY] Stories fetched from model:', stories.length);
 
-    // Add hasViewed flag to each story
+    // Add hasViewed and isLiked flags to each story
     const storiesWithViewedFlag = stories.map(story => {
       const storyObj = story.toObject();
       // Handle both populated and unpopulated view.user cases
-      const hasViewed = story.views.some(view => {
+      const userView = story.views.find(view => {
         const viewUserId = (view.user._id || view.user).toString();
         return viewUserId === currentUserId.toString();
       });
+      
+      const hasViewed = !!userView;
+      const isLiked = userView ? (userView.isLiked || false) : false;
+      
       storyObj.hasViewed = hasViewed;
+      storyObj.isLiked = isLiked;
       return storyObj;
     });
 
@@ -398,7 +403,7 @@ async function getStoriesFeed(req, res) {
           ]
         }
       },
-      // CRITICAL: Add hasViewed flag BEFORE lookup (check original ObjectIds)
+      // CRITICAL: Add hasViewed and isLiked flags BEFORE lookup (check original ObjectIds)
       // This checks if current userId is in the views.user array (before population)
       // Convert userId to ObjectId for comparison
       {
@@ -421,6 +426,32 @@ async function getStoriesFeed(req, res) {
               },
               0
             ]
+          },
+          isLiked: {
+            $let: {
+              vars: {
+                userView: {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: { $ifNull: ['$views', []] },
+                        as: 'view',
+                        cond: {
+                          $eq: [
+                            { $toString: '$$view.user' },
+                            userId.toString()
+                          ]
+                        }
+                      }
+                    },
+                    0
+                  ]
+                }
+              },
+              in: {
+                $ifNull: ['$$userView.isLiked', false]
+              }
+            }
           }
         }
       },
@@ -476,18 +507,20 @@ async function getStoriesFeed(req, res) {
 
     console.log('[STORY] Stories found from followed users:', stories.length);
 
-    // Add hasViewed flag to each story and group by author
-    // CRITICAL: hasViewed is now calculated in aggregation pipeline (more reliable)
+    // Add hasViewed and isLiked flags to each story and group by author
+    // CRITICAL: hasViewed and isLiked are now calculated in aggregation pipeline (more reliable)
     const groupedStories = {};
     stories.forEach(story => {
       // Aggregation results are already plain objects, not Mongoose documents
       // So we don't need toObject(), just create a copy
       const storyObj = { ...story };
       
-      // Use hasViewed from aggregation (already calculated correctly)
+      // Use hasViewed and isLiked from aggregation (already calculated correctly)
       // Fallback to false if not set (shouldn't happen, but safety check)
       const hasViewed = storyObj.hasViewed === true;
+      const isLiked = storyObj.isLiked === true;
       storyObj.hasViewed = hasViewed;
+      storyObj.isLiked = isLiked;
       
       const authorId = story.author._id.toString();
       if (!groupedStories[authorId]) {
@@ -588,14 +621,19 @@ async function getStory(req, res) {
       return ApiResponse.forbidden(res, 'This account is private. Follow to see their stories.');
     }
 
-    // Add hasViewed flag
+    // Add hasViewed and isLiked flags
     const storyObj = story.toObject();
     // Handle both populated and unpopulated view.user cases
-    const hasViewed = story.views.some(view => {
+    const userView = story.views.find(view => {
       const viewUserId = (view.user._id || view.user).toString();
       return viewUserId === userId.toString();
     });
+    
+    const hasViewed = !!userView;
+    const isLiked = userView ? (userView.isLiked || false) : false;
+    
     storyObj.hasViewed = hasViewed;
+    storyObj.isLiked = isLiked;
 
     console.log('[STORY] Story retrieved successfully:', {
       storyId: story._id,
@@ -1150,6 +1188,14 @@ async function getMyStories(req, res) {
       
       // Add time remaining (in seconds)
       storyObj.timeRemaining = story.timeRemaining || 0;
+      
+      // Add isLiked flag (for user's own stories, this will always be false)
+      // Find if the user has viewed and liked their own story (unlikely but possible)
+      const userView = story.views.find(view => {
+        const viewUserId = (view.user._id || view.user).toString();
+        return viewUserId === userId.toString();
+      });
+      storyObj.isLiked = userView ? (userView.isLiked || false) : false;
       
       // Add detailed view information (who viewed, when, duration, and if they liked)
       storyObj.views = story.views.map(view => ({

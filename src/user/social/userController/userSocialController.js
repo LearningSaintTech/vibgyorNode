@@ -157,29 +157,41 @@ async function sendFollowRequest(req, res) {
 			});
 		}
 
-		// Check if there's a rejected request that can be reused
+		// Check if there's an existing request (rejected or cancelled) that can be reused
+		// Priority: cancelled > rejected (use most recent cancelled, then most recent rejected)
+		const existingCancelledRequest = await FollowRequest.findOne({
+			requester: currentUserId,
+			recipient: userId,
+			status: 'cancelled'
+		}).sort({ updatedAt: -1 }); // Get the most recent one
+
 		const existingRejectedRequest = await FollowRequest.findOne({
 			requester: currentUserId,
 			recipient: userId,
 			status: 'rejected'
 		}).sort({ respondedAt: -1 }); // Get the most recent one
 
+		console.log('[USER][SOCIAL] Existing cancelled request check result:', existingCancelledRequest ? { id: existingCancelledRequest._id, status: existingCancelledRequest.status } : 'No existing cancelled request');
 		console.log('[USER][SOCIAL] Existing rejected request check result:', existingRejectedRequest ? { id: existingRejectedRequest._id, status: existingRejectedRequest.status } : 'No existing rejected request');
 
 		let followRequest;
 
-		if (existingRejectedRequest) {
-			console.log('[USER][SOCIAL] Reusing rejected follow request, updating to pending...');
-			// Reuse the rejected request by updating it to pending
-			existingRejectedRequest.status = 'pending';
-			existingRejectedRequest.message = message.trim();
-			existingRejectedRequest.respondedAt = null;
-			existingRejectedRequest.createdAt = new Date(); // Update to current time
-			existingRejectedRequest.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Reset expiration to 7 days from now
-			await existingRejectedRequest.save();
-			followRequest = existingRejectedRequest;
+		// Reuse cancelled request first (most recent), then rejected request
+		const existingRequest = existingCancelledRequest || existingRejectedRequest;
 
-			console.log('[USER][SOCIAL] Rejected follow request updated to pending:', {
+		if (existingRequest) {
+			const requestType = existingRequest.status === 'cancelled' ? 'cancelled' : 'rejected';
+			console.log(`[USER][SOCIAL] Reusing ${requestType} follow request, updating to pending...`);
+			// Reuse the existing request by updating it to pending
+			existingRequest.status = 'pending';
+			existingRequest.message = message.trim();
+			existingRequest.respondedAt = null;
+			existingRequest.createdAt = new Date(); // Update to current time
+			existingRequest.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Reset expiration to 7 days from now
+			await existingRequest.save();
+			followRequest = existingRequest;
+
+			console.log(`[USER][SOCIAL] ${requestType.charAt(0).toUpperCase() + requestType.slice(1)} follow request updated to pending:`, {
 				id: followRequest._id,
 				requester: followRequest.requester,
 				recipient: followRequest.recipient,
@@ -327,15 +339,60 @@ async function unfollowUser(req, res) {
 		}
 
 		if (hasPendingRequest) {
-			// Cancel pending follow request
+			// Cancel pending follow request (update status instead of deleting)
 			console.log('[USER][SOCIAL] Cancelling pending follow request...');
-			await FollowRequest.findOneAndDelete({
-				requester: currentUserId,
-				recipient: userId,
-				status: 'pending'
-			});
+			const deletedRequest = await FollowRequest.findOneAndUpdate(
+				{
+					requester: currentUserId,
+					recipient: userId,
+					status: 'pending'
+				},
+				{
+					$set: {
+						status: 'cancelled',
+						respondedAt: new Date()
+					}
+				},
+				{ new: true }
+			);
 
 			console.log('[USER][SOCIAL] Pending follow request cancelled successfully');
+
+			// Delete the notification for the recipient (the person who received the follow request notification)
+			if (deletedRequest) {
+				try {
+					const recipientId = userId.toString();
+					const senderId = currentUserId.toString(); // The person who cancelled (sent) the request
+					const requestId = deletedRequest._id.toString();
+					
+					console.log('[USER][SOCIAL] Deleting follow request notification for recipient:', recipientId, 'sender:', senderId, 'requestId:', requestId);
+					
+					const deleteResult = await notificationService.deleteByTypeAndData({
+						type: 'follow_request',
+						recipientId: recipientId,
+						senderId: senderId, // Match by sender to ensure we delete the correct notification
+						data: {
+							requestId: requestId
+						},
+						context: 'social'
+					});
+
+					console.log('[USER][SOCIAL] Notification deletion result:', {
+						deletedCount: deleteResult.deletedCount,
+						matchedCount: deleteResult.matchedCount
+					});
+
+					if (deleteResult.deletedCount > 0) {
+						console.log('[USER][SOCIAL] ✅ Successfully deleted follow request notification');
+					} else {
+						console.log('[USER][SOCIAL] ⚠️ No notification found to delete (may have been already deleted)');
+					}
+				} catch (notificationError) {
+					// Log error but don't fail the request - follow request is already deleted
+					console.error('[USER][SOCIAL] Error deleting follow request notification:', notificationError);
+					console.error('[USER][SOCIAL] Follow request was cancelled but notification deletion failed');
+				}
+			}
 
 			const responseData = {
 				following: currentUser.following.length,
@@ -348,18 +405,26 @@ async function unfollowUser(req, res) {
 		}
 
 		// User is following - proceed with unfollow
-		console.log('[USER][SOCIAL] Updating following/followers arrays and deleting follow request...');
-		// Update both users' following/followers arrays and delete the follow request
+		console.log('[USER][SOCIAL] Updating following/followers arrays and cancelling follow request...');
+		// Update both users' following/followers arrays and update follow request status to cancelled (reuse later)
 		await Promise.all([
 			User.findByIdAndUpdate(currentUserId, { $pull: { following: userId } }),
 			User.findByIdAndUpdate(userId, { $pull: { followers: currentUserId } }),
-			FollowRequest.findOneAndDelete({
-				requester: currentUserId,
-				recipient: userId
-			})
+			FollowRequest.findOneAndUpdate(
+				{
+					requester: currentUserId,
+					recipient: userId
+				},
+				{
+					$set: {
+						status: 'cancelled',
+						respondedAt: new Date()
+					}
+				}
+			)
 		]);
 
-		console.log('[USER][SOCIAL] User unfollowed and follow request deleted');
+		console.log('[USER][SOCIAL] User unfollowed and follow request status updated to cancelled');
 
 		const responseData = {
 			following: currentUser.following.length - 1,
@@ -1325,7 +1390,49 @@ async function acceptFollowRequest(req, res) {
 			User.findByIdAndUpdate(recipient._id, { $addToSet: { followers: requester._id } })
 		]);
 
-		// Create notification for follow request accepted
+		// Update the original follow_request notification to reflect accepted status
+		try {
+			const recipientId = currentUserId.toString(); // The person who received the follow request notification
+			const senderId = followRequest.requester._id.toString(); // The person who sent the request
+			const requestId = followRequest._id.toString();
+			
+			console.log('[USER][SOCIAL] Updating follow_request notification status to accepted:', {
+				recipientId,
+				senderId,
+				requestId
+			});
+			
+			const updateResult = await notificationService.updateByTypeAndData({
+				type: 'follow_request',
+				recipientId: recipientId,
+				senderId: senderId,
+				data: {
+					requestId: requestId
+				},
+				updateData: {
+					status: 'accepted',
+					requestId: requestId // Keep requestId in data
+				},
+				context: 'social'
+			});
+
+			console.log('[USER][SOCIAL] Notification update result:', {
+				matchedCount: updateResult.matchedCount,
+				modifiedCount: updateResult.modifiedCount
+			});
+
+			if (updateResult.modifiedCount > 0) {
+				console.log('[USER][SOCIAL] ✅ Successfully updated follow_request notification status to accepted');
+			} else {
+				console.log('[USER][SOCIAL] ⚠️ No notification found to update (may have been already updated or deleted)');
+			}
+		} catch (notificationUpdateError) {
+			// Log error but don't fail the request
+			console.error('[USER][SOCIAL] Error updating follow_request notification status:', notificationUpdateError);
+			console.error('[USER][SOCIAL] Follow request was accepted but notification update failed');
+		}
+
+		// Create notification for follow request accepted (to notify the requester)
 		try {
 			await notificationService.create({
 				context: 'social',
@@ -1404,6 +1511,48 @@ async function rejectFollowRequest(req, res) {
 		if (!followRequest) {
 			console.log('[USER][SOCIAL] Follow request not found or already processed');
 			return ApiResponse.notFound(res, 'Follow request not found or already processed');
+		}
+
+		// Update the original follow_request notification to reflect rejected status
+		try {
+			const recipientId = currentUserId.toString(); // The person who received the follow request notification
+			const senderId = followRequest.requester._id.toString(); // The person who sent the request
+			const requestId = followRequest._id.toString();
+			
+			console.log('[USER][SOCIAL] Updating follow_request notification status to rejected:', {
+				recipientId,
+				senderId,
+				requestId
+			});
+			
+			const updateResult = await notificationService.updateByTypeAndData({
+				type: 'follow_request',
+				recipientId: recipientId,
+				senderId: senderId,
+				data: {
+					requestId: requestId
+				},
+				updateData: {
+					status: 'rejected',
+					requestId: requestId // Keep requestId in data
+				},
+				context: 'social'
+			});
+
+			console.log('[USER][SOCIAL] Notification update result:', {
+				matchedCount: updateResult.matchedCount,
+				modifiedCount: updateResult.modifiedCount
+			});
+
+			if (updateResult.modifiedCount > 0) {
+				console.log('[USER][SOCIAL] ✅ Successfully updated follow_request notification status to rejected');
+			} else {
+				console.log('[USER][SOCIAL] ⚠️ No notification found to update (may have been already updated or deleted)');
+			}
+		} catch (notificationUpdateError) {
+			// Log error but don't fail the request
+			console.error('[USER][SOCIAL] Error updating follow_request notification status:', notificationUpdateError);
+			console.error('[USER][SOCIAL] Follow request was rejected but notification update failed');
 		}
 
 		const responseData = {
@@ -1579,15 +1728,24 @@ async function cancelFollowRequest(req, res) {
 			return ApiResponse.badRequest(res, 'Request ID is required');
 		}
 
-		console.log('[USER][SOCIAL] Finding and deleting follow request...');
-		// Find and delete the pending follow request
-		const followRequest = await FollowRequest.findOneAndDelete({
-			_id: requestId,
-			requester: currentUserId,
-			status: 'pending'
-		}).populate('recipient', 'username fullName');
+		console.log('[USER][SOCIAL] Finding and cancelling follow request...');
+		// Find and update the pending follow request to cancelled (don't delete - reuse later)
+		const followRequest = await FollowRequest.findOneAndUpdate(
+			{
+				_id: requestId,
+				requester: currentUserId,
+				status: 'pending'
+			},
+			{
+				$set: {
+					status: 'cancelled',
+					respondedAt: new Date()
+				}
+			},
+			{ new: true }
+		).populate('recipient', 'username fullName');
 
-		console.log('[USER][SOCIAL] Follow request deletion result:', followRequest ? {
+		console.log('[USER][SOCIAL] Follow request cancellation result:', followRequest ? {
 			id: followRequest._id,
 			recipient: followRequest.recipient ? { id: followRequest.recipient._id, username: followRequest.recipient.username } : null,
 			status: followRequest.status
@@ -1596,6 +1754,43 @@ async function cancelFollowRequest(req, res) {
 		if (!followRequest) {
 			console.log('[USER][SOCIAL] Follow request not found or already processed');
 			return ApiResponse.notFound(res, 'Follow request not found or already processed');
+		}
+
+		console.log('[USER][SOCIAL] Follow request status updated to cancelled:', {
+			id: followRequest._id,
+			status: followRequest.status
+		});
+
+		// Delete the notification for the recipient (the person who received the follow request notification)
+		try {
+			const recipientId = followRequest.recipient._id.toString();
+			const senderId = currentUserId.toString(); // The person who cancelled (sent) the request
+			console.log('[USER][SOCIAL] Deleting follow request notification for recipient:', recipientId, 'sender:', senderId);
+			
+			const deleteResult = await notificationService.deleteByTypeAndData({
+				type: 'follow_request',
+				recipientId: recipientId,
+				senderId: senderId, // Match by sender to ensure we delete the correct notification
+				data: {
+					requestId: requestId.toString()
+				},
+				context: 'social'
+			});
+
+			console.log('[USER][SOCIAL] Notification deletion result:', {
+				deletedCount: deleteResult.deletedCount,
+				matchedCount: deleteResult.matchedCount
+			});
+
+			if (deleteResult.deletedCount > 0) {
+				console.log('[USER][SOCIAL] ✅ Successfully deleted follow request notification');
+			} else {
+				console.log('[USER][SOCIAL] ⚠️ No notification found to delete (may have been already deleted)');
+			}
+		} catch (notificationError) {
+			// Log error but don't fail the request - follow request is already deleted
+			console.error('[USER][SOCIAL] Error deleting follow request notification:', notificationError);
+			console.error('[USER][SOCIAL] Follow request was cancelled but notification deletion failed');
 		}
 
 		const responseData = {

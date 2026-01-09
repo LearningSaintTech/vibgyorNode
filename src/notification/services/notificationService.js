@@ -291,6 +291,373 @@ class NotificationService {
   }
 
   /**
+   * Update notifications by type and related data
+   * Useful for updating notification data when related actions change status (e.g., follow request accepted)
+   * @param {Object} options - Update options
+   * @param {string} options.type - Notification type (e.g., 'follow_request')
+   * @param {string} options.recipientId - Recipient user ID (the user who received the notification)
+   * @param {Object} options.data - Data to match (e.g., { requestId: '...' })
+   * @param {Object} options.updateData - Data to update in notification (e.g., { status: 'accepted' })
+   * @param {string} options.senderId - Sender user ID (optional, for more precise matching)
+   * @param {string} options.context - Context filter (optional, defaults to 'social')
+   * @returns {Promise<Object>} Update result with modifiedCount
+   */
+  async updateByTypeAndData(options) {
+    try {
+      const {
+        type,
+        recipientId,
+        data = {},
+        updateData = {},
+        senderId = null,
+        context = 'social'
+      } = options;
+
+      if (!type || !recipientId) {
+        throw new Error('Missing required fields: type, recipientId');
+      }
+
+      if (!updateData || Object.keys(updateData).length === 0) {
+        throw new Error('Missing updateData: must provide data to update');
+      }
+
+      console.log('[NOTIFICATION SERVICE] updateByTypeAndData called with:', {
+        type,
+        recipientId,
+        senderId,
+        data,
+        updateData,
+        context
+      });
+
+      // Build base query (without data.requestId - we'll filter that manually)
+      const query = {
+        type,
+        recipient: recipientId,
+        context,
+        status: { $ne: 'deleted' } // Don't update already deleted notifications
+      };
+
+      // Add sender matching if provided (for more precise matching)
+      if (senderId) {
+        query.sender = senderId;
+      }
+
+      console.log('[NOTIFICATION SERVICE] Base query for update:', JSON.stringify(query, null, 2));
+
+      // Find all matching notifications (without data.requestId filter - we'll filter manually)
+      // Use lean() to get plain objects which converts Map to object
+      let foundNotifications = await Notification.find(query).lean();
+      console.log('[NOTIFICATION SERVICE] Found notifications before data filtering:', foundNotifications.length);
+
+      // Filter by requestId if provided
+      if (data.requestId && foundNotifications.length > 0) {
+        const requestIdStr = data.requestId.toString();
+        console.log('[NOTIFICATION SERVICE] Filtering by requestId:', requestIdStr);
+
+        foundNotifications = foundNotifications.filter(notif => {
+          const notifData = notif.data || {};
+          const notifRequestId = notifData.requestId;
+
+          // Convert to string for comparison
+          const notifRequestIdStr = notifRequestId ? notifRequestId.toString() : null;
+
+          const matches = notifRequestIdStr === requestIdStr;
+
+          if (!matches && notifRequestId) {
+            console.log('[NOTIFICATION SERVICE] RequestId mismatch:', {
+              notificationId: notif._id,
+              expected: requestIdStr,
+              found: notifRequestIdStr,
+              foundType: typeof notifRequestId
+            });
+          }
+
+          return matches;
+        });
+
+        console.log('[NOTIFICATION SERVICE] Found notifications after data filtering:', foundNotifications.length);
+      }
+
+      if (foundNotifications.length > 0) {
+        console.log('[NOTIFICATION SERVICE] Sample notification data:', {
+          id: foundNotifications[0]._id,
+          type: foundNotifications[0].type,
+          recipient: foundNotifications[0].recipient,
+          sender: foundNotifications[0].sender,
+          data: foundNotifications[0].data,
+          requestId: foundNotifications[0].data?.requestId
+        });
+      }
+
+      // Update the filtered notifications
+      let modifiedCount = 0;
+      const matchedCount = foundNotifications.length;
+      let result;
+
+      if (foundNotifications.length > 0) {
+        // Update each notification individually to handle Map fields correctly
+        const notificationIds = foundNotifications.map(n => n._id);
+
+        // For each notification, update the data field with the new values
+        for (const notifId of notificationIds) {
+          try {
+            const notification = await Notification.findById(notifId);
+            if (!notification) continue;
+
+            // Update data field (which is a Map)
+            let notifData = notification.data;
+            
+            // Handle both Map and plain object
+            if (!notifData) {
+              notifData = new Map();
+            } else if (!(notifData instanceof Map)) {
+              // Convert plain object to Map
+              notifData = new Map(Object.entries(notifData));
+            }
+            
+            // Set each field from updateData into the Map
+            Object.keys(updateData).forEach(key => {
+              notifData.set(key, updateData[key]);
+            });
+
+            notification.data = notifData;
+            await notification.save();
+            modifiedCount++;
+
+            console.log('[NOTIFICATION SERVICE] Updated notification:', {
+              notificationId: notifId,
+              updateData
+            });
+          } catch (updateError) {
+            console.error('[NOTIFICATION SERVICE] Error updating individual notification:', updateError);
+          }
+        }
+
+        result = {
+          matchedCount,
+          modifiedCount
+        };
+      } else {
+        // No notifications found, return empty result
+        result = {
+          matchedCount: 0,
+          modifiedCount: 0
+        };
+      }
+
+      console.log('[NOTIFICATION SERVICE] Update result:', {
+        type,
+        recipientId,
+        data,
+        updateData,
+        senderId,
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount,
+        foundCount: foundNotifications.length
+      });
+
+      // If no notifications were found but we expected some, log a warning
+      if (result.matchedCount === 0 && foundNotifications.length === 0) {
+        console.warn('[NOTIFICATION SERVICE] ⚠️ No notifications matched the query for update.');
+      }
+
+      // Invalidate cache for the recipient
+      invalidateUserCache(recipientId, 'notifications:*');
+
+      return result;
+    } catch (error) {
+      console.error('[NOTIFICATION SERVICE] Error updating notifications by type and data:', error);
+      console.error('[NOTIFICATION SERVICE] Error stack:', error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete notifications by type and related data
+   * Useful for deleting notifications when related actions are cancelled (e.g., follow request cancelled)
+   * @param {Object} options - Delete options
+   * @param {string} options.type - Notification type (e.g., 'follow_request')
+   * @param {string} options.recipientId - Recipient user ID (the user who received the notification)
+   * @param {Object} options.data - Data to match (e.g., { requestId: '...' })
+   * @param {string} options.senderId - Sender user ID (optional, for more precise matching)
+   * @param {string} options.context - Context filter (optional, defaults to 'social')
+   * @returns {Promise<Object>} Delete result with deletedCount
+   */
+  async deleteByTypeAndData(options) {
+    try {
+      const {
+        type,
+        recipientId,
+        data = {},
+        senderId = null,
+        context = 'social'
+      } = options;
+
+      if (!type || !recipientId) {
+        throw new Error('Missing required fields: type, recipientId');
+      }
+
+      console.log('[NOTIFICATION SERVICE] deleteByTypeAndData called with:', {
+        type,
+        recipientId,
+        senderId,
+        data,
+        context
+      });
+
+      // Build base query (without data.requestId - we'll filter that manually)
+      const query = {
+        type,
+        recipient: recipientId,
+        context,
+        status: { $ne: 'deleted' } // Don't try to delete already deleted notifications
+      };
+
+      // Add sender matching if provided (for more precise matching)
+      if (senderId) {
+        query.sender = senderId;
+      }
+
+      console.log('[NOTIFICATION SERVICE] Base query for deletion:', JSON.stringify(query, null, 2));
+
+      // Find all matching notifications (without data.requestId filter - we'll filter manually)
+      // Use lean() to get plain objects which converts Map to object
+      let foundNotifications = await Notification.find(query).lean();
+      console.log('[NOTIFICATION SERVICE] Found notifications before data filtering:', foundNotifications.length);
+      
+      // Filter by requestId if provided
+      if (data.requestId && foundNotifications.length > 0) {
+        const requestIdStr = data.requestId.toString();
+        console.log('[NOTIFICATION SERVICE] Filtering by requestId:', requestIdStr);
+        
+        foundNotifications = foundNotifications.filter(notif => {
+          const notifData = notif.data || {};
+          const notifRequestId = notifData.requestId;
+          
+          // Convert to string for comparison
+          const notifRequestIdStr = notifRequestId ? notifRequestId.toString() : null;
+          
+          const matches = notifRequestIdStr === requestIdStr;
+          
+          if (!matches && notifRequestId) {
+            console.log('[NOTIFICATION SERVICE] RequestId mismatch:', {
+              notificationId: notif._id,
+              expected: requestIdStr,
+              found: notifRequestIdStr,
+              foundType: typeof notifRequestId
+            });
+          }
+          
+          return matches;
+        });
+        
+        console.log('[NOTIFICATION SERVICE] Found notifications after data filtering:', foundNotifications.length);
+      }
+      
+      if (foundNotifications.length > 0) {
+        console.log('[NOTIFICATION SERVICE] Sample notification data:', {
+          id: foundNotifications[0]._id,
+          type: foundNotifications[0].type,
+          recipient: foundNotifications[0].recipient,
+          sender: foundNotifications[0].sender,
+          data: foundNotifications[0].data,
+          requestId: foundNotifications[0].data?.requestId
+        });
+      }
+
+      // Delete the filtered notifications
+      let deletedCount = 0;
+      const matchedCount = foundNotifications.length;
+
+      if (foundNotifications.length > 0) {
+        // Delete each notification individually
+        const notificationIds = foundNotifications.map(n => n._id);
+        
+        // Use updateMany for efficiency
+        const updateResult = await Notification.updateMany(
+          { _id: { $in: notificationIds } },
+          { $set: { status: 'deleted' } }
+        );
+        
+        deletedCount = updateResult.modifiedCount;
+        
+        console.log('[NOTIFICATION SERVICE] Deleted notifications:', {
+          notificationIds: notificationIds.map(id => id.toString()),
+          deletedCount
+        });
+        
+        result = {
+          matchedCount,
+          modifiedCount: deletedCount,
+          deletedCount
+        };
+      } else {
+        // No notifications found, return empty result
+        result = {
+          matchedCount: 0,
+          modifiedCount: 0,
+          deletedCount: 0
+        };
+      }
+
+      console.log('[NOTIFICATION SERVICE] Deletion result:', {
+        type,
+        recipientId,
+        data,
+        senderId,
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount,
+        foundCount: foundNotifications.length
+      });
+
+      // If no notifications were found but we expected some, log a warning
+      if (result.matchedCount === 0 && foundNotifications.length === 0) {
+        console.warn('[NOTIFICATION SERVICE] ⚠️ No notifications matched the query. This might indicate:');
+        console.warn('[NOTIFICATION SERVICE] - Notification was already deleted');
+        console.warn('[NOTIFICATION SERVICE] - requestId format mismatch');
+        console.warn('[NOTIFICATION SERVICE] - Notification data structure is different than expected');
+        
+        // Try to find any follow_request notifications for this recipient to debug
+        const debugQuery = {
+          type: 'follow_request',
+          recipient: recipientId,
+          context: 'social',
+          status: { $ne: 'deleted' }
+        };
+        if (senderId) {
+          debugQuery.sender = senderId;
+        }
+        const debugNotifications = await Notification.find(debugQuery).lean().limit(5);
+        console.log('[NOTIFICATION SERVICE] Debug: Found follow_request notifications for recipient:', debugNotifications.length);
+        if (debugNotifications.length > 0) {
+          debugNotifications.forEach((notif, idx) => {
+            console.log(`[NOTIFICATION SERVICE] Debug notification ${idx + 1}:`, {
+              id: notif._id,
+              sender: notif.sender,
+              data: notif.data,
+              requestId: notif.data?.requestId || notif.data?.get?.('requestId'),
+              expectedRequestId: data.requestId
+            });
+          });
+        }
+      }
+
+      // Invalidate cache for the recipient
+      invalidateUserCache(recipientId, 'notifications:*');
+
+      return {
+        deletedCount: result.modifiedCount,
+        matchedCount: result.matchedCount
+      };
+    } catch (error) {
+      console.error('[NOTIFICATION SERVICE] Error deleting notifications by type and data:', error);
+      console.error('[NOTIFICATION SERVICE] Error stack:', error.stack);
+      throw error;
+    }
+  }
+
+  /**
    * Get user notification preferences
    * @param {string} userId - User ID
    * @returns {Promise<Object>} User preferences
