@@ -125,10 +125,11 @@ class ChatService {
    * @param {string} userId - User ID
    * @param {number} page - Page number
    * @param {number} limit - Items per page
+   * @param {boolean} includeArchived - Whether to include archived chats (if true, returns only archived; if false, excludes archived)
    * @returns {Promise<Array>} Array of chats
    */
-  static async getUserChats(userId, page = 1, limit = 20) {
-    console.log('🔵 [BACKEND_CHAT_SVC] getUserChats called:', { userId, page, limit, timestamp: new Date().toISOString() });
+  static async getUserChats(userId, page = 1, limit = 20, includeArchived = false) {
+    console.log('🔵 [BACKEND_CHAT_SVC] getUserChats called:', { userId, page, limit, includeArchived, timestamp: new Date().toISOString() });
     try {
       // Input validation
       if (!userId) {
@@ -155,8 +156,8 @@ class ChatService {
         });
       }
       
-      console.log('🔵 [BACKEND_CHAT_SVC] Calling Chat.getUserChats...', { userId, page, limit });
-      const chats = await Chat.getUserChats(userId, page, limit);
+      console.log('🔵 [BACKEND_CHAT_SVC] Calling Chat.getUserChats...', { userId, page, limit, includeArchived });
+      const chats = await Chat.getUserChats(userId, page, limit, includeArchived);
       console.log('🔵 [BACKEND_CHAT_SVC] Chat.getUserChats returned:', { 
         chatsCount: chats.length, 
         chatIds: chats.map(c => c._id)
@@ -340,7 +341,7 @@ class ChatService {
   }
   
   /**
-   * Delete chat (archive for user)
+   * Delete chat permanently (delete chat and all associated messages)
    * @param {string} chatId - Chat ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Deletion result
@@ -366,22 +367,18 @@ class ChatService {
         throw new Error('Access denied to this chat');
       }
       
-      // Mark chat as archived for this user
-      await chat.updateUserSettings(userId, {
-        isArchived: true,
-        archivedAt: new Date()
-      });
+      // Delete all messages associated with this chat
+      const deleteMessagesResult = await Message.deleteMany({ chatId: chatId });
+      console.log(`🔵 [CHAT_SERVICE] Deleted ${deleteMessagesResult.deletedCount} messages for chat ${chatId}`);
       
-      // Check if both users have archived the chat
-      const allArchived = chat.userSettings.every(setting => setting.isArchived);
-      if (allArchived) {
-        chat.isActive = false;
-        await chat.save();
-      }
+      // Permanently delete the chat
+      await Chat.findByIdAndDelete(chatId);
+      console.log(`🔵 [CHAT_SERVICE] Permanently deleted chat ${chatId}`);
       
       return {
         chatId: chat._id,
-        message: 'Chat deleted successfully'
+        message: 'Chat deleted successfully',
+        deletedMessagesCount: deleteMessagesResult.deletedCount
       };
       
     } catch (error) {

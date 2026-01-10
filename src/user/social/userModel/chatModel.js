@@ -208,8 +208,8 @@ chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy
   }
 };
 
-chatSchema.statics.getUserChats = async function(userId, page = 1, limit = 20) {
-  console.log('🔵 [CHAT_MODEL] getUserChats called:', { userId, page, limit, timestamp: new Date().toISOString() });
+chatSchema.statics.getUserChats = async function(userId, page = 1, limit = 20, includeArchived = false) {
+  console.log('🔵 [CHAT_MODEL] getUserChats called:', { userId, page, limit, includeArchived, timestamp: new Date().toISOString() });
   try {
 	const skip = (page - 1) * limit;
 	
@@ -233,22 +233,33 @@ chatSchema.statics.getUserChats = async function(userId, page = 1, limit = 20) {
 		hasParticipants: chats.map(c => c.participants?.length)
 	});
 	
-	// Filter out archived chats for this user
+	// Filter archived chats based on includeArchived parameter
 	const filteredChats = chats.filter(chat => {
 		const userSetting = chat.userSettings?.find(setting => 
 			setting.userId?.toString() === userId.toString() || 
 			setting.userId?.toString() === userId
 		);
 		const isArchived = userSetting?.isArchived || false;
-		if (isArchived) {
-			console.log('🔵 [CHAT_MODEL] Filtering out archived chat:', { chatId: chat._id, userId });
+		
+		if (includeArchived) {
+			// If includeArchived is true, only return archived chats
+			if (isArchived) {
+				console.log('🔵 [CHAT_MODEL] Including archived chat:', { chatId: chat._id, userId });
+			}
+			return isArchived;
+		} else {
+			// If includeArchived is false, filter out archived chats (default behavior)
+			if (isArchived) {
+				console.log('🔵 [CHAT_MODEL] Filtering out archived chat:', { chatId: chat._id, userId });
+			}
+			return !isArchived;
 		}
-		return !isArchived;
 	});
 	
 	console.log('✅ [CHAT_MODEL] getUserChats result:', { 
 		rawCount: chats.length, 
 		filteredCount: filteredChats.length,
+		includeArchived,
 		userId
 	});
 

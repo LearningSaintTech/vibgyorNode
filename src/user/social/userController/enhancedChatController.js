@@ -144,8 +144,9 @@ class ChatController {
           }
         };
       } else {
-        console.log('🔵 [BACKEND_CHAT_CTRL] Getting all chats...', { userId, page, limit });
-        const chats = await ChatService.getUserChats(userId, page, limit);
+        const includeArchived = req.query.includeArchived === 'true';
+        console.log('🔵 [BACKEND_CHAT_CTRL] Getting all chats...', { userId, page, limit, includeArchived });
+        const chats = await ChatService.getUserChats(userId, page, limit, includeArchived);
         console.log('✅ [BACKEND_CHAT_CTRL] ChatService.getUserChats success:', { 
           chatsCount: chats.length || 0
         });
