@@ -12,6 +12,11 @@ const HARD_CODED_OTP = '123456';
 const OTP_TTL_MS = 5 * 60 * 1000;
 const RESEND_WINDOW_MS = 60 * 1000;
 const jwt = require('jsonwebtoken');
+
+// Generate a random 6-digit OTP
+function generateEmailOtp() {
+	return Math.floor(100000 + Math.random() * 900000).toString();
+}
 // 2Factor API integration
 const { 
 	twofactorService, 
@@ -312,8 +317,9 @@ async function sendEmailOtp(req, res) {
 			const waitMs = RESEND_WINDOW_MS - (now - user.lastEmailOtpSentAt.getTime());
 			return ApiResponse.tooMany(res, `Please wait ${Math.ceil(waitMs / 1000)}s`, 'EMAIL_OTP_RATE_LIMIT');
 		}
+		const emailOtp = generateEmailOtp();
 		user.email = email;
-		user.emailOtpCode = HARD_CODED_OTP;
+		user.emailOtpCode = emailOtp;
 		user.emailOtpExpiresAt = new Date(now + OTP_TTL_MS);
 		user.lastEmailOtpSentAt = new Date(now);
 		await user.save();
@@ -322,7 +328,7 @@ async function sendEmailOtp(req, res) {
 			await sendOtpVerificationEmail({
 				to: email,
 				username: user.fullName || user.username || 'User',
-				otp: HARD_CODED_OTP
+				otp: emailOtp
 			});
 			console.log('[USER][AUTH] Email sent successfully to:', email);
 		} catch (e) {
@@ -695,7 +701,8 @@ async function resendEmailOtp(req, res) {
 			return ApiResponse.tooMany(res, `Please wait ${Math.ceil(waitMs / 1000)}s before requesting a new OTP`, 'OTP_RATE_LIMIT');
 		}
 
-		user.emailOtpCode = HARD_CODED_OTP;
+		const emailOtp = generateEmailOtp();
+		user.emailOtpCode = emailOtp;
 		user.emailOtpExpiresAt = new Date(now + OTP_TTL_MS);
 		user.lastEmailOtpSentAt = new Date(now);
 		await user.save();
@@ -705,7 +712,7 @@ async function resendEmailOtp(req, res) {
 			await sendOtpVerificationEmail({
 				to: email,
 				username: user.fullName || user.username || 'User',
-				otp: HARD_CODED_OTP
+				otp: emailOtp
 			});
 			console.log('[USER][AUTH] Resend email sent successfully to:', email);
 		} catch (e) {
