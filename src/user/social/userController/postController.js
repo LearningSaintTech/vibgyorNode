@@ -67,6 +67,36 @@ function addIsLiked(post, userId) {
   return post;
 }
 
+// Helper function to add isSaved field to a post
+function addIsSaved(post, savedPostIds = []) {
+  // If isSaved is already set, use it
+  if (post.isSaved !== undefined) {
+    return post;
+  }
+  
+  if (!savedPostIds || savedPostIds.length === 0) {
+    post.isSaved = false;
+    return post;
+  }
+  
+  // Get post ID
+  const postId = post._id ? post._id.toString() : (post.id ? post.id.toString() : null);
+  
+  if (!postId) {
+    post.isSaved = false;
+    return post;
+  }
+  
+  // Check if post ID is in savedPostIds array
+  const isSaved = savedPostIds.some(savedId => {
+    const savedIdStr = savedId ? savedId.toString() : null;
+    return savedIdStr === postId;
+  });
+  
+  post.isSaved = !!isSaved;
+  return post;
+}
+
 // Helper function to check if a post should be visible based on privacy settings
 // Returns true if post should be visible, false if it should be hidden
 function isPostVisible(post, currentUserId, followingIds = []) {
@@ -110,11 +140,14 @@ function isPostVisible(post, currentUserId, followingIds = []) {
 }
 
 // Helper function to transform post media into a cleaner structure
-function transformPostMedia(post, userId = null) {
+function transformPostMedia(post, userId = null, savedPostIds = []) {
   const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
   
   // Add isLiked field
   addIsLiked(postObj, userId);
+  
+  // Add isSaved field
+  addIsSaved(postObj, savedPostIds);
   
   // DEBUG: Log original post media structure
   const postId = postObj._id || postObj.id || 'unknown';
@@ -139,12 +172,15 @@ function transformPostMedia(post, userId = null) {
       totalCount: postObj.media.totalCount
     });
     
-    // Media is already transformed, just ensure structure is correct and return
+    // Media is already transformed, just ensure structure is correct
     if (!postObj.media.images) postObj.media.images = [];
     if (!postObj.media.videos) postObj.media.videos = [];
     postObj.media.totalCount = (postObj.media.images?.length || 0) + (postObj.media.videos?.length || 0);
     postObj.media.hasImages = (postObj.media.images?.length || 0) > 0;
     postObj.media.hasVideos = (postObj.media.videos?.length || 0) > 0;
+    
+    // Add isSaved field (already added isLiked above)
+    addIsSaved(postObj, savedPostIds);
     
     return postObj;
   }
@@ -542,8 +578,15 @@ async function createPost(req, res) {
       // Don't fail the post creation if moderation fails
     }
 
-    // Transform media into organized structure before returning (includes isLiked)
-    const transformedPost = transformPostMedia(post, userId);
+    // Get user's saved posts for isSaved flag
+    let savedPostIds = [];
+    if (userId) {
+      const user = await User.findById(userId).select('savedPosts').lean();
+      savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
+    }
+
+    // Transform media into organized structure before returning (includes isLiked and isSaved)
+    const transformedPost = transformPostMedia(post, userId, savedPostIds);
 
     console.log('[POST] Post created successfully:', post._id);
     return ApiResponse.success(res, transformedPost, 'Post created successfully');
@@ -600,11 +643,15 @@ async function getUserPosts(req, res) {
 
     const totalPosts = await Post.countDocuments(query);
 
-    // Get current user's following list for privacy check
+    // Get current user's following list for privacy check and saved posts for isSaved flag
     let followingIds = [];
-    if (currentUserId && userId !== currentUserId) {
-      const currentUser = await User.findById(currentUserId).select('following').lean();
-      followingIds = currentUser?.following?.map(id => id.toString()) || [];
+    let savedPostIds = [];
+    if (currentUserId) {
+      const currentUser = await User.findById(currentUserId).select('following savedPosts').lean();
+      if (userId !== currentUserId) {
+        followingIds = currentUser?.following?.map(id => id.toString()) || [];
+      }
+      savedPostIds = currentUser?.savedPosts?.map(id => id.toString()) || [];
     }
 
     // Add lastComment field and transform media for each post
@@ -624,8 +671,8 @@ async function getUserPosts(req, res) {
         postObj.lastComment = null;
       }
       
-      // Transform media into organized structure (includes isLiked)
-      return transformPostMedia(postObj, currentUserId);
+      // Transform media into organized structure (includes isLiked and isSaved)
+      return transformPostMedia(postObj, currentUserId, savedPostIds);
     });
 
     // Filter out posts from private accounts (unless user is following them or is the author)
@@ -748,7 +795,14 @@ async function getFeedPosts(req, res) {
       }
     }
 
-    // Transform media for all feed posts (includes isLiked)
+    // Get user's saved posts for isSaved flag (before transforming posts)
+    let savedPostIds = [];
+    if (userId) {
+      const userWithSaved = await User.findById(userId).select('savedPosts').lean();
+      savedPostIds = userWithSaved?.savedPosts?.map(id => id.toString()) || [];
+    }
+
+    // Transform media for all feed posts (includes isLiked and isSaved)
     console.log(`[POST][FEED] Transforming ${feedPosts.length} posts for feed (fromCache: ${isFromCache})`);
     
     // DEBUG: Log raw media structure BEFORE transformation (first 3 posts with videos)
@@ -776,7 +830,7 @@ async function getFeedPosts(req, res) {
       });
     });
     
-    const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId));
+    const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId, savedPostIds));
 
     // OPTIMIZED: Cache user data (blocked users, following) for 5 minutes
     const cacheKey = 'feed:userData';
@@ -970,8 +1024,15 @@ async function getPost(req, res) {
       postObj.lastComment = null;
     }
 
-    // Transform media into organized structure (includes isLiked)
-    const transformedPost = transformPostMedia(postObj, userId);
+    // Get user's saved posts for isSaved flag
+    let savedPostIds = [];
+    if (userId) {
+      const user = await User.findById(userId).select('savedPosts').lean();
+      savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
+    }
+
+    // Transform media into organized structure (includes isLiked and isSaved)
+    const transformedPost = transformPostMedia(postObj, userId, savedPostIds);
 
     return ApiResponse.success(res, transformedPost, 'Post retrieved successfully');
   } catch (error) {
@@ -1105,8 +1166,15 @@ async function updatePost(req, res) {
     await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
     await post.populate('likes.user', 'username fullName');
 
-    // Transform media into organized structure before returning (includes isLiked)
-    const transformedPost = transformPostMedia(post, userId);
+    // Get user's saved posts for isSaved flag
+    let savedPostIds = [];
+    if (userId) {
+      const user = await User.findById(userId).select('savedPosts').lean();
+      savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
+    }
+
+    // Transform media into organized structure before returning (includes isLiked and isSaved)
+    const transformedPost = transformPostMedia(post, userId, savedPostIds);
 
     console.log('[POST] Post updated successfully:', postId);
     return ApiResponse.success(res, transformedPost, 'Post updated successfully');
@@ -1814,18 +1882,20 @@ async function searchPosts(req, res) {
 
     const posts = await Post.searchPosts(query, parseInt(page), parseInt(limit), allBlockedIds);
 
-    // Transform media for all search results (includes isLiked)
-    const transformedPosts = posts.map(post => {
-      const postObj = post.toObject ? post.toObject() : post;
-      return transformPostMedia(postObj, userId);
-    });
-
-    // Get current user's following list for privacy check
+    // Get user's saved posts for isSaved flag
+    let savedPostIds = [];
     let followingIds = [];
     if (userId) {
-      const currentUser = await User.findById(userId).select('following').lean();
+      const currentUser = await User.findById(userId).select('following savedPosts').lean();
       followingIds = currentUser?.following?.map(id => id.toString()) || [];
+      savedPostIds = currentUser?.savedPosts?.map(id => id.toString()) || [];
     }
+
+    // Transform media for all search results (includes isLiked and isSaved)
+    const transformedPosts = posts.map(post => {
+      const postObj = post.toObject ? post.toObject() : post;
+      return transformPostMedia(postObj, userId, savedPostIds);
+    });
 
     // Filter out posts from private accounts (unless user is following them or is the author)
     const visiblePosts = transformedPosts.filter(post => 
@@ -1944,15 +2014,17 @@ async function getTrendingPosts(req, res) {
       userId // Pass userId to exclude blocked users
     );
 
-    // Transform media for all trending posts (includes isLiked)
-    const transformedPosts = trendingPosts.map(post => transformPostMedia(post, userId));
-
-    // Get current user's following list for privacy check
+    // Get user's saved posts for isSaved flag
+    let savedPostIds = [];
     let followingIds = [];
     if (userId) {
-      const currentUser = await User.findById(userId).select('following').lean();
+      const currentUser = await User.findById(userId).select('following savedPosts').lean();
       followingIds = currentUser?.following?.map(id => id.toString()) || [];
+      savedPostIds = currentUser?.savedPosts?.map(id => id.toString()) || [];
     }
+
+    // Transform media for all trending posts (includes isLiked and isSaved)
+    const transformedPosts = trendingPosts.map(post => transformPostMedia(post, userId, savedPostIds));
 
     // Filter out posts from private accounts (unless user is following them or is the author)
     const visiblePosts = transformedPosts.filter(post => 
@@ -1987,15 +2059,17 @@ async function getPostsByHashtag(req, res) {
       userId // Pass userId to exclude blocked users
     );
 
-    // Transform media for all hashtag posts (includes isLiked)
-    const transformedPosts = posts.map(post => transformPostMedia(post, userId));
-
-    // Get current user's following list for privacy check
+    // Get user's saved posts for isSaved flag
+    let savedPostIds = [];
     let followingIds = [];
     if (userId) {
-      const currentUser = await User.findById(userId).select('following blockedUsers blockedBy').lean();
+      const currentUser = await User.findById(userId).select('following blockedUsers blockedBy savedPosts').lean();
       followingIds = currentUser?.following?.map(id => id.toString()) || [];
+      savedPostIds = currentUser?.savedPosts?.map(id => id.toString()) || [];
     }
+
+    // Transform media for all hashtag posts (includes isLiked and isSaved)
+    const transformedPosts = posts.map(post => transformPostMedia(post, userId, savedPostIds));
 
     // Filter out posts from private accounts (unless user is following them or is the author)
     const visiblePosts = transformedPosts.filter(post => 
@@ -2283,10 +2357,12 @@ module.exports = {
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      // Transform media for all saved posts (includes isLiked)
+      // Transform media for all saved posts (includes isLiked and isSaved)
+      // All posts here are saved by definition, but we still check for consistency
+      const savedPostIds = savedIds.map(id => id.toString());
       const transformedPosts = posts.map(post => {
         const postObj = post.toObject();
-        return transformPostMedia(postObj, userId);
+        return transformPostMedia(postObj, userId, savedPostIds);
       });
 
       // Get current user's following list for privacy check
@@ -2331,7 +2407,14 @@ module.exports = {
       post.status = 'archived';
       await post.save();
       
-      const transformedPost = transformPostMedia(post);
+      // Get user's saved posts for isSaved flag
+      let savedPostIds = [];
+      if (userId) {
+        const user = await User.findById(userId).select('savedPosts').lean();
+        savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
+      }
+      
+      const transformedPost = transformPostMedia(post, userId, savedPostIds);
       return ApiResponse.success(res, transformedPost, 'Post archived successfully');
     } catch (error) {
       console.error('[POST] Archive post error:', error);
@@ -2352,7 +2435,14 @@ module.exports = {
       post.status = 'published';
       await post.save();
       
-      const transformedPost = transformPostMedia(post);
+      // Get user's saved posts for isSaved flag
+      let savedPostIds = [];
+      if (userId) {
+        const user = await User.findById(userId).select('savedPosts').lean();
+        savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
+      }
+      
+      const transformedPost = transformPostMedia(post, userId, savedPostIds);
       return ApiResponse.success(res, transformedPost, 'Post unarchived successfully');
     } catch (error) {
       console.error('[POST] Unarchive post error:', error);
@@ -2376,7 +2466,14 @@ module.exports = {
         .skip((page - 1) * limit)
         .limit(parseInt(limit));
 
-      // Transform media for all archived posts (includes isLiked)
+      // Get user's saved posts for isSaved flag
+      let savedPostIds = [];
+      if (userId) {
+        const user = await User.findById(userId).select('savedPosts').lean();
+        savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
+      }
+
+      // Transform media for all archived posts (includes isLiked and isSaved)
       const transformedPosts = posts.map(post => {
         const postObj = post.toObject();
         
@@ -2390,7 +2487,7 @@ module.exports = {
           postObj.lastComment = null;
         }
         
-        return transformPostMedia(postObj, userId);
+        return transformPostMedia(postObj, userId, savedPostIds);
       });
 
       const totalPosts = await Post.countDocuments({
