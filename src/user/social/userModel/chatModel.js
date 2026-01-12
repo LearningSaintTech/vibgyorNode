@@ -69,6 +69,10 @@ const chatSchema = new Schema({
 			type: Date, 
 			default: null 
 		},
+    deletedAt: {
+      type: Date,
+      default: null
+    },
     pinnedAt: {
 			type: Date, 
 			default: null 

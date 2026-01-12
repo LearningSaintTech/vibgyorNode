@@ -291,7 +291,7 @@ messageSchema.pre('save', function(next) {
 });
 
 // Static methods
-messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit = 50, userId = null) {
+messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit = 50, userId = null, deletedAt = null) {
   try {
 	const skip = (page - 1) * limit;
 	
@@ -304,6 +304,14 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 	// If userId provided, exclude messages deleted by that user
 	if (userId) {
       query['deletedBy.userId'] = { $ne: userId };
+	}
+	
+	// If deletedAt timestamp provided, only show messages created after deletion
+	// This implements Instagram/WhatsApp behavior: when chat is deleted and then reappears,
+	// only messages sent after deletion are visible
+	if (deletedAt) {
+      query.createdAt = { $gt: deletedAt };
+      console.log(`🔵 [MESSAGE_MODEL] Filtering messages after deletion timestamp: ${deletedAt}`);
 	}
 	
 	const messages = await this.find(query)

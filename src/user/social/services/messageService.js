@@ -313,11 +313,33 @@ class MessageService {
       chat.lastMessageAt = new Date();
       
       // Increment unread count for all participants except the sender
-      chat.participants.forEach(participantId => {
+      // Also unarchive chat if it was deleted by recipient (Instagram/WhatsApp behavior)
+      const participantUpdates = [];
+      for (const participantId of chat.participants) {
         if (participantId.toString() !== senderId.toString()) {
           chat.incrementUnreadCount(participantId);
+          
+          // Check if recipient had deleted the chat
+          const recipientSettings = chat.getUserSettings(participantId);
+          if (recipientSettings?.deletedAt) {
+            // Unarchive chat for recipient so it reappears in their list
+            // BUT keep deletedAt timestamp so only messages sent after deletion are visible
+            // This implements Instagram/WhatsApp behavior: chat reappears but only shows new messages
+            console.log(`🔵 [MESSAGE_SERVICE] Unarchiving chat ${chatId} for recipient ${participantId} - new message received (keeping deletedAt filter)`);
+            participantUpdates.push(
+              chat.updateUserSettings(participantId, {
+                isArchived: false
+                // Keep deletedAt - don't clear it! This ensures only messages after deletion are shown
+              })
+            );
+          }
         }
-      });
+      }
+      
+      // Wait for all participant updates to complete
+      if (participantUpdates.length > 0) {
+        await Promise.all(participantUpdates);
+      }
       
       await chat.save();
       
@@ -461,9 +483,13 @@ class MessageService {
       }
       console.log('✅ [BACKEND_MSG_SVC] User is participant');
       
-      console.log('🔵 [BACKEND_MSG_SVC] Fetching messages from database...', { chatId, page, limit });
-      const messages = await Message.getChatMessages(chatId, page, limit, userId);
-      console.log('✅ [BACKEND_MSG_SVC] Messages fetched:', { messagesCount: messages.length, chatId });
+      // Get user's deletion timestamp if chat was deleted
+      const userSettings = chat.getUserSettings(userId);
+      const deletedAt = userSettings?.deletedAt || null;
+      
+      console.log('🔵 [BACKEND_MSG_SVC] Fetching messages from database...', { chatId, page, limit, deletedAt });
+      const messages = await Message.getChatMessages(chatId, page, limit, userId, deletedAt);
+      console.log('✅ [BACKEND_MSG_SVC] Messages fetched:', { messagesCount: messages.length, chatId, hasDeletedAt: !!deletedAt });
       
       // Debug: Log voice messages to check duration
       const voiceMessages = messages.filter(msg => msg.type === 'voice');
