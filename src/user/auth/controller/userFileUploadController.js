@@ -104,26 +104,25 @@ async function uploadIdProof(req, res) {
 		const storage = multer.memoryStorage();
 		
 		const ACCEPTED_MIME = [
-			'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-			'application/pdf'
+			'image/jpeg', 'image/png', 'image/webp', 'image/gif'
 		];
 		
 		const fileFilter = (req, file, cb) => {
 			if (!ACCEPTED_MIME.includes(file.mimetype)) {
-				return cb(new Error('Unsupported file type. Only images and PDF allowed.'));
+				return cb(new Error('Unsupported file type. Only images (JPEG, PNG, WebP, GIF) are allowed.'));
 			}
 			cb(null, true);
 		};
 		
-		// Configure multer for multiple files with field name 'file'
+		// Configure multer for exactly 2 files with field name 'file'
 		const uploadMultipleFiles = multer({ 
 			storage, 
 			fileFilter, 
 			limits: { 
 				fileSize: 10 * 1024 * 1024, // 10MB per file
-				files: 10 // Max 10 files
+				files: 2 // Exactly 2 files required
 			} 
-		}).array('file', 10); // Using 'file' as field name (not 'files')
+		}).array('file', 2); // Using 'file' as field name, exactly 2 files
 		
 		// Use multer middleware
 		uploadMultipleFiles(req, res, async (err) => {
@@ -132,18 +131,27 @@ async function uploadIdProof(req, res) {
 				return ApiResponse.badRequest(res, err.message);
 			}
 
+			// Require exactly 2 files
 			if (!req.files || req.files.length === 0) {
-				return ApiResponse.badRequest(res, 'No files uploaded. Please upload at least one file.');
+				return ApiResponse.badRequest(res, 'Please upload exactly 2 images.');
+			}
+
+			if (req.files.length !== 2) {
+				return ApiResponse.badRequest(res, 'Exactly 2 images are required for ID proof upload.');
 			}
 
 			try {
 				const user = await User.findById(req.user?.userId);
 				if (!user) return ApiResponse.notFound(res, 'User not found');
 
-				const { documentType } = req.body || {};
-				if (!documentType) {
-					return ApiResponse.badRequest(res, 'Document type is required (e.g., id_proof, passport, driving_license)');
+				// Check if documents are already uploaded
+				if (user.verificationDocument?.documentUrls && user.verificationDocument.documentUrls.length > 0) {
+					console.log('[USER][UPLOAD] Documents already uploaded for user:', user._id);
+					return ApiResponse.badRequest(res, 'Documents already uploaded. You cannot upload again.');
 				}
+
+				// Document type is fixed as "aadhar" for ID proof
+				const documentType = 'aadhar';
 
 				console.log('[USER][UPLOAD] Uploading', req.files.length, 'file(s) to S3');
 
@@ -177,10 +185,9 @@ async function uploadIdProof(req, res) {
 					uploadedFilenames.push(originalname);
 				}
 
-				// Update user verification document info
+				// Update user verification document info - only keep documentUrls array
 				user.verificationDocument.documentType = documentType;
-				user.verificationDocument.documentUrl = uploadedUrls[0]; // Store first URL for backward compatibility
-				user.verificationDocument.documentUrls = uploadedUrls; // Store all URLs (array)
+				user.verificationDocument.documentUrls = uploadedUrls; // Store all URLs (array only)
 				user.verificationDocument.documentNumber = req.body.documentNumber || '';
 				user.verificationDocument.uploadedAt = new Date();
 				user.verificationStatus = 'pending'; // Set status to pending for review
@@ -194,8 +201,8 @@ async function uploadIdProof(req, res) {
 				// Verify the save by fetching the user again
 				const verifyUser = await User.findById(user._id).select('verificationDocument verificationStatus');
 				
-				if (!verifyUser || !verifyUser.verificationDocument.documentUrl) {
-					console.error('[USER][UPLOAD] Save verification failed - document not found in DB');
+				if (!verifyUser || !verifyUser.verificationDocument.documentUrls || verifyUser.verificationDocument.documentUrls.length === 0) {
+					console.error('[USER][UPLOAD] Save verification failed - document URLs not found in DB');
 					return ApiResponse.serverError(res, 'Failed to save document to database');
 				}
 				
@@ -211,24 +218,17 @@ async function uploadIdProof(req, res) {
 				
 				console.log('[USER][UPLOAD] ID proof uploaded and saved successfully:', {
 					count: uploadedUrls.length,
-					allUrls: uploadedUrls,
-					firstUrl: uploadedUrls[0],
+					documentUrls: verifyUser.verificationDocument.documentUrls,
 					documentType: verifyUser.verificationDocument.documentType,
 					verificationStatus: verifyUser.verificationStatus,
-					documentUrl: verifyUser.verificationDocument.documentUrl,
-					documentUrls: verifyUser.verificationDocument.documentUrls,
 					savedCount: savedUrlsCount
 				});
 
 				return ApiResponse.success(res, {
-					urls: uploadedUrls,
-					keys: uploadedKeys,
-					filenames: uploadedFilenames,
-					totalFiles: uploadedUrls.length,
+					documentUrls: verifyUser.verificationDocument.documentUrls,
 					documentType: verifyUser.verificationDocument.documentType,
 					verificationStatus: verifyUser.verificationStatus,
-					documentUrl: verifyUser.verificationDocument.documentUrl,
-					documentUrls: verifyUser.verificationDocument.documentUrls || uploadedUrls
+					totalFiles: uploadedUrls.length
 				}, `${uploadedUrls.length} ID proof document(s) uploaded successfully`);
 
 			} catch (uploadError) {
@@ -775,11 +775,91 @@ async function updateDatingVideo(req, res) {
 	}
 }
 
+/**
+ * Get verification status for the authenticated user
+ * Returns only the verificationStatus field
+ */
+async function getVerificationStatus(req, res) {
+	try {
+		console.log('[USER][UPLOAD] getVerificationStatus - User ID:', req.user?.userId);
+
+		const user = await User.findById(req.user?.userId)
+			.select('verificationStatus');
+
+		if (!user) {
+			console.warn('[USER][UPLOAD] User not found');
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		const verificationStatus = user.verificationStatus || 'none';
+
+		console.log('[USER][UPLOAD] Verification status retrieved:', verificationStatus);
+
+		return ApiResponse.success(res, {
+			verificationStatus: verificationStatus
+		}, 'Verification status retrieved successfully');
+
+	} catch (e) {
+		console.error('[USER][UPLOAD] getVerificationStatus error:', e?.message || e);
+		console.error('[USER][UPLOAD] Error stack:', e?.stack);
+		return ApiResponse.serverError(res, 'Failed to retrieve verification status');
+	}
+}
+
+/**
+ * Get verification documents for the authenticated user
+ * Returns verification document details and status
+ */
+async function getUploadedDocuments(req, res) {
+	try {
+		console.log('[USER][UPLOAD] getUploadedDocuments - User ID:', req.user?.userId);
+
+		const user = await User.findById(req.user?.userId)
+			.select('verificationDocument verificationStatus');
+
+		if (!user) {
+			console.warn('[USER][UPLOAD] User not found');
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		// Prepare response data - only keep documentUrls array
+		const documents = {
+			verificationDocuments: {
+				documentType: user.verificationDocument?.documentType || null,
+				documentUrls: user.verificationDocument?.documentUrls || [],
+				documentNumber: user.verificationDocument?.documentNumber || null,
+				uploadedAt: user.verificationDocument?.uploadedAt || null,
+				verificationStatus: user.verificationStatus || 'none',
+				reviewedAt: user.verificationDocument?.reviewedAt || null,
+				rejectionReason: user.verificationDocument?.rejectionReason || null
+			},
+			summary: {
+				hasVerificationDocuments: (user.verificationDocument?.documentUrls && user.verificationDocument.documentUrls.length > 0) || false,
+				verificationDocumentsCount: user.verificationDocument?.documentUrls?.length || 0
+			}
+		};
+
+		console.log('[USER][UPLOAD] Documents retrieved successfully:', {
+			verificationDocumentsCount: documents.summary.verificationDocumentsCount,
+			verificationStatus: documents.verificationDocuments.verificationStatus
+		});
+
+		return ApiResponse.success(res, documents, 'Verification documents retrieved successfully');
+
+	} catch (e) {
+		console.error('[USER][UPLOAD] getUploadedDocuments error:', e?.message || e);
+		console.error('[USER][UPLOAD] Error stack:', e?.stack);
+		return ApiResponse.serverError(res, 'Failed to retrieve verification documents');
+	}
+}
+
 module.exports = {
 	uploadProfilePicture,
 	uploadIdProof,
 	uploadDatingPhotos,
 	uploadDatingVideos,
 	updateDatingPhoto,
-	updateDatingVideo
+	updateDatingVideo,
+	getVerificationStatus,
+	getUploadedDocuments
 };

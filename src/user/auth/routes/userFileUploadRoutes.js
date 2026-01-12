@@ -7,8 +7,16 @@ const {
 	uploadDatingPhotos,
 	uploadDatingVideos,
 	updateDatingPhoto,
-	updateDatingVideo
+	updateDatingVideo,
+	getVerificationStatus,
+	getUploadedDocuments
 } = require('../controller/userFileUploadController');
+
+// Get verification status route (returns only verificationStatus)
+router.get('/verification-status', authorize([Roles.USER]), getVerificationStatus);
+
+// Get uploaded documents route
+router.get('/documents', authorize([Roles.USER]), getUploadedDocuments);
 
 // File upload routes (requires authentication)
 router.post('/profile-picture', authorize([Roles.USER]), uploadProfilePicture);
