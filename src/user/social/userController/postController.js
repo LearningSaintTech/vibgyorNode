@@ -24,7 +24,7 @@ function normalizeLocation(location) {
       isVisible: true
     };
   }
-  
+
   return {
     name: location.name || "",
     coordinates: {
@@ -45,24 +45,24 @@ function addIsLiked(post, userId) {
   if (post.isLiked !== undefined) {
     return post;
   }
-  
+
   if (!userId) {
     post.isLiked = false;
     return post;
   }
-  
+
   // Check if likes exists and is an array
   if (!post.likes || !Array.isArray(post.likes)) {
     post.isLiked = false;
     return post;
   }
-  
+
   // Check if user has liked this post
   const isLiked = post.likes.some(like => {
     const likeUserId = like.user?._id ? like.user._id.toString() : like.user?.toString();
     return likeUserId === userId.toString();
   });
-  
+
   post.isLiked = !!isLiked;
   return post;
 }
@@ -73,26 +73,26 @@ function addIsSaved(post, savedPostIds = []) {
   if (post.isSaved !== undefined) {
     return post;
   }
-  
+
   if (!savedPostIds || savedPostIds.length === 0) {
     post.isSaved = false;
     return post;
   }
-  
+
   // Get post ID
   const postId = post._id ? post._id.toString() : (post.id ? post.id.toString() : null);
-  
+
   if (!postId) {
     post.isSaved = false;
     return post;
   }
-  
+
   // Check if post ID is in savedPostIds array
   const isSaved = savedPostIds.some(savedId => {
     const savedIdStr = savedId ? savedId.toString() : null;
     return savedIdStr === postId;
   });
-  
+
   post.isSaved = !!isSaved;
   return post;
 }
@@ -106,7 +106,7 @@ function isPostVisible(post, currentUserId, followingIds = []) {
     const isPrivate = author.privacySettings?.isPrivate === true;
     return !isPrivate;
   }
-  
+
   // Get author ID
   const author = post.author || {};
   let authorId;
@@ -120,20 +120,20 @@ function isPostVisible(post, currentUserId, followingIds = []) {
     // Can't determine author, hide post for safety
     return false;
   }
-  
+
   // If current user is the author, always show
   if (authorId === currentUserId.toString()) {
     return true;
   }
-  
+
   // Check if author account is private
   const isPrivate = author.privacySettings?.isPrivate === true;
-  
+
   // If account is not private, show the post (subject to other visibility rules)
   if (!isPrivate) {
     return true;
   }
-  
+
   // If account is private, only show if current user is following the author
   const isFollowing = followingIds.some(id => id.toString() === authorId);
   return isFollowing;
@@ -142,26 +142,26 @@ function isPostVisible(post, currentUserId, followingIds = []) {
 // Helper function to transform post media into a cleaner structure
 function transformPostMedia(post, userId = null, savedPostIds = []) {
   const postObj = typeof post.toObject === 'function' ? post.toObject() : post;
-  
+
   // Add isLiked field
   addIsLiked(postObj, userId);
-  
+
   // Add isSaved field
   addIsSaved(postObj, savedPostIds);
-  
+
   // DEBUG: Log original post media structure
   const postId = postObj._id || postObj.id || 'unknown';
   console.log(`[POST][TRANSFORM] Post ID: ${postId}`);
   console.log(`[POST][TRANSFORM] Original media type:`, typeof postObj.media);
   console.log(`[POST][TRANSFORM] Is media array:`, Array.isArray(postObj.media));
   console.log(`[POST][TRANSFORM] Media length:`, postObj.media?.length || 0);
-  
+
   // Check if media is already in transformed format (has images/videos arrays)
-  const isAlreadyTransformed = postObj.media && 
-    typeof postObj.media === 'object' && 
+  const isAlreadyTransformed = postObj.media &&
+    typeof postObj.media === 'object' &&
     !Array.isArray(postObj.media) &&
     (Array.isArray(postObj.media.images) || Array.isArray(postObj.media.videos));
-  
+
   if (isAlreadyTransformed) {
     console.log(`[POST][TRANSFORM] ⚠️ Media is already transformed, preserving existing structure`);
     console.log(`[POST][TRANSFORM] Existing structure:`, {
@@ -171,20 +171,20 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
       hasVideos: postObj.media.hasVideos,
       totalCount: postObj.media.totalCount
     });
-    
+
     // Media is already transformed, just ensure structure is correct
     if (!postObj.media.images) postObj.media.images = [];
     if (!postObj.media.videos) postObj.media.videos = [];
     postObj.media.totalCount = (postObj.media.images?.length || 0) + (postObj.media.videos?.length || 0);
     postObj.media.hasImages = (postObj.media.images?.length || 0) > 0;
     postObj.media.hasVideos = (postObj.media.videos?.length || 0) > 0;
-    
+
     // Add isSaved field (already added isLiked above)
     addIsSaved(postObj, savedPostIds);
-    
+
     return postObj;
   }
-  
+
   if (postObj.media && Array.isArray(postObj.media) && postObj.media.length > 0) {
     console.log(`[POST][TRANSFORM] First media item structure:`, JSON.stringify(postObj.media[0], null, 2));
     console.log(`[POST][TRANSFORM] All media items keys:`, postObj.media.map((item, idx) => ({
@@ -202,11 +202,11 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
   } else {
     console.log(`[POST][TRANSFORM] No media found in post`);
   }
-  
+
   // Separate images and videos
   const images = [];
   const videos = [];
-  
+
   if (postObj.media && Array.isArray(postObj.media)) {
     postObj.media.forEach((mediaItem, index) => {
       console.log(`[POST][TRANSFORM] Processing media item ${index}:`, {
@@ -227,7 +227,7 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
       // Determine media type: check explicit type, then mimeType, then infer from URL
       let mediaType = mediaItem.type;
       let typeSource = 'explicit';
-      
+
       if (!mediaType && mediaItem.mimeType) {
         // Infer from mimeType
         if (mediaItem.mimeType.startsWith('image/')) {
@@ -238,7 +238,7 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
           typeSource = 'mimeType';
         }
       }
-      
+
       if (!mediaType && mediaItem.url) {
         // Infer from URL extension as fallback
         const url = mediaItem.url.toLowerCase();
@@ -320,7 +320,7 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
       }
     });
   }
-  
+
   // Replace media with organized structure
   postObj.media = {
     images: images,
@@ -329,7 +329,7 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
     hasImages: images.length > 0,
     hasVideos: videos.length > 0
   };
-  
+
   // DEBUG: Log final transformed structure
   console.log(`[POST][TRANSFORM] Final transformed media for post ${postId}:`, {
     imagesCount: images.length,
@@ -340,10 +340,10 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
     firstImageUrl: images[0]?.url?.substring(0, 100) || 'none',
     firstVideoUrl: videos[0]?.url?.substring(0, 100) || 'none'
   });
-  
+
   // Normalize location to ensure all fields are visible
   postObj.location = normalizeLocation(postObj.location);
-  
+
   return postObj;
 }
 
@@ -359,11 +359,11 @@ async function createPost(req, res) {
 
     // Process media files and thumbnails
     const media = [];
-    
+
     // Handle both uploadMultiple (req.files array) and uploadWithThumbnails (req.files object)
     let mediaFiles = [];
     let thumbnailFiles = [];
-    
+
     if (Array.isArray(req.files)) {
       // Old format: uploadMultiple - all files in array
       mediaFiles = req.files;
@@ -372,7 +372,7 @@ async function createPost(req, res) {
       mediaFiles = req.files.files || [];
       thumbnailFiles = req.files.thumbnails || [];
     }
-    
+
     // Create thumbnail map for quick lookup (match by index)
     const thumbnailMap = new Map();
     thumbnailFiles.forEach((thumbFile, index) => {
@@ -381,10 +381,10 @@ async function createPost(req, res) {
 
     if (mediaFiles.length > 0) {
       let videoIndex = 0; // Track video index for thumbnail matching
-      
+
       for (let i = 0; i < mediaFiles.length; i++) {
         const file = mediaFiles[i];
-        
+
         // Validate media type - only images and videos allowed
         if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
           return ApiResponse.badRequest(res, 'Only images and videos are allowed');
@@ -522,7 +522,7 @@ async function createPost(req, res) {
     if (location) {
       // Parse location if it's a string (from form-data)
       const locationData = typeof location === 'string' ? JSON.parse(location) : location;
-      
+
       // Validate that location has at least name or coordinates
       if (locationData && (locationData.name || (locationData.coordinates?.lat && locationData.coordinates?.lng))) {
         postData.location = locationData;
@@ -604,7 +604,7 @@ async function getUserPosts(req, res) {
     const currentUserId = req.user?.userId;
 
     const query = { author: userId, status };
-    
+
     // If viewing own posts, show all statuses except deleted
     if (userId === currentUserId) {
       query.status = { $ne: 'deleted' };
@@ -613,7 +613,7 @@ async function getUserPosts(req, res) {
       // Check if current user is a follower
       const author = await User.findById(userId).select('followers');
       const isFollower = author?.followers?.some(f => f.toString() === currentUserId);
-      
+
       if (isFollower) {
         // Followers can see public and followers-only posts
         query.visibility = { $in: ['public', 'followers'] };
@@ -659,24 +659,24 @@ async function getUserPosts(req, res) {
     const postsWithLastComment = posts.map(post => {
       // `posts` is already lean() (plain objects), so avoid calling toObject()
       const postObj = { ...post };
-      
+
       // Get the newest comment (comments are sorted by createdAt descending in the model)
       if (postObj.comments && postObj.comments.length > 0) {
         // Sort comments by createdAt descending to get the newest first
-        const sortedComments = [...postObj.comments].sort((a, b) => 
+        const sortedComments = [...postObj.comments].sort((a, b) =>
           new Date(b.createdAt) - new Date(a.createdAt)
         );
         postObj.lastComment = sortedComments[0];
       } else {
         postObj.lastComment = null;
       }
-      
+
       // Transform media into organized structure (includes isLiked and isSaved)
       return transformPostMedia(postObj, currentUserId, savedPostIds);
     });
 
     // Filter out posts from private accounts (unless user is following them or is the author)
-    const visiblePosts = postsWithLastComment.filter(post => 
+    const visiblePosts = postsWithLastComment.filter(post =>
       isPostVisible(post, currentUserId, followingIds)
     );
 
@@ -717,15 +717,15 @@ async function getFeedPosts(req, res) {
     // OPTIMIZED: Cache feed results for 2 minutes (feed changes frequently) - Phase 3
     let feedPosts = getCachedUserData(userId, `feed:posts:${page}:${limit}`);
     let isFromCache = !!feedPosts;
-    
+
     // Check if cached posts are already transformed (shouldn't happen, but handle it)
     if (feedPosts && feedPosts.length > 0) {
       const firstPost = feedPosts[0];
-      const isAlreadyTransformed = firstPost.media && 
-        typeof firstPost.media === 'object' && 
+      const isAlreadyTransformed = firstPost.media &&
+        typeof firstPost.media === 'object' &&
         !Array.isArray(firstPost.media) &&
         (Array.isArray(firstPost.media.images) || Array.isArray(firstPost.media.videos));
-      
+
       if (isAlreadyTransformed) {
         console.log(`[POST][FEED] ⚠️ Cached posts are already transformed, invalidating cache and fetching fresh`);
         // Invalidate the corrupted cache entry
@@ -736,12 +736,12 @@ async function getFeedPosts(req, res) {
       } else {
         // Validate all cached posts are raw (media should be array)
         const transformedCount = feedPosts.filter(post => {
-          return post.media && 
-            typeof post.media === 'object' && 
+          return post.media &&
+            typeof post.media === 'object' &&
             !Array.isArray(post.media) &&
             (Array.isArray(post.media.images) || Array.isArray(post.media.videos));
         }).length;
-        
+
         if (transformedCount > 0) {
           console.log(`[POST][FEED] ⚠️ Found ${transformedCount} transformed posts in cache, invalidating and fetching fresh`);
           invalidateUserCache(userId, `feed:posts:${page}:${limit}`);
@@ -752,23 +752,23 @@ async function getFeedPosts(req, res) {
         }
       }
     }
-    
+
     if (!feedPosts) {
       // Use the smart feed algorithm service (now optimized with pre-calculated scores)
       feedPosts = await feedAlgorithmService.generatePersonalizedFeed(
-        userId, 
-        parseInt(page), 
+        userId,
+        parseInt(page),
         parseInt(limit)
       );
-      
+
       // Validate that posts are raw (media should be array, not transformed object)
       const transformedPosts = feedPosts.filter(post => {
-        return post.media && 
-          typeof post.media === 'object' && 
+        return post.media &&
+          typeof post.media === 'object' &&
           !Array.isArray(post.media) &&
           (Array.isArray(post.media.images) || Array.isArray(post.media.videos));
       });
-      
+
       if (transformedPosts.length > 0) {
         console.log(`[POST][FEED] ⚠️ Feed algorithm returned ${transformedPosts.length} already-transformed posts, skipping cache`);
         console.log(`[POST][FEED] Sample transformed post media:`, JSON.stringify(transformedPosts[0].media).substring(0, 200));
@@ -777,18 +777,18 @@ async function getFeedPosts(req, res) {
         // Validate media format before caching
         const postsWithArrayMedia = feedPosts.filter(post => Array.isArray(post.media)).length;
         const postsWithNoMedia = feedPosts.filter(post => !post.media).length;
-        const postsWithObjectMedia = feedPosts.filter(post => 
-          post.media && typeof post.media === 'object' && !Array.isArray(post.media) && 
+        const postsWithObjectMedia = feedPosts.filter(post =>
+          post.media && typeof post.media === 'object' && !Array.isArray(post.media) &&
           !Array.isArray(post.media.images) && !Array.isArray(post.media.videos)
         ).length;
-        
+
         console.log(`[POST][FEED] ✅ Validating posts before cache:`, {
           total: feedPosts.length,
           withArrayMedia: postsWithArrayMedia,
           withNoMedia: postsWithNoMedia,
           withObjectMedia: postsWithObjectMedia
         });
-        
+
         // Cache feed posts for 2 minutes (only cache raw posts, not transformed)
         cacheUserData(userId, `feed:posts:${page}:${limit}`, feedPosts, 120);
         console.log(`[POST][FEED] ✅ Cached ${feedPosts.length} raw posts`);
@@ -804,7 +804,7 @@ async function getFeedPosts(req, res) {
 
     // Transform media for all feed posts (includes isLiked and isSaved)
     console.log(`[POST][FEED] Transforming ${feedPosts.length} posts for feed (fromCache: ${isFromCache})`);
-    
+
     // DEBUG: Log raw media structure BEFORE transformation (first 3 posts with videos)
     const postsWithRawVideos = feedPosts
       .filter(post => post.media && Array.isArray(post.media) && post.media.some(m => m.type === 'video'))
@@ -829,24 +829,24 @@ async function getFeedPosts(req, res) {
         } : null
       });
     });
-    
+
     const transformedFeedPosts = feedPosts.map(post => transformPostMedia(post, userId, savedPostIds));
 
     // OPTIMIZED: Cache user data (blocked users, following) for 5 minutes
     const cacheKey = 'feed:userData';
     let user = getCachedUserData(userId, cacheKey);
-    
+
     if (!user) {
       user = await User.findById(userId).select('following blockedUsers blockedBy').lean();
       if (user) {
         cacheUserData(userId, cacheKey, user, 300); // Cache for 5 minutes
       }
     }
-    
+
     const followingIds = user?.following?.map(id => id.toString()) || [];
-    
+
     // Filter out posts from private accounts (unless user is following them or is the author)
-    const visibleFeedPosts = transformedFeedPosts.filter(post => 
+    const visibleFeedPosts = transformedFeedPosts.filter(post =>
       isPostVisible(post, userId, followingIds)
     );
 
@@ -882,7 +882,7 @@ async function getFeedPosts(req, res) {
         mediaStructure: JSON.stringify(post.media).substring(0, 500)
       });
     });
-    
+
     // DEBUG: Log ALL video URLs to check if they're correct
     const allVideos = visibleFeedPosts
       .flatMap(post => (post.media?.videos || []).map(v => ({ postId: post._id || post.id, video: v })))
@@ -899,10 +899,10 @@ async function getFeedPosts(req, res) {
 
     const blockedUserIds = user?.blockedUsers?.map(id => id.toString()) || [];
     const blockedByIds = user?.blockedBy?.map(id => id.toString()) || [];
-    
+
     // Combine blocked users and current user
     const excludedUserIds = [...new Set([
-      ...blockedUserIds, 
+      ...blockedUserIds,
       ...blockedByIds,
       userId // Exclude own posts
     ])];
@@ -929,7 +929,7 @@ async function getFeedPosts(req, res) {
       urlIsVideo: video.url ? (video.url.includes('.mp4') || video.url.includes('video') || video.url.includes('s3.amazonaws.com')) : false,
       thumbnailIsImage: video.thumbnail ? (video.thumbnail.includes('unsplash') || video.thumbnail.includes('placeholder')) : false
     })));
-    
+
     console.log(`[POST][FEED] Sending response with:`, {
       postsCount: visibleFeedPosts.length,
       pagination: {
@@ -995,13 +995,13 @@ async function getPost(req, res) {
     const author = post.author;
     const isPrivate = author?.privacySettings?.isPrivate === true;
     const authorId = author?._id?.toString() || author?.toString();
-    
+
     // If account is private and user is not the author, check if user is following
     if (isPrivate && authorId !== userId) {
       const currentUser = await User.findById(userId).select('following').lean();
       const followingIds = currentUser?.following?.map(id => id.toString()) || [];
       const isFollowing = followingIds.includes(authorId);
-      
+
       if (!isFollowing) {
         return ApiResponse.forbidden(res, 'This account is private. You must follow to view posts.');
       }
@@ -1016,7 +1016,7 @@ async function getPost(req, res) {
     const postObj = post.toObject();
     if (postObj.comments && postObj.comments.length > 0) {
       // Sort comments by createdAt descending to get the newest first
-      const sortedComments = [...postObj.comments].sort((a, b) => 
+      const sortedComments = [...postObj.comments].sort((a, b) =>
         new Date(b.createdAt) - new Date(a.createdAt)
       );
       postObj.lastComment = sortedComments[0];
@@ -1077,12 +1077,12 @@ async function updatePost(req, res) {
     // Process hashtags - extract from both content and caption
     if (hashtags !== undefined || content !== undefined || caption !== undefined) {
       const processedHashtags = [];
-      
+
       // Add explicit hashtags if provided
       if (hashtags && Array.isArray(hashtags)) {
         processedHashtags.push(...hashtags.map(tag => tag.toLowerCase().replace('#', '').trim()));
       }
-      
+
       // Extract hashtags from content
       const contentHashtags = (content || post.content) ? (content || post.content).match(/#\w+/g) || [] : [];
       contentHashtags.forEach(tag => {
@@ -1091,7 +1091,7 @@ async function updatePost(req, res) {
           processedHashtags.push(cleanTag);
         }
       });
-      
+
       // Extract hashtags from caption as well
       const captionHashtags = (caption || post.caption) ? (caption || post.caption).match(/#\w+/g) || [] : [];
       captionHashtags.forEach(tag => {
@@ -1100,19 +1100,19 @@ async function updatePost(req, res) {
           processedHashtags.push(cleanTag);
         }
       });
-      
+
       post.hashtags = processedHashtags;
     }
 
     // Process mentions - extract from both content and caption
     if (mentions !== undefined || content !== undefined || caption !== undefined) {
       const processedMentions = [];
-      
+
       // Add explicit mentions if provided
       if (mentions && Array.isArray(mentions)) {
         processedMentions.push(...mentions);
       }
-      
+
       // Extract mentions from content
       const contentMentions = (content || post.content) ? (content || post.content).match(/@\w+/g) || [] : [];
       for (const mention of contentMentions) {
@@ -1122,7 +1122,7 @@ async function updatePost(req, res) {
           processedMentions.push(user._id);
         }
       }
-      
+
       // Extract mentions from caption as well
       const captionMentions = (caption || post.caption) ? (caption || post.caption).match(/@\w+/g) || [] : [];
       for (const mention of captionMentions) {
@@ -1132,16 +1132,16 @@ async function updatePost(req, res) {
           processedMentions.push(user._id);
         }
       }
-      
+
       post.mentions = processedMentions;
-      
+
       // Send notifications for new mentions (only for newly added mentions)
       if (processedMentions && processedMentions.length > 0) {
         const existingMentions = post.mentions.map(m => m.user.toString());
         processedMentions.forEach(async (mentionedUserId) => {
           // Only notify if this is a new mention (not in existing mentions)
-          if (!existingMentions.includes(mentionedUserId.toString()) && 
-              mentionedUserId.toString() !== userId.toString()) {
+          if (!existingMentions.includes(mentionedUserId.toString()) &&
+            mentionedUserId.toString() !== userId.toString()) {
             try {
               await notificationService.create({
                 context: 'social',
@@ -1251,7 +1251,7 @@ async function toggleLike(req, res) {
       // Fallback: try to get ID from object
       authorId = post.author?.id || post.author?._id?.toString() || String(post.author);
     }
-    
+
     // Validate it's a proper ObjectId string (24 hex characters)
     if (!/^[0-9a-fA-F]{24}$/.test(authorId)) {
       console.error('[POST] Invalid authorId extracted:', { authorId, authorType: typeof post.author, author: post.author });
@@ -1259,7 +1259,7 @@ async function toggleLike(req, res) {
     }
 
     const existingLike = post.likes.find(like => like.user.toString() === userId);
-    
+
     if (existingLike) {
       await post.removeLike(userId);
       // OPTIMIZED: Invalidate feed cache when post is unliked
@@ -1267,7 +1267,7 @@ async function toggleLike(req, res) {
       return ApiResponse.success(res, { liked: false, likesCount: post.likesCount }, 'Post unliked');
     } else {
       await post.addLike(userId);
-      
+
       // Send notification for like (only if user is not liking their own post)
       if (authorId !== userId) {
         try {
@@ -1286,7 +1286,7 @@ async function toggleLike(req, res) {
           // Don't fail the like action if notification fails
         }
       }
-      
+
       // OPTIMIZED: Invalidate feed cache when post is liked
       invalidateUserCache(userId, 'feed:*');
       return ApiResponse.success(res, { liked: true, likesCount: post.likesCount }, 'Post liked');
@@ -1299,52 +1299,53 @@ async function toggleLike(req, res) {
 
 // Helper function to format time ago
 function formatTimeAgo(date) {
+  console.log("33333333333", date)
   if (!date) return 'just now';
-  
+
   const now = new Date();
   const likeDate = new Date(date);
-  
+
   // Check if date is valid
   if (isNaN(likeDate.getTime())) {
     return 'just now';
   }
-  
+
   const diffInSeconds = Math.floor((now - likeDate) / 1000);
-  
+
   // Handle negative time differences (clock skew)
   if (diffInSeconds < 0) {
     return 'just now';
   }
-  
+
   if (diffInSeconds < 60) {
     return `${diffInSeconds}s`;
   }
-  
+
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) {
     return `${diffInMinutes}m`;
   }
-  
+
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) {
     return `${diffInHours}h`;
   }
-  
+
   const diffInDays = Math.floor(diffInHours / 24);
   if (diffInDays < 7) {
     return `${diffInDays}d`;
   }
-  
+
   const diffInWeeks = Math.floor(diffInDays / 7);
   if (diffInWeeks < 4) {
     return `${diffInWeeks}w`;
   }
-  
+
   const diffInMonths = Math.floor(diffInDays / 30);
   if (diffInMonths < 12) {
     return `${diffInMonths}mo`;
   }
-  
+
   const diffInYears = Math.floor(diffInDays / 365);
   return `${diffInYears}y`;
 }
@@ -1400,27 +1401,28 @@ async function getPostLikes(req, res) {
 
     // Build response with user details, time ago, and follow status
     const likesWithDetails = paginatedLikes.map(like => {
+      console.log("44444444444",like)
       const user = userMap.get(like.user.toString());
       if (!user) return null;
 
       const isCurrentUser = like.user.toString() === currentUserId;
       const isFollowing = currentUserFollowing.includes(like.user.toString());
       const isFollower = currentUserFollowers.includes(like.user.toString());
-      
+
       // Check follow request status
       const outgoingRequestKey = `${currentUserId}_${like.user.toString()}`;
       const incomingRequestKey = `${like.user.toString()}_${currentUserId}`;
-      
+
       const outgoingRequest = followRequestMap.get(outgoingRequestKey);
       const incomingRequest = followRequestMap.get(incomingRequestKey);
-      
+
       let followRequestStatus = null;
       if (outgoingRequest) {
         followRequestStatus = outgoingRequest.status; // 'pending', 'accepted', 'rejected'
       } else if (incomingRequest) {
         followRequestStatus = `incoming_${incomingRequest.status}`; // 'incoming_pending', etc.
       }
-      
+
       // Determine follow status
       let followStatus = 'not_following';
       if (isCurrentUser) {
@@ -1442,7 +1444,7 @@ async function getPostLikes(req, res) {
         profilePictureUrl: user.profilePictureUrl,
         isVerified: user.isVerified || false,
         likedAt: like.createdAt,
-        likedAgo: formatTimeAgo(like.createdAt),
+        likedAgo: formatTimeAgo(like.likedAt),
         followStatus: followStatus,
         followRequestStatus: followRequestStatus,
         isFollowing: isFollowing,
@@ -1498,7 +1500,7 @@ async function addComment(req, res) {
     }
 
     await post.addComment(userId, content.trim(), parentCommentId);
-    
+
     // Populate the new comment using the parent document
     // Mongoose doesn't support calling populate() on nested docs directly
     const commentIndex = post.comments.length - 1;
@@ -1522,7 +1524,7 @@ async function addComment(req, res) {
       // Fallback: try to get ID from object
       authorId = post.author?.id || post.author?._id?.toString() || String(post.author);
     }
-    
+
     // Validate it's a proper ObjectId string (24 hex characters)
     if (!/^[0-9a-fA-F]{24}$/.test(authorId)) {
       console.error('[POST] Invalid authorId extracted:', { authorId, authorType: typeof post.author, author: post.author });
@@ -1581,15 +1583,15 @@ async function getPostComments(req, res) {
     const sortedComments = post.comments.sort((a, b) => {
       const aIsCurrentUser = a.user.toString() === currentUserId;
       const bIsCurrentUser = b.user.toString() === currentUserId;
-      
+
       // Current user's comments first
       if (aIsCurrentUser && !bIsCurrentUser) return -1;
       if (!aIsCurrentUser && bIsCurrentUser) return 1;
-      
+
       // Then sort by createdAt (most recent first)
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
-    
+
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + parseInt(limit);
     const paginatedComments = sortedComments.slice(startIndex, endIndex);
@@ -1597,11 +1599,11 @@ async function getPostComments(req, res) {
     // Enhance comments with additional info
     const enhancedComments = paginatedComments.map(comment => {
       const commentObj = comment.toObject ? comment.toObject() : comment;
-      
+
       // Check if current user liked this comment
       const userLike = commentObj.likes?.find(like => like.user.toString() === currentUserId);
       const isLiked = !!userLike;
-      
+
       return {
         _id: commentObj._id,
         user: commentObj.user,
@@ -1875,7 +1877,7 @@ async function searchPosts(req, res) {
       const blockedUserIds = user?.blockedUsers || [];
       const blockedByIds = user?.blockedBy || [];
       allBlockedIds = [...new Set([
-        ...blockedUserIds.map(id => id.toString()), 
+        ...blockedUserIds.map(id => id.toString()),
         ...blockedByIds.map(id => id.toString())
       ])];
     }
@@ -1898,7 +1900,7 @@ async function searchPosts(req, res) {
     });
 
     // Filter out posts from private accounts (unless user is following them or is the author)
-    const visiblePosts = transformedPosts.filter(post => 
+    const visiblePosts = transformedPosts.filter(post =>
       isPostVisible(post, userId, followingIds)
     );
 
@@ -2009,7 +2011,7 @@ async function getTrendingPosts(req, res) {
     const userId = req.user?.userId;
 
     const trendingPosts = await feedAlgorithmService.getTrendingPosts(
-      parseInt(hours), 
+      parseInt(hours),
       parseInt(limit),
       userId // Pass userId to exclude blocked users
     );
@@ -2027,7 +2029,7 @@ async function getTrendingPosts(req, res) {
     const transformedPosts = trendingPosts.map(post => transformPostMedia(post, userId, savedPostIds));
 
     // Filter out posts from private accounts (unless user is following them or is the author)
-    const visiblePosts = transformedPosts.filter(post => 
+    const visiblePosts = transformedPosts.filter(post =>
       isPostVisible(post, userId, followingIds)
     );
 
@@ -2053,8 +2055,8 @@ async function getPostsByHashtag(req, res) {
     }
 
     const posts = await feedAlgorithmService.getPostsByHashtag(
-      hashtag, 
-      parseInt(page), 
+      hashtag,
+      parseInt(page),
       parseInt(limit),
       userId // Pass userId to exclude blocked users
     );
@@ -2072,7 +2074,7 @@ async function getPostsByHashtag(req, res) {
     const transformedPosts = posts.map(post => transformPostMedia(post, userId, savedPostIds));
 
     // Filter out posts from private accounts (unless user is following them or is the author)
-    const visiblePosts = transformedPosts.filter(post => 
+    const visiblePosts = transformedPosts.filter(post =>
       isPostVisible(post, userId, followingIds)
     );
 
@@ -2089,7 +2091,7 @@ async function getPostsByHashtag(req, res) {
       const blockedUserIds = user?.blockedUsers?.map(id => id.toString()) || [];
       const blockedByIds = user?.blockedBy?.map(id => id.toString()) || [];
       const allBlockedIds = [...new Set([
-        ...blockedUserIds, 
+        ...blockedUserIds,
         ...blockedByIds
       ])];
       if (allBlockedIds.length > 0) {
@@ -2175,7 +2177,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Radius of the Earth in kilometers
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -2192,7 +2194,7 @@ async function getSuggestedUsers(req, res) {
 
     // Get current user with location data
     const currentUser = await User.findById(userId).select('location following blockedUsers blockedBy');
-    
+
     if (!currentUser) {
       return ApiResponse.forbidden(res, 'User not found');
     }
@@ -2209,7 +2211,7 @@ async function getSuggestedUsers(req, res) {
     const followingIds = currentUser.following?.map(id => id.toString()) || [];
     const blockedUserIds = currentUser.blockedUsers?.map(id => id.toString()) || [];
     const blockedByIds = currentUser.blockedBy?.map(id => id.toString()) || [];
-    
+
     // Combine all excluded users (current user, following, blocked users)
     const excludedUserIds = [...new Set([
       userId,
@@ -2371,7 +2373,7 @@ module.exports = {
 
       // Filter out posts from private accounts (unless user is following them or is the author)
       // Note: Even though these are saved posts, we filter private accounts for consistency
-      const visiblePosts = transformedPosts.filter(post => 
+      const visiblePosts = transformedPosts.filter(post =>
         isPostVisible(post, userId, followingIds)
       );
 
@@ -2406,14 +2408,14 @@ module.exports = {
 
       post.status = 'archived';
       await post.save();
-      
+
       // Get user's saved posts for isSaved flag
       let savedPostIds = [];
       if (userId) {
         const user = await User.findById(userId).select('savedPosts').lean();
         savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
       }
-      
+
       const transformedPost = transformPostMedia(post, userId, savedPostIds);
       return ApiResponse.success(res, transformedPost, 'Post archived successfully');
     } catch (error) {
@@ -2434,14 +2436,14 @@ module.exports = {
 
       post.status = 'published';
       await post.save();
-      
+
       // Get user's saved posts for isSaved flag
       let savedPostIds = [];
       if (userId) {
         const user = await User.findById(userId).select('savedPosts').lean();
         savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
       }
-      
+
       const transformedPost = transformPostMedia(post, userId, savedPostIds);
       return ApiResponse.success(res, transformedPost, 'Post unarchived successfully');
     } catch (error) {
@@ -2476,17 +2478,17 @@ module.exports = {
       // Transform media for all archived posts (includes isLiked and isSaved)
       const transformedPosts = posts.map(post => {
         const postObj = post.toObject();
-        
+
         // Add lastComment field
         if (postObj.comments && postObj.comments.length > 0) {
-          const sortedComments = [...postObj.comments].sort((a, b) => 
+          const sortedComments = [...postObj.comments].sort((a, b) =>
             new Date(b.createdAt) - new Date(a.createdAt)
           );
           postObj.lastComment = sortedComments[0];
         } else {
           postObj.lastComment = null;
         }
-        
+
         return transformPostMedia(postObj, userId, savedPostIds);
       });
 
@@ -2510,7 +2512,7 @@ module.exports = {
       return ApiResponse.serverError(res, 'Failed to get archived posts');
     }
   },
-  
+
   // Engagement
   toggleLike,
   getPostLikes,
@@ -2520,20 +2522,20 @@ module.exports = {
   editComment,
   deleteComment,
   sharePost,
-  
+
   // Discovery
   searchPosts,
   getTrendingPosts,
   getPostsByHashtag,
-  
+
   // Analytics & Moderation
   reportPost,
   getPostAnalytics,
-  
+
   // Advanced Features
   updateLocation,
   addMention,
-  
+
   // User Suggestions
   getSuggestedUsers
 };
