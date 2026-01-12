@@ -1004,22 +1004,28 @@ async function trackStoryView(req, res) {
 async function toggleLikeStory(req, res) {
   try {
     const { storyId } = req.params;
+    console.log("11111111111",storyId)
     const userId = req.user?.userId;
 
     console.log('[STORY] Toggle like story - START:', { storyId, userId });
 
     const story = await Story.findById(storyId)
       .populate('author', 'privacySettings followers username');
-      
+      console.log("000000000",story)
     if (!story) {
       return ApiResponse.notFound(res, 'Story not found');
+    }
+
+    // Check if story has an author
+    if (!story.author) {
+      return ApiResponse.badRequest(res, 'Story author not found');
     }
 
     // Check if story is expired
     if (story.expiresAt < new Date()) {
       return ApiResponse.badRequest(res, 'Story has expired');
     }
-
+    console.log("22222222222",story)
     const isOwnStory = story.author._id.toString() === userId;
     const isPrivateAccount = story.author.privacySettings?.isPrivate || false;
     const isFollowing = story.author.followers?.some(followerId => followerId.toString() === userId);
