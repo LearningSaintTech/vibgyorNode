@@ -341,7 +341,9 @@ class ChatService {
   }
   
   /**
-   * Delete chat permanently (delete chat and all associated messages)
+   * Delete chat for user (archive and hide messages before deletion timestamp)
+   * Similar to Instagram/WhatsApp: Chat is hidden for user, but reappears if other user sends message
+   * Only messages sent after deletion will be visible when chat reappears
    * @param {string} chatId - Chat ID
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Deletion result
@@ -367,18 +369,22 @@ class ChatService {
         throw new Error('Access denied to this chat');
       }
       
-      // Delete all messages associated with this chat
-      const deleteMessagesResult = await Message.deleteMany({ chatId: chatId });
-      console.log(`🔵 [CHAT_SERVICE] Deleted ${deleteMessagesResult.deletedCount} messages for chat ${chatId}`);
+      // Archive chat for user and set deletion timestamp
+      // This hides the chat from user's list, but keeps it in database
+      // When other user sends message, chat will reappear but only show new messages
+      const deletionTimestamp = new Date();
+      await chat.updateUserSettings(userId, {
+        isArchived: true,
+        archivedAt: deletionTimestamp,
+        deletedAt: deletionTimestamp
+      });
       
-      // Permanently delete the chat
-      await Chat.findByIdAndDelete(chatId);
-      console.log(`🔵 [CHAT_SERVICE] Permanently deleted chat ${chatId}`);
+      console.log(`🔵 [CHAT_SERVICE] Chat ${chatId} archived and marked as deleted for user ${userId} at ${deletionTimestamp}`);
       
       return {
         chatId: chat._id,
         message: 'Chat deleted successfully',
-        deletedMessagesCount: deleteMessagesResult.deletedCount
+        deletedAt: deletionTimestamp
       };
       
     } catch (error) {
