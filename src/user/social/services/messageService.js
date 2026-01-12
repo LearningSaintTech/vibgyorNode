@@ -642,11 +642,13 @@ class MessageService {
   
   /**
    * Delete a message
+   * Works for ALL message types: text, image, video, audio, voice, location, gif, document, forwarded, system
    * @param {string} messageId - Message ID
    * @param {string} userId - User ID
+   * @param {boolean} deleteForEveryone - If true, delete for everyone (WhatsApp-style). If false, delete for me only.
    * @returns {Promise<Object>} Deletion result
    */
-  static async deleteMessage(messageId, userId) {
+  static async deleteMessage(messageId, userId, deleteForEveryone = false) {
     try {
       // Input validation
       if (!messageId || !userId) {
@@ -658,21 +660,58 @@ class MessageService {
         throw new Error('Message not found');
       }
       
-      // Check if user is the sender
-      if (message.senderId.toString() !== userId.toString()) {
-        throw new Error('You can only delete your own messages');
+      // Check ownership for "Delete for Everyone"
+      if (deleteForEveryone && message.senderId.toString() !== userId.toString()) {
+        throw new Error('You can only delete your own messages for everyone');
       }
       
       // Check if message is already deleted by this user
-      if (message.deletedBy.includes(userId)) {
-        throw new Error('Message already deleted');
+      const alreadyDeleted = message.deletedBy.some(
+        deletion => deletion.userId.toString() === userId.toString()
+      );
+      
+      if (alreadyDeleted) {
+        throw new Error('Message already deleted by this user');
       }
       
-      await message.deleteForUser(userId);
+      // Delete message (method handles time restrictions and validation)
+      await message.deleteForUser(userId, deleteForEveryone);
+      
+      // Get chat for real-time updates
+      const chat = await Chat.findById(message.chatId);
+      
+      // Emit real-time deletion event
+      const realtime = enhancedRealtimeService;
+      if (realtime && realtime.io) {
+        if (deleteForEveryone) {
+          // Emit to all chat participants
+          realtime.io.to(`chat:${message.chatId}`).emit('message_deleted', {
+            messageId: message._id,
+            chatId: message.chatId,
+            deletedForEveryone: true,
+            deletedBy: userId,
+            timestamp: new Date()
+          });
+          console.log(`🔵 [MESSAGE_SERVICE] Message ${message._id} deleted for everyone - event emitted to chat ${message.chatId}`);
+        } else {
+          // Emit only to deleting user
+          realtime.io.to(`user:${userId}`).emit('message_deleted', {
+            messageId: message._id,
+            chatId: message.chatId,
+            deletedForEveryone: false,
+            deletedBy: userId,
+            timestamp: new Date()
+          });
+          console.log(`🔵 [MESSAGE_SERVICE] Message ${message._id} deleted for me - event emitted to user ${userId}`);
+        }
+      }
       
       return {
         messageId: message._id,
-        isDeleted: message.isDeleted
+        isDeleted: message.isDeleted,
+        deletedForEveryone: message.deletedForEveryone,
+        chatId: message.chatId,
+        chat: chat // Include chat for real-time updates
       };
       
     } catch (error) {

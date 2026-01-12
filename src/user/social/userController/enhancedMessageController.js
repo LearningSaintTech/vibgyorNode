@@ -253,14 +253,15 @@ class MessageController {
   static async deleteMessage(req, res) {
     try {
       const { messageId } = req.params;
+      const { deleteForEveryone = false } = req.body; // Default to false (Delete for Me)
       const userId = req.user.userId;
       
-      const result = await MessageService.deleteMessage(messageId, userId);
+      const result = await MessageService.deleteMessage(messageId, userId, deleteForEveryone);
       
       res.status(200).json(createResponse(
-        'Message deleted successfully',
+        deleteForEveryone ? 'Message deleted for everyone' : 'Message deleted successfully',
         result,
-        { messageId }
+        { messageId, deleteForEveryone: result.deletedForEveryone }
       ));
       
     } catch (error) {
@@ -271,6 +272,8 @@ class MessageController {
         statusCode = 404;
       } else if (error.message.includes('required') || error.message.includes('already deleted')) {
         statusCode = 400;
+      } else if (error.message.includes('only delete your own') || error.message.includes('older than 1 hour')) {
+        statusCode = 400; // Bad request for time restrictions
       } else if (error.message.includes('only delete your own')) {
         statusCode = 403;
       }

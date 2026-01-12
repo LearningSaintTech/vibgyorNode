@@ -161,6 +161,12 @@ const messageSchema = new Schema({
 			default: false 
   },
   
+  // Track if message was deleted for everyone (WhatsApp-style)
+  deletedForEveryone: {
+    type: Boolean,
+    default: false
+  },
+  
   deletedBy: [{
     userId: {
       type: Schema.Types.ObjectId,
@@ -170,6 +176,11 @@ const messageSchema = new Schema({
 		deletedAt: { 
 			type: Date, 
       default: Date.now
+    },
+    // Track deletion type for each user
+    deletedForEveryone: {
+      type: Boolean,
+      default: false
     }
   }],
   
@@ -295,15 +306,37 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
   try {
 	const skip = (page - 1) * limit;
 	
-    // Build query to exclude messages deleted by the user
+    // Build query - include messages deleted for everyone (to show placeholder)
+    // but exclude messages deleted "for me" by this user
 	const query = { 
-      chatId: chatId,
-		isDeleted: false 
+      chatId: chatId
 	};
 	
-	// If userId provided, exclude messages deleted by that user
+	// If userId provided, exclude messages deleted "for me" by that user
+	// But include messages deleted "for everyone" (to show placeholder)
 	if (userId) {
-      query['deletedBy.userId'] = { $ne: userId };
+      // Exclude messages where user deleted it "for me" (not for everyone)
+      // Include messages that are:
+      // 1. Not deleted at all
+      // 2. Deleted for everyone (show placeholder)
+      // 3. Deleted by other users (not this user)
+      query.$or = [
+        { isDeleted: false }, // Not deleted
+        { deletedForEveryone: true }, // Deleted for everyone (show placeholder)
+        { 
+          // Not deleted by this user "for me"
+          $and: [
+            { 'deletedBy.userId': { $ne: userId } },
+            { deletedForEveryone: { $ne: true } }
+          ]
+        }
+      ];
+	} else {
+      // If no userId, just exclude hard-deleted messages that aren't deleted for everyone
+      query.$or = [
+        { isDeleted: false },
+        { deletedForEveryone: true }
+      ];
 	}
 	
 	// If deletedAt timestamp provided, only show messages created after deletion
@@ -324,8 +357,44 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 		.limit(limit)
 		.lean();
 
+	// Filter out messages deleted "for me" by this user (post-query filter for accuracy)
+	let filteredMessages = messages;
+	if (userId) {
+      filteredMessages = messages.filter(msg => {
+        // Include if not deleted
+        if (!msg.isDeleted) return true;
+        
+        // Include if deleted for everyone (show placeholder)
+        if (msg.deletedForEveryone) return true;
+        
+        // Exclude if this user deleted it "for me"
+        const userDeleted = msg.deletedBy?.some(deletion => 
+          deletion.userId?.toString() === userId.toString() && 
+          !deletion.deletedForEveryone
+        );
+        
+        return !userDeleted;
+      });
+	}
+
+	// Transform deleted messages to show placeholder
+	const transformedMessages = filteredMessages.map(msg => {
+		// If message is deleted for everyone, show placeholder
+		if (msg.isDeleted && msg.deletedForEveryone) {
+			return {
+				...msg,
+				content: 'This message was deleted',
+				type: 'deleted',
+				media: null, // Remove media for deleted messages
+				location: null, // Remove location for deleted messages
+				musicMetadata: null // Remove music metadata for deleted messages
+			};
+		}
+		return msg;
+	});
+
 	// Debug: Log voice messages to check duration
-	const voiceMessages = messages.filter(msg => msg.type === 'voice');
+	const voiceMessages = transformedMessages.filter(msg => msg.type === 'voice');
 	if (voiceMessages.length > 0) {
 		console.log('🔵 [MESSAGE_MODEL] Voice messages from database:', voiceMessages.map(msg => ({
 			messageId: msg._id,
@@ -337,7 +406,7 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 		})));
 	}
 
-	return messages.reverse(); // Return in chronological order
+	return transformedMessages.reverse(); // Return in chronological order
   } catch (error) {
     throw new Error(`Failed to get chat messages: ${error.message}`);
   }
@@ -469,7 +538,17 @@ messageSchema.methods.editMessage = async function(newContent) {
   }
 };
 
-messageSchema.methods.deleteForUser = async function(userId) {
+// Helper method to check if message can be deleted for everyone (1 hour limit)
+// Works for ALL message types: text, image, video, audio, voice, location, gif, document, forwarded, system
+messageSchema.methods.canDeleteForEveryone = function() {
+  const messageAge = Date.now() - this.createdAt.getTime();
+  const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+  return messageAge < oneHour;
+};
+
+// Delete message for user - works for ALL message types
+// No restrictions based on message type (text, image, video, audio, voice, location, gif, document, forwarded, system)
+messageSchema.methods.deleteForUser = async function(userId, deleteForEveryone = false) {
   try {
     // Check if already deleted by this user
     const alreadyDeleted = this.deletedBy.some(
@@ -480,27 +559,51 @@ messageSchema.methods.deleteForUser = async function(userId) {
       throw new Error('Message already deleted by this user');
     }
     
+    // Validate "Delete for Everyone" restrictions
+    if (deleteForEveryone) {
+      // Only sender can delete for everyone
+      if (this.senderId.toString() !== userId.toString()) {
+        throw new Error('You can only delete your own messages for everyone');
+      }
+      
+      // Check time restriction (1 hour limit)
+      if (!this.canDeleteForEveryone()) {
+        throw new Error('Cannot delete for everyone: Message is older than 1 hour');
+      }
+    }
+    
+    // Add deletion record
     this.deletedBy.push({
       userId: userId,
-      deletedAt: new Date()
+      deletedAt: new Date(),
+      deletedForEveryone: deleteForEveryone
     });
     
-    // Mark as deleted if deleted by sender or all participants
-    const Chat = mongoose.model('Chat');
-    const chat = await Chat.findById(this.chatId);
-    
-    if (this.senderId.toString() === userId.toString()) {
+    // Handle deletion logic based on type
+    if (deleteForEveryone) {
+      // "Delete for Everyone" - hard delete, visible to all
       this.isDeleted = true;
+      this.deletedForEveryone = true;
     } else {
-      // Check if all participants have deleted the message
-      const participantIds = chat.participants.map(p => p.toString());
-      const deletedByParticipants = this.deletedBy.map(d => d.userId.toString());
-      const allParticipantsDeleted = participantIds.every(id => 
-        deletedByParticipants.includes(id)
-      );
+      // "Delete for Me" - soft delete, only affects this user's view
+      // Check if all participants have deleted the message (for cleanup)
+      const Chat = mongoose.model('Chat');
+      const chat = await Chat.findById(this.chatId);
       
-      if (allParticipantsDeleted) {
-        this.isDeleted = true;
+      if (this.senderId.toString() === userId.toString()) {
+        // If sender deletes "for me", don't hard delete
+        // Message remains visible to other participants
+      } else {
+        // Check if all participants have deleted the message
+        const participantIds = chat.participants.map(p => p.toString());
+        const deletedByParticipants = this.deletedBy.map(d => d.userId.toString());
+        const allParticipantsDeleted = participantIds.every(id => 
+          deletedByParticipants.includes(id)
+        );
+        
+        if (allParticipantsDeleted) {
+          this.isDeleted = true;
+        }
       }
     }
     
