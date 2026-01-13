@@ -1,0 +1,1764 @@
+{
+	"info": {
+		"_postman_id": "vibgyor-node-api-collection",
+		"name": "VibgyorNode API - Complete Collection",
+		"description": "Complete API collection for VibgyorNode backend covering all features: Authentication, Posts, Stories, Chat, Dating, Notifications, Admin, and SubAdmin",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "vibgyor-node"
+	},
+	"item": [
+		{
+			"name": "System",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the API server is running"
+					}
+				},
+				{
+					"name": "API Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/info",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "info"]
+						},
+						"description": "Get API information and available endpoints"
+					}
+				},
+				{
+					"name": "Root",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "User Authentication",
+			"item": [
+				{
+					"name": "Send OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"7776665555\",\n  \"countryCode\": \"+91\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/send-otp",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "send-otp"]
+						},
+						"description": "Send OTP to phone number. Development OTP: 123456"
+					}
+				},
+				{
+					"name": "Verify OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.accessToken) {",
+									"        pm.environment.set(\"user_access_token\", jsonData.data.accessToken);",
+									"        pm.environment.set(\"user_refresh_token\", jsonData.data.refreshToken || \"\");",
+									"        pm.environment.set(\"user_id\", jsonData.data.user?.id || jsonData.data.user?._id || \"\");",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"7776665555\",\n  \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/verify-otp",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "verify-otp"]
+						},
+						"description": "Verify OTP and get access token. Auto-saves token to environment."
+					}
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{user_refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/refresh-token",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "refresh-token"]
+						}
+					}
+				},
+				{
+					"name": "Update Access Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{user_refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/update-access-token",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "update-access-token"]
+						}
+					}
+				},
+				{
+					"name": "Send Email OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/email/send-otp",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "email", "send-otp"]
+						}
+					}
+				},
+				{
+					"name": "Verify Email OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"user@example.com\",\n  \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/email/verify-otp",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "email", "verify-otp"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "User Profile",
+			"item": [
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/auth/me",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "me"]
+						},
+						"description": "Get current authenticated user data including dating profile"
+					}
+				},
+				{
+					"name": "Get Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/auth/profile",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "profile"]
+						}
+					}
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fullName\": \"John Doe\",\n  \"username\": \"johndoe\",\n  \"bio\": \"This is my bio\",\n  \"dob\": \"1990-01-01\",\n  \"gender\": \"male\",\n  \"pronouns\": \"he/him\",\n  \"location\": {\n    \"lat\": 19.0760,\n    \"lng\": 72.8777,\n    \"city\": \"Mumbai\",\n    \"country\": \"India\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/profile",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "profile"]
+						}
+					}
+				},
+				{
+					"name": "Get Profile Step",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/auth/profile/step",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "profile", "step"]
+						}
+					}
+				},
+				{
+					"name": "Get Privacy Settings",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/auth/privacy-settings",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "privacy-settings"]
+						}
+					}
+				},
+				{
+					"name": "Update Privacy Settings",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isPrivate\": false,\n  \"allowFollowRequests\": true,\n  \"showOnlineStatus\": true,\n  \"allowMessages\": \"everyone\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/auth/privacy-settings",
+							"host": ["{{base_url}}"],
+							"path": ["user", "auth", "privacy-settings"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "File Upload",
+			"item": [
+				{
+					"name": "Upload File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "category",
+									"value": "profile-picture",
+									"type": "text",
+									"description": "Options: profile-picture, post-media, story-media, dating-photo, dating-video"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/user/upload",
+							"host": ["{{base_url}}"],
+							"path": ["user", "upload"]
+						},
+						"description": "Upload file to S3. Returns URL"
+					}
+				},
+				{
+					"name": "Upload Profile Picture",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/user/upload/profile-picture",
+							"host": ["{{base_url}}"],
+							"path": ["user", "upload", "profile-picture"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Username",
+			"item": [
+				{
+					"name": "Check Username Available",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/username/available?username=johndoe",
+							"host": ["{{base_url}}"],
+							"path": ["user", "username", "available"],
+							"query": [
+								{
+									"key": "username",
+									"value": "johndoe"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Username Suggestions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/username/suggest?fullName=John Doe",
+							"host": ["{{base_url}}"],
+							"path": ["user", "username", "suggest"],
+							"query": [
+								{
+									"key": "fullName",
+									"value": "John Doe"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Catalog",
+			"item": [
+				{
+					"name": "Get Catalog",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/catalog",
+							"host": ["{{base_url}}"],
+							"path": ["user", "catalog"]
+						}
+					}
+				},
+				{
+					"name": "Get Gender Catalog",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/catalog/gender",
+							"host": ["{{base_url}}"],
+							"path": ["user", "catalog", "gender"]
+						}
+					}
+				},
+				{
+					"name": "Get HereFor Catalog",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/catalog/hereFor",
+							"host": ["{{base_url}}"],
+							"path": ["user", "catalog", "hereFor"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Posts",
+			"item": [
+				{
+					"name": "Create Post",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "caption",
+									"value": "My first post!",
+									"type": "text"
+								},
+								{
+									"key": "visibility",
+									"value": "public",
+									"type": "text",
+									"description": "Options: public, followers, private"
+								},
+								{
+									"key": "files",
+									"type": "file",
+									"src": [],
+									"description": "Media files (images/videos)"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/user/posts",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts"]
+						}
+					}
+				},
+				{
+					"name": "Get Feed",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts/feed?page=1&limit=10",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", "feed"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get My Posts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts/me?page=1&limit=10",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", "me"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Post by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts/:postId",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", ":postId"],
+							"variable": [
+								{
+									"key": "postId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Like Post",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts/:postId/like",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", ":postId", "like"],
+							"variable": [
+								{
+									"key": "postId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Comment on Post",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text\": \"Great post!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/posts/:postId/comment",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", ":postId", "comment"],
+							"variable": [
+								{
+									"key": "postId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Post",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/posts/:postId",
+							"host": ["{{base_url}}"],
+							"path": ["user", "posts", ":postId"],
+							"variable": [
+								{
+									"key": "postId",
+									"value": ""
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Stories",
+			"item": [
+				{
+					"name": "Create Story",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "caption",
+									"value": "My story",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/user/stories",
+							"host": ["{{base_url}}"],
+							"path": ["user", "stories"]
+						}
+					}
+				},
+				{
+					"name": "Get Stories Feed",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/stories/feed",
+							"host": ["{{base_url}}"],
+							"path": ["user", "stories", "feed"]
+						}
+					}
+				},
+				{
+					"name": "View Story",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/stories/:storyId/view",
+							"host": ["{{base_url}}"],
+							"path": ["user", "stories", ":storyId", "view"],
+							"variable": [
+								{
+									"key": "storyId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Story",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/stories/:storyId",
+							"host": ["{{base_url}}"],
+							"path": ["user", "stories", ":storyId"],
+							"variable": [
+								{
+									"key": "storyId",
+									"value": ""
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Social",
+			"item": [
+				{
+					"name": "Follow User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/social/follow/:userId",
+							"host": ["{{base_url}}"],
+							"path": ["user", "social", "follow", ":userId"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Unfollow User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/social/unfollow/:userId",
+							"host": ["{{base_url}}"],
+							"path": ["user", "social", "unfollow", ":userId"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Followers",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/social/followers?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["user", "social", "followers"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Following",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/social/following?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["user", "social", "following"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Search Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/search?q=john&page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "search"],
+							"query": [
+								{
+									"key": "q",
+									"value": "john"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Chat & Messages",
+			"item": [
+				{
+					"name": "Create/Get Chat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"participantId\": \"{{other_user_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats"]
+						},
+						"description": "Create a new chat or get existing chat with a user"
+					}
+				},
+				{
+					"name": "Get My Chats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Chat Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/:chatId",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", ":chatId"],
+							"variable": [
+								{
+									"key": "chatId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"chatId\": \"{{chat_id}}\",\n  \"content\": \"Hello!\",\n  \"type\": \"text\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a text message. Type can be: text, image, video, audio, file"
+					}
+				},
+				{
+					"name": "Get Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/chat/:chatId?page=1&limit=50",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "chat", ":chatId"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							],
+							"variable": [
+								{
+									"key": "chatId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Mark Messages as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/chat/:chatId/read",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "chat", ":chatId", "read"],
+							"variable": [
+								{
+									"key": "chatId",
+									"value": ""
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Calls",
+			"item": [
+				{
+					"name": "Get Call History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Dating",
+			"item": [
+				{
+					"name": "Get Dating Profile",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/profile",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "profile"]
+						}
+					}
+				},
+				{
+					"name": "Get Dating Profiles (Discover)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/profiles?page=1&limit=10",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "profiles"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Like Dating Profile",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/profiles/:userId/like",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "profiles", ":userId", "like"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Dislike Dating Profile",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/profiles/:userId/dislike",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "profiles", ":userId", "dislike"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Matches",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/matches?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "matches"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Dating Preferences",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/preferences",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "preferences"]
+						}
+					}
+				},
+				{
+					"name": "Update Dating Preferences",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"ageRange\": {\n    \"min\": 18,\n    \"max\": 35\n  },\n  \"gender\": [\"female\"],\n  \"location\": {\n    \"lat\": 19.0760,\n    \"lng\": 72.8777,\n    \"radius\": 50\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/dating/preferences",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "preferences"]
+						}
+					}
+				},
+				{
+					"name": "Upload Dating Photo",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/user/dating/photos",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "photos"]
+						}
+					}
+				},
+				{
+					"name": "Toggle Dating Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/dating/toggle",
+							"host": ["{{base_url}}"],
+							"path": ["user", "dating", "toggle"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Notifications",
+			"item": [
+				{
+					"name": "Get Notifications",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/notifications?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "notifications"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Mark Notification as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/notifications/:notificationId/read",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "notifications", ":notificationId", "read"],
+							"variable": [
+								{
+									"key": "notificationId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Notification Preferences",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/notification-preferences",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "notification-preferences"]
+						}
+					}
+				},
+				{
+					"name": "Update Notification Preferences",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pushEnabled\": true,\n  \"emailEnabled\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/notification-preferences",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "notification-preferences"]
+						}
+					}
+				},
+				{
+					"name": "Register FCM Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"fcmToken\": \"your-fcm-token-here\",\n  \"deviceId\": \"device-123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/notification/fcm-token",
+							"host": ["{{base_url}}"],
+							"path": ["api", "notification", "fcm-token"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin Authentication",
+			"item": [
+				{
+					"name": "Admin Send OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"9999999999\",\n  \"countryCode\": \"+91\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin-auth/send-otp",
+							"host": ["{{base_url}}"],
+							"path": ["admin-auth", "send-otp"]
+						},
+						"description": "Development: Use phone 9999999999, OTP: 123456"
+					}
+				},
+				{
+					"name": "Admin Verify OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.accessToken) {",
+									"        pm.environment.set(\"admin_token\", jsonData.data.accessToken);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"9999999999\",\n  \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin-auth/verify-otp",
+							"host": ["{{base_url}}"],
+							"path": ["admin-auth", "verify-otp"]
+						},
+						"description": "Auto-saves admin token to environment"
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin Management",
+			"item": [
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/users?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "users"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get User Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/admin/users/:userId",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "users", ":userId"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": ""
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update User Status",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{admin_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isActive\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/users/:userId/status",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "users", ":userId", "status"],
+							"variable": [
+								{
+									"key": "userId",
+									"value": ""
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "SubAdmin Authentication",
+			"item": [
+				{
+					"name": "SubAdmin Send OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"8888888888\",\n  \"countryCode\": \"+91\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin-auth/send-otp",
+							"host": ["{{base_url}}"],
+							"path": ["admin-auth", "send-otp"]
+						},
+						"description": "Development: Use phone 8888888888, OTP: 123456"
+					}
+				},
+				{
+					"name": "SubAdmin Verify OTP",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.accessToken) {",
+									"        pm.environment.set(\"subadmin_token\", jsonData.data.accessToken);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phoneNumber\": \"8888888888\",\n  \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin-auth/verify-otp",
+							"host": ["{{base_url}}"],
+							"path": ["admin-auth", "verify-otp"]
+						},
+						"description": "Auto-saves subadmin token to environment"
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [""]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [""]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		}
+	]
+}
+

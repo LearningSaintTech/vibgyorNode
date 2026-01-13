@@ -1,0 +1,1569 @@
+{
+	"info": {
+		"_postman_id": "social-chat-api-collection",
+		"name": "Social Chat API - Complete Collection",
+		"description": "Complete API collection for Social Chat module covering Chats, Messages, Calls, Message Requests, and User Status",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "vibgyor-node"
+	},
+	"item": [
+		{
+			"name": "Chat Management",
+			"item": [
+				{
+					"name": "Create or Get Chat",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data._id) {",
+									"        pm.environment.set(\"chat_id\", jsonData.data._id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"otherUserId\": \"{{other_user_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats"]
+						},
+						"description": "Create a new chat or get existing chat with another user. Auto-saves chat_id to environment."
+					}
+				},
+				{
+					"name": "Get My Chats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						},
+						"description": "Get all chats for the current user with pagination"
+					}
+				},
+				{
+					"name": "Search Chats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats?q=john&page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats"],
+							"query": [
+								{
+									"key": "q",
+									"value": "john",
+									"description": "Search query"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						},
+						"description": "Search chats by participant name. Can also use 'search' parameter instead of 'q'"
+					}
+				},
+				{
+					"name": "Get Chat Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/{{chat_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", "{{chat_id}}"]
+						},
+						"description": "Get detailed information about a specific chat"
+					}
+				},
+				{
+					"name": "Update Chat Settings",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isArchived\": false,\n  \"isPinned\": true,\n  \"isMuted\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/{{chat_id}}/settings",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", "{{chat_id}}", "settings"]
+						},
+						"description": "Update chat settings: archive, pin, or mute a chat"
+					}
+				},
+				{
+					"name": "Delete Chat",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/{{chat_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", "{{chat_id}}"]
+						},
+						"description": "Delete/archive a chat (soft delete)"
+					}
+				},
+				{
+					"name": "Get Chat Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/stats",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", "stats"]
+						},
+						"description": "Get chat statistics for the current user"
+					}
+				},
+				{
+					"name": "Join Chat Room",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/{{chat_id}}/join",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", "{{chat_id}}", "join"]
+						},
+						"description": "Join chat room for real-time updates (Socket.IO)"
+					}
+				},
+				{
+					"name": "Leave Chat Room",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/chats/{{chat_id}}/leave",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "chats", "{{chat_id}}", "leave"]
+						},
+						"description": "Leave chat room (Socket.IO)"
+					}
+				}
+			]
+		},
+		{
+			"name": "Messages",
+			"item": [
+				{
+					"name": "Send Text Message",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data._id) {",
+									"        pm.environment.set(\"message_id\", jsonData.data._id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"chatId\": \"{{chat_id}}\",\n  \"type\": \"text\",\n  \"content\": \"Hello! This is a test message.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a text message. Auto-saves message_id to environment."
+					}
+				},
+				{
+					"name": "Send Image Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "chatId",
+									"value": "{{chat_id}}",
+									"type": "text"
+								},
+								{
+									"key": "type",
+									"value": "image",
+									"type": "text"
+								},
+								{
+									"key": "content",
+									"value": "Check out this image!",
+									"type": "text"
+								},
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send an image message with file upload"
+					}
+				},
+				{
+					"name": "Send Video Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "chatId",
+									"value": "{{chat_id}}",
+									"type": "text"
+								},
+								{
+									"key": "type",
+									"value": "video",
+									"type": "text"
+								},
+								{
+									"key": "content",
+									"value": "Check out this video!",
+									"type": "text"
+								},
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a video message with file upload"
+					}
+				},
+				{
+					"name": "Send Audio Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "chatId",
+									"value": "{{chat_id}}",
+									"type": "text"
+								},
+								{
+									"key": "type",
+									"value": "audio",
+									"type": "text"
+								},
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send an audio message with file upload"
+					}
+				},
+				{
+					"name": "Send Voice Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "chatId",
+									"value": "{{chat_id}}",
+									"type": "text"
+								},
+								{
+									"key": "type",
+									"value": "voice",
+									"type": "text"
+								},
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a voice recording message"
+					}
+				},
+				{
+					"name": "Send Document Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "chatId",
+									"value": "{{chat_id}}",
+									"type": "text"
+								},
+								{
+									"key": "type",
+									"value": "document",
+									"type": "text"
+								},
+								{
+									"key": "content",
+									"value": "Document file",
+									"type": "text"
+								},
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a document/file message"
+					}
+				},
+				{
+					"name": "Send Location Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"chatId\": \"{{chat_id}}\",\n  \"type\": \"location\",\n  \"location\": {\n    \"latitude\": 19.0760,\n    \"longitude\": 72.8777,\n    \"address\": \"Mumbai, Maharashtra, India\",\n    \"name\": \"Mumbai\",\n    \"placeType\": \"city\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a location message"
+					}
+				},
+				{
+					"name": "Send Reply Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"chatId\": \"{{chat_id}}\",\n  \"type\": \"text\",\n  \"content\": \"This is a reply\",\n  \"replyTo\": \"{{message_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a reply to another message"
+					}
+				},
+				{
+					"name": "Send One-View Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"chatId\": \"{{chat_id}}\",\n  \"type\": \"text\",\n  \"content\": \"This message will disappear after viewing\",\n  \"isOneView\": true,\n  \"oneViewExpirationHours\": 24\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages"]
+						},
+						"description": "Send a one-view message that disappears after viewing (max 7 days expiration)"
+					}
+				},
+				{
+					"name": "Get Chat Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/chat/{{chat_id}}?page=1&limit=50",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "chat", "{{chat_id}}"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "50"
+								}
+							]
+						},
+						"description": "Get messages in a chat with pagination. Automatically marks messages as read."
+					}
+				},
+				{
+					"name": "Mark Messages as Read",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/chat/{{chat_id}}/read",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "chat", "{{chat_id}}", "read"]
+						},
+						"description": "Manually mark all messages in a chat as read"
+					}
+				},
+				{
+					"name": "Get Chat Media",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/chat/{{chat_id}}/media?type=image&page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "chat", "{{chat_id}}", "media"],
+							"query": [
+								{
+									"key": "type",
+									"value": "image",
+									"description": "Optional: audio, video, image, document, gif, voice"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						},
+						"description": "Get media messages in a chat, optionally filtered by type"
+					}
+				},
+				{
+					"name": "Search Messages in Chat",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/chat/{{chat_id}}/search?q=hello&page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "chat", "{{chat_id}}", "search"],
+							"query": [
+								{
+									"key": "q",
+									"value": "hello",
+									"description": "Search query"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								}
+							]
+						},
+						"description": "Search messages within a specific chat"
+					}
+				},
+				{
+					"name": "Get Message Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}"]
+						},
+						"description": "Get detailed information about a specific message"
+					}
+				},
+				{
+					"name": "Edit Message",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"content\": \"Edited message content\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}"]
+						},
+						"description": "Edit a message (only text messages can be edited)"
+					}
+				},
+				{
+					"name": "Delete Message",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}"]
+						},
+						"description": "Delete a message"
+					}
+				},
+				{
+					"name": "Add Reaction to Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"emoji\": \"👍\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}/reactions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}", "reactions"]
+						},
+						"description": "Add an emoji reaction to a message"
+					}
+				},
+				{
+					"name": "Remove Reaction from Message",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}/reactions",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}", "reactions"]
+						},
+						"description": "Remove your reaction from a message"
+					}
+				},
+				{
+					"name": "Forward Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"targetChatId\": \"{{target_chat_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}/forward",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}", "forward"]
+						},
+						"description": "Forward a message to another chat"
+					}
+				},
+				{
+					"name": "Mark One-View Message as Viewed",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/messages/{{message_id}}/view",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "messages", "{{message_id}}", "view"]
+						},
+						"description": "Mark a one-view message as viewed (triggers deletion)"
+					}
+				}
+			]
+		},
+		{
+			"name": "Calls",
+			"item": [
+				{
+					"name": "Initiate Call",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data.callId) {",
+									"        pm.environment.set(\"call_id\", jsonData.data.callId);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"chatId\": \"{{chat_id}}\",\n  \"type\": \"audio\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls"]
+						},
+						"description": "Initiate a new audio or video call. Type: 'audio' or 'video'. Auto-saves call_id to environment."
+					}
+				},
+				{
+					"name": "Get Call Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/{{call_id}}/status",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "{{call_id}}", "status"]
+						},
+						"description": "Get the current status of a call"
+					}
+				},
+				{
+					"name": "Accept Call",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"signalingData\": {}\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/{{call_id}}/accept",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "{{call_id}}", "accept"]
+						},
+						"description": "Accept an incoming call"
+					}
+				},
+				{
+					"name": "Reject Call",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Busy\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/{{call_id}}/reject",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "{{call_id}}", "reject"]
+						},
+						"description": "Reject an incoming call"
+					}
+				},
+				{
+					"name": "End Call",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"user_ended\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/{{call_id}}/end",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "{{call_id}}", "end"]
+						},
+						"description": "End an active call. Reason options: user_ended, network_error, timeout, device_error, permission_denied, user_busy, user_offline, system_error"
+					}
+				},
+				{
+					"name": "Update Call Settings",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"isMuted\": false,\n  \"isVideoEnabled\": true,\n  \"isScreenSharing\": false,\n  \"isSpeakerEnabled\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/{{call_id}}/settings",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "{{call_id}}", "settings"]
+						},
+						"description": "Update call settings during an active call"
+					}
+				},
+				{
+					"name": "Handle WebRTC Signaling",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"offer\",\n  \"data\": {\n    \"sdp\": \"...\",\n    \"type\": \"offer\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/{{call_id}}/signaling",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "{{call_id}}", "signaling"]
+						},
+						"description": "Handle WebRTC signaling (offer, answer, ice-candidate)"
+					}
+				},
+				{
+					"name": "Get Call History for Chat",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/chat/{{chat_id}}/history?page=1&limit=20",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "chat", "{{chat_id}}", "history"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "20"
+								},
+								{
+									"key": "type",
+									"value": "audio",
+									"description": "Optional: audio or video"
+								}
+							]
+						},
+						"description": "Get call history for a specific chat"
+					}
+				},
+				{
+					"name": "Get Active Call for Chat",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/chat/{{chat_id}}/active",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "chat", "{{chat_id}}", "active"]
+						},
+						"description": "Get the active call for a chat (if any)"
+					}
+				},
+				{
+					"name": "Get Call Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/stats?startDate=2024-01-01&endDate=2024-12-31",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "stats"],
+							"query": [
+								{
+									"key": "startDate",
+									"value": "2024-01-01",
+									"description": "Optional: YYYY-MM-DD"
+								},
+								{
+									"key": "endDate",
+									"value": "2024-12-31",
+									"description": "Optional: YYYY-MM-DD"
+								}
+							]
+						},
+						"description": "Get call statistics for the user"
+					}
+				},
+				{
+					"name": "Force Cleanup Calls",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/user/calls/chat/{{chat_id}}/cleanup",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "user", "calls", "chat", "{{chat_id}}", "cleanup"]
+						},
+						"description": "Force cleanup calls for a chat (admin/debugging)"
+					}
+				}
+			]
+		},
+		{
+			"name": "Message Requests",
+			"item": [
+				{
+					"name": "Send Message Request",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200 || pm.response.code === 201) {",
+									"    const jsonData = pm.response.json();",
+									"    if (jsonData.data && jsonData.data._id) {",
+									"        pm.environment.set(\"message_request_id\", jsonData.data._id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Hi, I'd like to connect with you!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/{{other_user_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "{{other_user_id}}"]
+						},
+						"description": "Send a message request to another user. Auto-saves request_id to environment."
+					}
+				},
+				{
+					"name": "Get Pending Requests",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/pending",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "pending"]
+						},
+						"description": "Get all pending message requests received by the user"
+					}
+				},
+				{
+					"name": "Get Sent Requests",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/sent",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "sent"]
+						},
+						"description": "Get all message requests sent by the user"
+					}
+				},
+				{
+					"name": "Accept Message Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/{{message_request_id}}/accept",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "{{message_request_id}}", "accept"]
+						},
+						"description": "Accept a message request (creates chat automatically)"
+					}
+				},
+				{
+					"name": "Reject Message Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/{{message_request_id}}/reject",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "{{message_request_id}}", "reject"]
+						},
+						"description": "Reject a message request"
+					}
+				},
+				{
+					"name": "Delete Message Request",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/{{message_request_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "{{message_request_id}}"]
+						},
+						"description": "Delete a message request"
+					}
+				},
+				{
+					"name": "Get Request Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/{{message_request_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "{{message_request_id}}"]
+						},
+						"description": "Get detailed information about a message request"
+					}
+				},
+				{
+					"name": "Get Request Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/stats",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "stats"]
+						},
+						"description": "Get statistics about message requests"
+					}
+				},
+				{
+					"name": "Get Request Between Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/message-requests/between/{{other_user_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["user", "message-requests", "between", "{{other_user_id}}"]
+						},
+						"description": "Get message request between current user and another user"
+					}
+				}
+			]
+		},
+		{
+			"name": "User Status",
+			"item": [
+				{
+					"name": "Update User Status",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"online\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/status",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status"]
+						},
+						"description": "Update user status. Options: online, offline, away, busy"
+					}
+				},
+				{
+					"name": "Get User Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/status/{{other_user_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "{{other_user_id}}"]
+						},
+						"description": "Get status of a specific user"
+					}
+				},
+				{
+					"name": "Get Online Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/status/online",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "online"]
+						},
+						"description": "Get list of online users"
+					}
+				},
+				{
+					"name": "Get Recently Active Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/status/recent",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "recent"]
+						},
+						"description": "Get list of recently active users"
+					}
+				},
+				{
+					"name": "Get User Statuses (Batch)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"userIds\": [\"{{other_user_id}}\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/status/batch",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "batch"]
+						},
+						"description": "Get statuses for multiple users at once"
+					}
+				},
+				{
+					"name": "Update Privacy Settings",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"showOnlineStatus\": true,\n  \"showLastSeen\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/status/privacy",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "privacy"]
+						},
+						"description": "Update privacy settings for status visibility"
+					}
+				},
+				{
+					"name": "Get Status Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{user_access_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/user/status/stats",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "stats"]
+						},
+						"description": "Get status statistics"
+					}
+				},
+				{
+					"name": "Set Offline Status",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"{{user_access_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/user/status/offline",
+							"host": ["{{base_url}}"],
+							"path": ["user", "status", "offline"]
+						},
+						"description": "Set user status to offline (used by sendBeacon API)"
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [""]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [""]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		}
+	]
+}
+

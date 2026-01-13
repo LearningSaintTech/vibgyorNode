@@ -97,6 +97,31 @@ function addIsSaved(post, savedPostIds = []) {
   return post;
 }
 
+// Helper function to add lastComment field (newest comment) to a post
+function addLastComment(post) {
+  // If lastComment is already set, use it
+  if (post.lastComment !== undefined) {
+    return post;
+  }
+
+  // Get the newest comment from the comments array
+  if (post.comments && Array.isArray(post.comments) && post.comments.length > 0) {
+    // Sort comments by createdAt descending to get the newest first
+    const sortedComments = [...post.comments].sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+      const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+      return dateB - dateA; // Descending order (newest first)
+    });
+    
+    // Get the newest comment (first in sorted array)
+    post.lastComment = sortedComments[0];
+  } else {
+    post.lastComment = null;
+  }
+
+  return post;
+}
+
 // Helper function to check if a post should be visible based on privacy settings
 // Returns true if post should be visible, false if it should be hidden
 function isPostVisible(post, currentUserId, followingIds = []) {
@@ -148,6 +173,9 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
 
   // Add isSaved field
   addIsSaved(postObj, savedPostIds);
+
+  // Add lastComment field (newest comment)
+  addLastComment(postObj);
 
   // DEBUG: Log original post media structure
   const postId = postObj._id || postObj.id || 'unknown';
@@ -654,24 +682,13 @@ async function getUserPosts(req, res) {
       savedPostIds = currentUser?.savedPosts?.map(id => id.toString()) || [];
     }
 
-    // Add lastComment field and transform media for each post
+    // Transform media for each post (includes isLiked, isSaved, and lastComment)
     console.log(`[POST][USER] Transforming ${posts.length} posts for user ${userId}`);
     const postsWithLastComment = posts.map(post => {
       // `posts` is already lean() (plain objects), so avoid calling toObject()
       const postObj = { ...post };
 
-      // Get the newest comment (comments are sorted by createdAt descending in the model)
-      if (postObj.comments && postObj.comments.length > 0) {
-        // Sort comments by createdAt descending to get the newest first
-        const sortedComments = [...postObj.comments].sort((a, b) =>
-          new Date(b.createdAt) - new Date(a.createdAt)
-        );
-        postObj.lastComment = sortedComments[0];
-      } else {
-        postObj.lastComment = null;
-      }
-
-      // Transform media into organized structure (includes isLiked and isSaved)
+      // Transform media into organized structure (includes isLiked, isSaved, and lastComment)
       return transformPostMedia(postObj, currentUserId, savedPostIds);
     });
 
@@ -1010,18 +1027,6 @@ async function getPost(req, res) {
     // Add view if user is not the author
     if (post.author._id.toString() !== userId) {
       await post.addView(userId);
-    }
-
-    // Add lastComment field (showing only the newest comment)
-    const postObj = post.toObject();
-    if (postObj.comments && postObj.comments.length > 0) {
-      // Sort comments by createdAt descending to get the newest first
-      const sortedComments = [...postObj.comments].sort((a, b) =>
-        new Date(b.createdAt) - new Date(a.createdAt)
-      );
-      postObj.lastComment = sortedComments[0];
-    } else {
-      postObj.lastComment = null;
     }
 
     // Get user's saved posts for isSaved flag
@@ -2354,6 +2359,11 @@ module.exports = {
       const savedIds = user.savedPosts || [];
       const posts = await Post.find({ _id: { $in: savedIds }, status: { $ne: 'deleted' } })
         .populate('author', 'username fullName profilePictureUrl isVerified privacySettings')
+        .populate({
+          path: 'comments.user',
+          select: 'username fullName profilePictureUrl',
+          options: { limit: 5 } // Only populate first 5 comments for list view
+        })
         .populate('likes.user', 'username fullName')
         .sort({ publishedAt: -1 })
         .skip((page - 1) * limit)
@@ -2475,20 +2485,9 @@ module.exports = {
         savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
       }
 
-      // Transform media for all archived posts (includes isLiked and isSaved)
+      // Transform media for all archived posts (includes isLiked, isSaved, and lastComment)
       const transformedPosts = posts.map(post => {
         const postObj = post.toObject();
-
-        // Add lastComment field
-        if (postObj.comments && postObj.comments.length > 0) {
-          const sortedComments = [...postObj.comments].sort((a, b) =>
-            new Date(b.createdAt) - new Date(a.createdAt)
-          );
-          postObj.lastComment = sortedComments[0];
-        } else {
-          postObj.lastComment = null;
-        }
-
         return transformPostMedia(postObj, userId, savedPostIds);
       });
 

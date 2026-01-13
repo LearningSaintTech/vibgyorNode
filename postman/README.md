@@ -1,9 +1,79 @@
-# Admin Profile API - Postman Collection
+# VibgyorNode API - Postman Collections
 
-This directory contains Postman collections and environments for testing the Admin Profile API.
+This directory contains Postman collections and environments for testing the VibgyorNode API.
 
-## Files
+## 📦 Available Collections
 
+### 1. Complete API Collection (Recommended)
+- **VibgyorNode_API.postman_collection.json** - Complete collection with ALL API endpoints
+- **VibgyorNode_API.postman_environment.json** - Environment variables for local development
+- **POSTMAN_SETUP_GUIDE.md** - Comprehensive setup and usage guide
+
+**This is the main collection covering:**
+- User Authentication & Profile
+- Posts & Stories
+- Social Features (Follow, Search)
+- Chat & Messages
+- Dating Features
+- Notifications
+- Admin & SubAdmin Management
+- File Uploads
+- And more...
+
+👉 **Start here**: See `POSTMAN_SETUP_GUIDE.md` for detailed setup instructions.
+
+### 2. Social Chat API Collection (Focused)
+- **Social_Chat_API.postman_collection.json** - Complete collection for Social Chat module
+- **Social_Chat_API_README.md** - Detailed documentation for chat features
+
+**This focused collection covers ALL social chat endpoints:**
+- Chat Management (9 endpoints)
+- Messages (21 endpoints) - All message types, reactions, forwarding
+- Calls (11 endpoints) - Audio/video calls, WebRTC signaling
+- Message Requests (9 endpoints) - Request management
+- User Status (8 endpoints) - Online status, presence
+
+**Total: 58 endpoints** covering every aspect of social chat functionality.
+
+👉 **For chat testing**: See `Social_Chat_API_README.md` for detailed chat-specific documentation.
+
+### 2. Admin Profile API (Legacy)
+- **Admin_Profile_API.postman_collection.json** - Admin profile management endpoints
+- **Admin_Profile_API.postman_environment.json** - Environment for admin profile API
+
+### 3. SubAdmin Profile API (Legacy)
+- **SubAdmin_Profile_API.postman_collection.json** - SubAdmin profile management endpoints
+- **SubAdmin_Profile_API.postman_environment.json** - Environment for SubAdmin profile API
+
+---
+
+## 🚀 Quick Start (Complete Collection)
+
+1. **Import Collection**:
+   - Open Postman → Import
+   - Select `VibgyorNode_API.postman_collection.json`
+   - Select `VibgyorNode_API.postman_environment.json`
+
+2. **Select Environment**:
+   - Choose "VibgyorNode API - Local" from dropdown
+
+3. **Authenticate**:
+   - Go to **User Authentication** → **Send OTP**
+   - Then **Verify OTP** (token auto-saves)
+
+4. **Start Testing**:
+   - All endpoints are organized in folders
+   - Tokens are automatically saved on authentication
+
+For detailed instructions, see **POSTMAN_SETUP_GUIDE.md**.
+
+---
+
+## 📋 Legacy Collections
+
+### Admin Profile API
+
+**Files:**
 1. **Admin_Profile_API.postman_collection.json** - Main Postman collection with all endpoints
 2. **Admin_Profile_API.postman_environment.json** - Environment variables for local development
 

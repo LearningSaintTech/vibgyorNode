@@ -490,6 +490,57 @@ class FeedAlgorithmService {
               ]
             }
           }
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'comments.user',
+            foreignField: '_id',
+            as: 'commentUsers',
+            pipeline: [
+              {
+                $project: {
+                  username: 1,
+                  fullName: 1,
+                  profilePictureUrl: 1
+                }
+              }
+            ]
+          }
+        },
+        {
+          $addFields: {
+            'comments': {
+              $map: {
+                input: { $ifNull: ['$comments', []] },
+                as: 'comment',
+                in: {
+                  $mergeObjects: [
+                    '$$comment',
+                    {
+                      user: {
+                        $arrayElemAt: [
+                          {
+                            $filter: {
+                              input: '$commentUsers',
+                              as: 'user',
+                              cond: { $eq: ['$$user._id', '$$comment.user'] }
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          $project: {
+            commentUsers: 0
+          }
         }
       ]);
 
@@ -610,6 +661,57 @@ class FeedAlgorithmService {
                 false
               ]
             }
+          }
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'comments.user',
+            foreignField: '_id',
+            as: 'commentUsers',
+            pipeline: [
+              {
+                $project: {
+                  username: 1,
+                  fullName: 1,
+                  profilePictureUrl: 1
+                }
+              }
+            ]
+          }
+        },
+        {
+          $addFields: {
+            'comments': {
+              $map: {
+                input: { $ifNull: ['$comments', []] },
+                as: 'comment',
+                in: {
+                  $mergeObjects: [
+                    '$$comment',
+                    {
+                      user: {
+                        $arrayElemAt: [
+                          {
+                            $filter: {
+                              input: '$commentUsers',
+                              as: 'user',
+                              cond: { $eq: ['$$user._id', '$$comment.user'] }
+                            }
+                          },
+                          0
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          $project: {
+            commentUsers: 0
           }
         }
       ]);
