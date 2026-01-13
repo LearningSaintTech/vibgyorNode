@@ -344,7 +344,7 @@ class FeedAlgorithmService {
             from: 'users',
             localField: 'comments.user',
             foreignField: '_id',
-            as: 'comments.user',
+            as: 'commentUsers',
             pipeline: [
               {
                 $project: {
@@ -357,11 +357,56 @@ class FeedAlgorithmService {
           }
         },
         {
+          $addFields: {
+            'comments': {
+              $cond: {
+                if: { $isArray: '$comments' },
+                then: {
+                  $map: {
+                    input: '$comments',
+                    as: 'comment',
+                    in: {
+                      $mergeObjects: [
+                        '$$comment',
+                        {
+                          user: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: '$commentUsers',
+                                  as: 'user',
+                                  cond: {
+                                    $or: [
+                                      { $eq: ['$$user._id', '$$comment.user'] },
+                                      { $eq: [{ $toString: '$$user._id' }, { $toString: '$$comment.user' }] }
+                                    ]
+                                  }
+                                }
+                              },
+                              0
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                else: []
+              }
+            }
+          }
+        },
+        {
+          $project: {
+            commentUsers: 0
+          }
+        },
+        {
           $lookup: {
             from: 'users',
             localField: 'likes.user',
             foreignField: '_id',
-            as: 'likes.user',
+            as: 'likeUsers',
             pipeline: [
               {
                 $project: {
@@ -370,6 +415,51 @@ class FeedAlgorithmService {
                 }
               }
             ]
+          }
+        },
+        {
+          $addFields: {
+            'likes': {
+              $cond: {
+                if: { $isArray: '$likes' },
+                then: {
+                  $map: {
+                    input: '$likes',
+                    as: 'like',
+                    in: {
+                      $mergeObjects: [
+                        '$$like',
+                        {
+                          user: {
+                            $arrayElemAt: [
+                              {
+                                $filter: {
+                                  input: '$likeUsers',
+                                  as: 'user',
+                                  cond: {
+                                    $or: [
+                                      { $eq: ['$$user._id', '$$like.user'] },
+                                      { $eq: [{ $toString: '$$user._id' }, { $toString: '$$like.user' }] }
+                                    ]
+                                  }
+                                }
+                              },
+                              0
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                else: []
+              }
+            }
+          }
+        },
+        {
+          $project: {
+            likeUsers: 0
           }
         }
       ]);

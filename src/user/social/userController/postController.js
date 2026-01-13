@@ -104,17 +104,42 @@ function addLastComment(post) {
     return post;
   }
 
-  // Get the newest comment from the comments array
+  let commentsArray = null;
+
+  // Handle different comment structures
   if (post.comments && Array.isArray(post.comments) && post.comments.length > 0) {
-    // Sort comments by createdAt descending to get the newest first
-    const sortedComments = [...post.comments].sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
-      const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
-      return dateB - dateA; // Descending order (newest first)
-    });
-    
-    // Get the newest comment (first in sorted array)
-    post.lastComment = sortedComments[0];
+    // Normal array structure
+    commentsArray = post.comments;
+  } else if (post.comments && typeof post.comments === 'object' && !Array.isArray(post.comments)) {
+    // Handle malformed structure from aggregation (comments.user)
+    // This happens when aggregation uses as: 'comments.user' which overwrites the array
+    // We can't get full comment data from this, so set to null
+    post.lastComment = null;
+    return post;
+  }
+
+  // Get the newest comment from the comments array
+  if (commentsArray && commentsArray.length > 0) {
+    // Filter out invalid comments
+    const validComments = commentsArray.filter(comment => 
+      comment && 
+      typeof comment === 'object' && 
+      comment.createdAt
+    );
+
+    if (validComments.length > 0) {
+      // Sort comments by createdAt descending to get the newest first
+      const sortedComments = [...validComments].sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+        const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+        return dateB - dateA; // Descending order (newest first)
+      });
+      
+      // Get the newest comment (first in sorted array)
+      post.lastComment = sortedComments[0];
+    } else {
+      post.lastComment = null;
+    }
   } else {
     post.lastComment = null;
   }
