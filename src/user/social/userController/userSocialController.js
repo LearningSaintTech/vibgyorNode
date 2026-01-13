@@ -499,7 +499,7 @@ async function removeFollower(req, res) {
 					status: 'accepted'
 				},
 				{
-					status: 'pending',
+					status: 'none',
 					respondedAt: null
 				}
 			)
