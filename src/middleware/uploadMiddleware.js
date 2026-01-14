@@ -6,7 +6,9 @@ const IMAGE_MIME = [
 	'image/jpg', // Some systems use jpg instead of jpeg
 	'image/png',
 	'image/webp',
-	'image/gif'
+	'image/gif',
+	'image/svg+xml',
+	'image/svg'
 ];
 
 const ALL_MIME = [

@@ -1,0 +1,409 @@
+{
+	"info": {
+		"_postman_id": "catalog-api-collection-2024",
+		"name": "Catalog API - With S3 File Upload",
+		"description": "Postman collection for Catalog Management API endpoints with S3 file upload support for SVG icons",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get Catalog",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/user/catalog",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog"
+					]
+				},
+				"description": "Get all catalog data. No authentication required."
+			},
+			"response": []
+		},
+		{
+			"name": "Get Specific List",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/user/catalog/:listType",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog",
+						":listType"
+					],
+					"variable": [
+						{
+							"key": "listType",
+							"value": "interests",
+							"description": "Options: gender, pronouns, likes, interests"
+						}
+					]
+				},
+				"description": "Get a specific list from catalog. Valid listTypes: gender, pronouns, likes, interests"
+			},
+			"response": []
+		},
+		{
+			"name": "Create Catalog (JSON Only - No Files)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"genderList\": [\"male\", \"female\", \"non-binary\"],\n  \"pronounList\": [\"he/him\", \"she/her\", \"they/them\"],\n  \"likeList\": [\n    { \"name\": \"music\" },\n    { \"name\": \"travel\" },\n    { \"name\": \"dancing\" }\n  ],\n  \"interestList\": [\n    { \"name\": \"hiking\" },\n    { \"name\": \"photography\" },\n    { \"name\": \"dancing\" }\n  ],\n  \"hereForList\": [\"friendship\", \"dating\", \"networking\"],\n  \"languageList\": [\"English\", \"Hindi\", \"Spanish\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/user/catalog",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog"
+					]
+				},
+				"description": "Create a new catalog with JSON data only (no file uploads). Requires Admin or SubAdmin token.\n\nNote: To upload SVG files for likes/interests, use the \"Create Catalog (With S3 File Upload)\" endpoint instead."
+			},
+			"response": []
+		},
+		{
+			"name": "Create Catalog (With S3 File Upload - Likes & Interests Only)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "genderList",
+							"value": "[\"male\", \"female\", \"non-binary\"]",
+							"type": "text"
+						},
+						{
+							"key": "pronounList",
+							"value": "[\"he/him\", \"she/her\", \"they/them\"]",
+							"type": "text"
+						},
+						{
+							"key": "likeList",
+							"value": "[{\"name\": \"music\"}, {\"name\": \"travel\"}, {\"name\": \"dancing\"}]",
+							"type": "text",
+							"description": "Array of likes. Each item can have an optional SVG file uploaded (e.g., 'dancing.svg' for 'dancing' item)"
+						},
+						{
+							"key": "interestList",
+							"value": "[{\"name\": \"hiking\"}, {\"name\": \"photography\"}, {\"name\": \"dancing\"}]",
+							"type": "text",
+							"description": "Array of interests. Each item can have an optional SVG file uploaded (e.g., 'dancing.svg' for 'dancing' item)"
+						},
+						{
+							"key": "hereForList",
+							"value": "[\"friendship\", \"dating\", \"networking\"]",
+							"type": "text"
+						},
+						{
+							"key": "languageList",
+							"value": "[\"English\", \"Hindi\", \"Spanish\"]",
+							"type": "text"
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "SVG files for likes/interests ONLY. File name must match item name (e.g., 'dancing.svg' for 'dancing' item). Only likes and interests support SVG uploads."
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "Add more SVG files as needed"
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "Add more SVG files as needed"
+						}
+					],
+					"options": {}
+				},
+				"url": {
+					"raw": "{{base_url}}/user/catalog",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog"
+					]
+				},
+				"description": "Create catalog with SVG file uploads for LIKES and INTERESTS ONLY.\n\n**IMPORTANT:**\n- SVG uploads are ONLY supported for `likeList` and `interestList` arrays\n- Other fields (genderList, pronounList, hereForList, languageList) do NOT support file uploads\n\n**File Upload Process:**\n1. Add items to `likeList` or `interestList` arrays (e.g., `{\"name\": \"dancing\"}`)\n2. Upload SVG file with matching name (e.g., `dancing.svg`)\n3. File is automatically uploaded to S3 and `svgUrl` is added to the item\n\n**Example:**\n- Item: `{\"name\": \"dancing\"}` in likeList\n- Upload file: `dancing.svg`\n- Result: `{\"name\": \"dancing\", \"svgUrl\": \"https://s3.../dancing.svg\"}`\n\n**File Naming:**\n- File name (without extension) must match item name exactly (case-insensitive)\n- Only SVG files are supported (`image/svg+xml` or `image/svg`)\n- Files that don't match any item names will be ignored"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Catalog (JSON Only - No Files)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"genderList\": [\"male\", \"female\", \"non-binary\", \"transgender\"],\n  \"pronounList\": [\"he/him\", \"she/her\", \"they/them\", \"he/they\"],\n  \"likeList\": [\n    { \"name\": \"music\" },\n    { \"name\": \"travel\" },\n    { \"name\": \"dancing\" },\n    { \"name\": \"fitness\" }\n  ],\n  \"interestList\": [\n    { \"name\": \"hiking\" },\n    { \"name\": \"photography\" },\n    { \"name\": \"dancing\" },\n    { \"name\": \"yoga\" }\n  ],\n  \"hereForList\": [\"friendship\", \"dating\", \"networking\", \"fun\"],\n  \"languageList\": [\"English\", \"Hindi\", \"Spanish\", \"French\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/user/catalog",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog"
+					]
+				},
+				"description": "Update entire catalog with JSON data only (no file uploads). Requires Admin or SubAdmin token.\n\nNote: To upload SVG files for likes/interests, use the \"Update Catalog (With S3 File Upload)\" endpoint instead."
+			},
+			"response": []
+		},
+		{
+			"name": "Update Catalog (With S3 File Upload - Likes & Interests Only)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "genderList",
+							"value": "[\"male\", \"female\", \"non-binary\", \"transgender\"]",
+							"type": "text"
+						},
+						{
+							"key": "pronounList",
+							"value": "[\"he/him\", \"she/her\", \"they/them\", \"he/they\"]",
+							"type": "text"
+						},
+						{
+							"key": "likeList",
+							"value": "[{\"name\": \"music\"}, {\"name\": \"travel\"}, {\"name\": \"dancing\"}, {\"name\": \"fitness\"}]",
+							"type": "text",
+							"description": "Array of likes. Upload SVG files matching item names (e.g., 'dancing.svg' for 'dancing')"
+						},
+						{
+							"key": "interestList",
+							"value": "[{\"name\": \"hiking\"}, {\"name\": \"photography\"}, {\"name\": \"dancing\"}, {\"name\": \"yoga\"}]",
+							"type": "text",
+							"description": "Array of interests. Upload SVG files matching item names (e.g., 'dancing.svg' for 'dancing')"
+						},
+						{
+							"key": "hereForList",
+							"value": "[\"friendship\", \"dating\", \"networking\", \"fun\"]",
+							"type": "text"
+						},
+						{
+							"key": "languageList",
+							"value": "[\"English\", \"Hindi\", \"Spanish\", \"French\"]",
+							"type": "text"
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "SVG files for likes/interests ONLY. File name must match item name (e.g., 'dancing.svg'). Only likes and interests support SVG uploads."
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "Add more SVG files as needed"
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "Add more SVG files as needed"
+						}
+					],
+					"options": {}
+				},
+				"url": {
+					"raw": "{{base_url}}/user/catalog",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog"
+					]
+				},
+				"description": "Update catalog with SVG file uploads for LIKES and INTERESTS ONLY.\n\n**IMPORTANT:**\n- SVG uploads are ONLY supported for `likeList` and `interestList` arrays\n- Other fields do NOT support file uploads\n\n**File Upload Process:**\n1. Update items in `likeList` or `interestList` arrays\n2. Upload SVG files with names matching item names\n3. Files are uploaded to S3 and `svgUrl` is added/updated for matching items\n4. Items without matching files keep their existing data\n\n**Example:**\n- Update item: `{\"name\": \"dancing\"}` in likeList\n- Upload file: `dancing.svg`\n- Result: Item gets `svgUrl` added/updated"
+			},
+			"response": []
+		},
+		{
+			"name": "Add Items to List (JSON Only)",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"listType\": \"interests\",\n  \"items\": [\"yoga\", \"art\", \"pets\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/user/catalog/add",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog",
+						"add"
+					]
+				},
+				"description": "Add items to a specific list. Valid listTypes: gender, pronouns, likes, interests. Requires Admin or SubAdmin token.\n\nNote: This endpoint does NOT support file uploads. Use Create/Update Catalog endpoints to add items with SVG files."
+			},
+			"response": []
+		},
+		{
+			"name": "Remove Items from List",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"listType\": \"interests\",\n  \"items\": [\"yoga\", \"art\"]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/user/catalog/remove",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog",
+						"remove"
+					]
+				},
+				"description": "Remove items from a specific list. Valid listTypes: gender, pronouns, likes, interests. Requires Admin or SubAdmin token."
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Catalog",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{admin_token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/user/catalog",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"user",
+						"catalog"
+					]
+				},
+				"description": "Delete the entire catalog. Requires Admin or SubAdmin token."
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		}
+	]
+}
+
