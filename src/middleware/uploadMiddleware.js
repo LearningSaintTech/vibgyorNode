@@ -162,7 +162,7 @@ const uploadWithThumbnails = multer({
 	limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES * 2 }
 }).fields([
 	{ name: 'files', maxCount: MAX_FILES },
-	{ name: 'thumbnails', maxCount: MAX_FILES }
+	{ name: 'thumbnails', maxCount: MAX_FILES },
 	{ name: 'files', maxCount: MAX_FILES },
 	{ name: 'thumbnails', maxCount: MAX_FILES }
 ]);
