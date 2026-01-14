@@ -14,9 +14,6 @@ const enhancedRealtimeService = require('./services/enhancedRealtimeService');
 // Unified /SubAdmin Auth Routes (Single endpoint for both)
 const unifiedAdminAuthRoutes = require('./admin/adminRoutes/unifiedAdminAuthRoutes');
 
-// Unified /SubAdmin Auth Routes (Single endpoint for both)
-const unifiedAdminAuthRoutes = require('./admin/adminRoutes/unifiedAdminAuthRoutes');
-
 // Legacy routes (keeping for backward compatibility)
 const adminRoutes = require('./admin/adminRoutes/adminAuthRoutes');
 const adminUserManagementRoutes = require('./admin/adminRoutes/adminUserManagementRoutes');
@@ -27,13 +24,8 @@ const adminAssociateRoutes = require("./admin/adminRoutes/subadminAssociateRoute
 const adminAnalyticsRoutes = require('./admin/adminRoutes/analyticsRoutes');
 const adminUserCountRoutes = require('./admin/adminRoutes/userCountRoutes');
 const adminUserStatisticsRoutes = require('./admin/adminRoutes/userStatisticsRoutes');
-const adminUserCountRoutes = require('./admin/adminRoutes/userCountRoutes');
-const adminUserStatisticsRoutes = require('./admin/adminRoutes/userStatisticsRoutes');
 const subAdminRoutes = require('./subAdmin/subAdminRoutes/subAdminAuthRoutes');
 const subAdminUserManagementRoutes = require('./subAdmin/subAdminRoutes/userManagementRoutes');
-const subdminVerifiedUserRoutes = require('./subAdmin/subAdminRoutes/subAdminVerifiedUserRoute');
-
-
 const subdminVerifiedUserRoutes = require('./subAdmin/subAdminRoutes/subAdminVerifiedUserRoute');
 
 
@@ -81,10 +73,6 @@ app.use(cors({
 		callback(null, true); // allow all origins
 	},
 	credentials: true
-	origin: (origin, callback) => {
-		callback(null, true); // allow all origins
-	},
-	credentials: true
 }));
 
 app.use(compressionMiddleware); // Add compression
@@ -100,13 +88,7 @@ app.use(responseTime); // Add response time logging
 app.use('/api/v1', (req, res, next) => {
 	req.apiVersion = 'v1';
 	next();
-	req.apiVersion = 'v1';
-	next();
 });
-
-// Unified Admin/SubAdmin Auth Routes (Single endpoint for both)
-// Phone: 9999999999 (admin), 8888888888 (subadmin) | OTP: 123456
-app.use('/admin-auth', unifiedAdminAuthRoutes);
 
 // Unified Admin/SubAdmin Auth Routes (Single endpoint for both)
 // Phone: 9999999999 (admin), 8888888888 (subadmin) | OTP: 123456
@@ -122,19 +104,9 @@ app.use('/admin', adminUserCountRoutes);
 app.use("/api/admin", adminUserRoutes);
 app.use('/admin', adminUserStatisticsRoutes);
 
-app.use('/admin', adminUserCountRoutes);
-app.use("/api/admin", adminUserRoutes);
-app.use('/admin', adminUserStatisticsRoutes);
-
 app.use('/subadmin', subAdminRoutes);
 app.use('/subadmin', subAdminUserManagementRoutes);
 app.use('/subadmin', subdminVerifiedUserRoutes);
-
-
-app.use('/admin', adminAssociateRoutes);
-
-app.use('/subadmin', subdminVerifiedUserRoutes);
-
 
 app.use('/admin', adminAssociateRoutes);
 
@@ -175,18 +147,6 @@ app.use('/api/notification', (req, res, next) => {
 	});
 	console.log('[APP] 🔍 Will route to notificationRoutes with path:', req.path);
 	next();
-	console.log('[APP] 🔍 Request to /api/notification:', {
-		method: req.method,
-		path: req.path,
-		url: req.url,
-		originalUrl: req.originalUrl,
-		hasBody: !!req.body,
-		bodyKeys: req.body ? Object.keys(req.body) : [],
-		hasAuth: !!req.headers.authorization,
-		authHeader: req.headers.authorization ? `${req.headers.authorization.substring(0, 30)}...` : 'MISSING'
-	});
-	console.log('[APP] 🔍 Will route to notificationRoutes with path:', req.path);
-	next();
 });
 
 app.use('/api/v1/notifications', notificationRoutes);
@@ -203,8 +163,6 @@ app.use('/api/v1/user', enhancedUserRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-	res.status(200).json({
-		status: 'ok',
 	res.status(200).json({
 		status: 'ok',
 		service: 'vibgyorNode',
@@ -280,13 +238,7 @@ let server;
 if (process.env.NODE_ENV === 'production') {
 	server = createServer(app);
 	console.log('🚀 Production mode - Using HTTP server (Render handles HTTPS)');
-	server = createServer(app);
-	console.log('🚀 Production mode - Using HTTP server (Render handles HTTPS)');
 } else {
-	// Local development - use HTTP for now (can enable HTTPS later)
-	server = createServer(app);
-	console.log('🌐 Local development - Using HTTP server');
-	console.log('💡 To enable HTTPS: run mkcert localhost 127.0.0.1 and restart server');
 	// Local development - use HTTP for now (can enable HTTPS later)
 	server = createServer(app);
 	console.log('🌐 Local development - Using HTTP server');

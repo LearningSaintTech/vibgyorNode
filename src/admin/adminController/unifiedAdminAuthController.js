@@ -2,7 +2,6 @@ const Admin = require('../adminModel/adminModel');
 const SubAdmin = require('../../subAdmin/subAdminModel/subAdminAuthModel');
 const ApiResponse = require('../../utils/apiResponse');
 const { signAccessToken, signRefreshToken } = require('../../utils/Jwt');
-<<<<<<< HEAD
 // 2Factor API integration
 const { 
 	twofactorService, 
@@ -11,8 +10,6 @@ const {
 	getBypassSessionId, 
 	isBypassOTP 
 } = require('../../services/twofactor');
-=======
->>>>>>> 143b7e2ca5cd001fbb94698c65125589df5db541
 
 // Fixed phone numbers for admin and subadmin
 const ADMIN_PHONE = '9999999999';
@@ -70,7 +67,6 @@ async function sendOtp(req, res) {
 		const now = Date.now();
 		if (adminOrSub.lastOtpSentAt && now - adminOrSub.lastOtpSentAt.getTime() < OTP_RESEND_WINDOW_MS) {
 			const waitMs = OTP_RESEND_WINDOW_MS - (now - adminOrSub.lastOtpSentAt.getTime());
-<<<<<<< HEAD
 			const waitSeconds = Math.ceil(waitMs / 1000);
 			return ApiResponse.custom(res, 429, {
 				success: false,
@@ -129,22 +125,6 @@ async function sendOtp(req, res) {
 			console.error('[UNIFIED_ADMIN_AUTH] ❌ 2Factor API error:', otpResult.data);
 			return ApiResponse.serverError(res, otpResult.data.message || 'Failed to send OTP');
 		}
-=======
-			return ApiResponse.tooMany(res, `Please wait ${Math.ceil(waitMs / 1000)}s before requesting a new OTP`, 'OTP_RATE_LIMIT');
-		}
-
-		adminOrSub.otpCode = HARD_CODED_OTP;
-		adminOrSub.otpExpiresAt = new Date(now + OTP_TTL_MS);
-		adminOrSub.lastOtpSentAt = new Date(now);
-		await adminOrSub.save();
-
-		console.log(`[UNIFIED_ADMIN_AUTH] OTP generated and saved for ${role}`);
-		return ApiResponse.success(res, { 
-			maskedPhone: adminOrSub.maskedPhone(), 
-			ttlSeconds: OTP_TTL_MS / 1000,
-			role: role 
-		}, 'OTP sent');
->>>>>>> 143b7e2ca5cd001fbb94698c65125589df5db541
 	} catch (err) {
 		console.error('[UNIFIED_ADMIN_AUTH] sendOtp error', err?.message || err);
 		return ApiResponse.serverError(res, 'Failed to send OTP');
@@ -177,7 +157,6 @@ async function verifyOtp(req, res) {
 			adminOrSub = await SubAdmin.findOne({ phoneNumber });
 		}
 
-<<<<<<< HEAD
 		if (!adminOrSub) {
 			return ApiResponse.unauthorized(res, 'Admin/SubAdmin not found', 'NOT_FOUND');
 		}
@@ -328,22 +307,6 @@ async function verifyOtp(req, res) {
 		console.log('[UNIFIED_ADMIN_AUTH] ✅ OTP verified via 2Factor API');
 		adminOrSub.isVerified = true;
 		adminOrSub.twoFactorSessionId = null;
-=======
-		if (!adminOrSub || !adminOrSub.otpCode || !adminOrSub.otpExpiresAt) {
-			return ApiResponse.unauthorized(res, 'OTP not requested', 'OTP_MISSING');
-		}
-
-		if (adminOrSub.otpCode !== otp) {
-			return ApiResponse.unauthorized(res, 'Invalid OTP', 'OTP_INVALID');
-		}
-
-		if (Date.now() > adminOrSub.otpExpiresAt.getTime()) {
-			return ApiResponse.unauthorized(res, 'OTP expired', 'OTP_EXPIRED');
-		}
-
-		// Clear OTP and update login info
-		adminOrSub.isVerified = true;
->>>>>>> 143b7e2ca5cd001fbb94698c65125589df5db541
 		adminOrSub.otpCode = null;
 		adminOrSub.otpExpiresAt = null;
 		adminOrSub.lastLoginAt = new Date();
@@ -367,11 +330,7 @@ async function verifyOtp(req, res) {
 			responseData.admin = {
 				id: adminOrSub._id,
 				phoneNumber: adminOrSub.phoneNumber,
-<<<<<<< HEAD
 				name: adminOrSub.firstName || adminOrSub.name || '',
-=======
-				name: adminOrSub.name,
->>>>>>> 143b7e2ca5cd001fbb94698c65125589df5db541
 				email: adminOrSub.email,
 				avatarUrl: adminOrSub.avatarUrl,
 				role: adminOrSub.role
@@ -401,7 +360,6 @@ async function verifyOtp(req, res) {
  * Unified resend OTP for both admin and subadmin
  */
 async function resendOtp(req, res) {
-<<<<<<< HEAD
 	try {
 		console.log('[UNIFIED_ADMIN_AUTH] resendOtp request received');
 		const { phoneNumber, countryCode = '+91' } = req.body || {};
@@ -488,10 +446,6 @@ async function resendOtp(req, res) {
 		console.error('[UNIFIED_ADMIN_AUTH] resendOtp error', err?.message || err);
 		return ApiResponse.serverError(res, 'Failed to resend OTP');
 	}
-=======
-	console.log('[UNIFIED_ADMIN_AUTH] resendOtp request received');
-	return sendOtp(req, res);
->>>>>>> 143b7e2ca5cd001fbb94698c65125589df5db541
 }
 
 module.exports = {
