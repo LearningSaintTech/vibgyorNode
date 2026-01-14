@@ -163,6 +163,8 @@ const uploadWithThumbnails = multer({
 }).fields([
 	{ name: 'files', maxCount: MAX_FILES },
 	{ name: 'thumbnails', maxCount: MAX_FILES }
+	{ name: 'files', maxCount: MAX_FILES },
+	{ name: 'thumbnails', maxCount: MAX_FILES }
 ]);
 
 module.exports = {

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # VibgyorNode API - Postman Collections
 
 This directory contains Postman collections and environments for testing the VibgyorNode API.
@@ -74,6 +75,14 @@ For detailed instructions, see **POSTMAN_SETUP_GUIDE.md**.
 ### Admin Profile API
 
 **Files:**
+=======
+# Admin Profile API - Postman Collection
+
+This directory contains Postman collections and environments for testing the Admin Profile API.
+
+## Files
+
+>>>>>>> 143b7e2ca5cd001fbb94698c65125589df5db541
 1. **Admin_Profile_API.postman_collection.json** - Main Postman collection with all endpoints
 2. **Admin_Profile_API.postman_environment.json** - Environment variables for local development
 
