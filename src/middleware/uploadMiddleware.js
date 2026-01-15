@@ -54,7 +54,7 @@ const ALL_MIME = [
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB default
 const MAX_MUSIC_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_DOCUMENT_SIZE = 25 * 1024 * 1024; // 25MB
-const MAX_FILES = 10;
+const MAX_FILES = 20;
 
 const storage = multer.memoryStorage();
 

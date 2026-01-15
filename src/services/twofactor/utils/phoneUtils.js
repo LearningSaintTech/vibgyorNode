@@ -4,7 +4,7 @@
 
 // Development bypass phone numbers
 const BYPASS_PHONES = {
-  USER: '+911234567890',
+  USER: '+917042456544',
   ADMIN: '9999999999',
   SUBADMIN: '8888888888'
 };
