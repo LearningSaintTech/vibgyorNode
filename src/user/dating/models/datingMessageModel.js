@@ -162,6 +162,11 @@ const datingMessageSchema = new Schema({
     default: false 
   },
   
+  deletedForEveryone: {
+    type: Boolean,
+    default: false
+  },
+  
   deletedBy: [{
     userId: {
       type: Schema.Types.ObjectId,
@@ -171,6 +176,11 @@ const datingMessageSchema = new Schema({
     deletedAt: { 
       type: Date, 
       default: Date.now
+    },
+    // Track deletion type for each user
+    deletedForEveryone: {
+      type: Boolean,
+      default: false
     }
   }],
 
@@ -293,17 +303,49 @@ datingMessageSchema.pre('save', function(next) {
 });
 
 // Static methods
-datingMessageSchema.statics.getChatMessages = async function(chatId, page = 1, limit = 50, userId = null) {
+datingMessageSchema.statics.getChatMessages = async function(chatId, page = 1, limit = 50, userId = null, deletedAt = null) {
   try {
     const skip = (page - 1) * limit;
     
+    // Build query - include messages deleted for everyone (to show placeholder)
+    // but exclude messages deleted "for me" by this user
     const query = { 
-      chatId: chatId,
-      isDeleted: false 
+      chatId: chatId
     };
     
+    // If userId provided, exclude messages deleted "for me" by that user
+    // But include messages deleted "for everyone" (to show placeholder)
     if (userId) {
-      query['deletedBy.userId'] = { $ne: userId };
+      // Exclude messages where user deleted it "for me" (not for everyone)
+      // Include messages that are:
+      // 1. Not deleted at all
+      // 2. Deleted for everyone (show placeholder)
+      // 3. Deleted by other users (not this user)
+      query.$or = [
+        { isDeleted: false }, // Not deleted
+        { deletedForEveryone: true }, // Deleted for everyone (show placeholder)
+        { 
+          // Not deleted by this user "for me"
+          $and: [
+            { 'deletedBy.userId': { $ne: userId } },
+            { deletedForEveryone: { $ne: true } }
+          ]
+        }
+      ];
+    } else {
+      // If no userId, just exclude hard-deleted messages that aren't deleted for everyone
+      query.$or = [
+        { isDeleted: false },
+        { deletedForEveryone: true }
+      ];
+    }
+    
+    // If deletedAt timestamp provided, only show messages created after deletion
+    // This implements Instagram/WhatsApp behavior: when chat is deleted and then reappears,
+    // only messages sent after deletion are visible
+    if (deletedAt) {
+      query.createdAt = { $gt: deletedAt };
+      console.log(`🔵 [DATING_MESSAGE_MODEL] Filtering messages after deletion timestamp: ${deletedAt}`);
     }
     
     const messages = await this.find(query)
@@ -316,7 +358,43 @@ datingMessageSchema.statics.getChatMessages = async function(chatId, page = 1, l
       .limit(limit)
       .lean();
 
-    return messages.reverse();
+    // Filter out messages deleted "for me" by this user (post-query filter for accuracy)
+    let filteredMessages = messages;
+    if (userId) {
+      filteredMessages = messages.filter(msg => {
+        // Include if not deleted
+        if (!msg.isDeleted) return true;
+        
+        // Include if deleted for everyone (show placeholder)
+        if (msg.deletedForEveryone) return true;
+        
+        // Exclude if this user deleted it "for me"
+        const userDeleted = msg.deletedBy?.some(deletion => 
+          deletion.userId?.toString() === userId.toString() && 
+          !deletion.deletedForEveryone
+        );
+        
+        return !userDeleted;
+      });
+    }
+
+    // Transform deleted messages to show placeholder
+    const transformedMessages = filteredMessages.map(msg => {
+      // If message is deleted for everyone, show placeholder
+      if (msg.isDeleted && msg.deletedForEveryone) {
+        return {
+          ...msg,
+          content: 'deleted',
+          type: 'deleted',
+          media: null, // Remove media for deleted messages
+          location: null, // Remove location for deleted messages
+          musicMetadata: null // Remove music metadata for deleted messages
+        };
+      }
+      return msg;
+    });
+
+    return transformedMessages.reverse();
   } catch (error) {
     throw new Error(`Failed to get dating chat messages: ${error.message}`);
   }
@@ -446,35 +524,81 @@ datingMessageSchema.methods.editMessage = async function(newContent) {
   }
 };
 
-datingMessageSchema.methods.deleteForUser = async function(userId) {
+datingMessageSchema.methods.canDeleteForEveryone = function() {
+  const messageAge = Date.now() - this.createdAt.getTime();
+  const oneHour = 60 * 60 * 1000; // 1 hour in milliseconds
+  return messageAge < oneHour;
+};
+
+// Delete message for user - works for ALL message types
+// No restrictions based on message type (text, image, video, audio, voice, location, gif, document, forwarded, system)
+datingMessageSchema.methods.deleteForUser = async function(userId, deleteForEveryone = false) {
   try {
-    const alreadyDeleted = this.deletedBy.some(
+    // Check if already deleted by this user
+    const existingDeletion = this.deletedBy.find(
       deletion => deletion.userId.toString() === userId.toString()
     );
     
-    if (alreadyDeleted) {
+    // If already deleted for everyone, just return (idempotent)
+    if (deleteForEveryone && this.deletedForEveryone && existingDeletion) {
+      return this;
+    }
+    
+    // If already deleted "for me" and trying to delete "for me" again, return (idempotent)
+    if (!deleteForEveryone && existingDeletion && !existingDeletion.deletedForEveryone) {
+      return this;
+    }
+    
+    // If already deleted by this user with same type, throw error
+    if (existingDeletion && existingDeletion.deletedForEveryone === deleteForEveryone) {
       throw new Error('Message already deleted by this user');
     }
     
+    // Validate "Delete for Everyone" restrictions
+    if (deleteForEveryone) {
+      // Only sender can delete for everyone
+      if (this.senderId.toString() !== userId.toString()) {
+        throw new Error('You can only delete your own messages for everyone');
+      }
+      
+      // Check time restriction (1 hour limit)
+      if (!this.canDeleteForEveryone()) {
+        throw new Error('Cannot delete for everyone: Message is older than 1 hour');
+      }
+    }
+    
+    // Add deletion record
     this.deletedBy.push({
       userId: userId,
-      deletedAt: new Date()
+      deletedAt: new Date(),
+      deletedForEveryone: deleteForEveryone
     });
     
-    const DatingChat = mongoose.model('DatingChat');
-    const chat = await DatingChat.findById(this.chatId);
-    
-    if (this.senderId.toString() === userId.toString()) {
+    // Handle deletion logic based on type
+    if (deleteForEveryone) {
+      // "Delete for Everyone" - hard delete, visible to all
       this.isDeleted = true;
+      this.deletedForEveryone = true;
     } else {
-      const participantIds = chat.participants.map(p => p.toString());
-      const deletedByParticipants = this.deletedBy.map(d => d.userId.toString());
-      const allParticipantsDeleted = participantIds.every(id => 
-        deletedByParticipants.includes(id)
-      );
+      // "Delete for Me" - soft delete, only affects this user's view
+      // Check if all participants have deleted the message (for cleanup)
+      const DatingChat = mongoose.model('DatingChat');
+      const chat = await DatingChat.findById(this.chatId);
       
-      if (allParticipantsDeleted) {
-        this.isDeleted = true;
+      if (this.senderId.toString() === userId.toString()) {
+        // If sender deletes "for me", don't hard delete
+        // Message remains visible to other participants
+      } else {
+        // Check if all participants have deleted the message
+        const participantIds = chat.participants.map(p => p.toString());
+        const deletedByParticipants = this.deletedBy.map(d => d.userId.toString());
+        const allParticipantsDeleted = participantIds.every(id => 
+          deletedByParticipants.includes(id)
+        );
+        
+        if (allParticipantsDeleted) {
+          this.isDeleted = true;
+        }
       }
     }
     

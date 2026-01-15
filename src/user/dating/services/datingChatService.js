@@ -237,6 +237,7 @@ class DatingChatService {
    */
   static async deleteChat(chatId, userId) {
     try {
+      // Input validation
       if (!chatId || !userId) {
         throw new Error('Chat ID and User ID are required');
       }
@@ -255,22 +256,22 @@ class DatingChatService {
         throw new Error('Access denied to this dating chat');
       }
       
-      // Mark chat as archived for this user
+      // Archive chat for user and set deletion timestamp
+      // This hides the chat from user's list, but keeps it in database
+      // When other user sends message, chat will reappear but only show new messages
+      const deletionTimestamp = new Date();
       await chat.updateUserSettings(userId, {
         isArchived: true,
-        archivedAt: new Date()
+        archivedAt: deletionTimestamp,
+        deletedAt: deletionTimestamp
       });
       
-      // Check if both users have archived the chat
-      const allArchived = chat.userSettings.every(setting => setting.isArchived);
-      if (allArchived) {
-        chat.isActive = false;
-        await chat.save();
-      }
+      console.log(`🔵 [DATING_CHAT_SERVICE] Chat ${chatId} archived and marked as deleted for user ${userId} at ${deletionTimestamp}`);
       
       return {
         chatId: chat._id,
-        message: 'Dating chat deleted successfully'
+        message: 'Dating chat deleted successfully',
+        deletedAt: deletionTimestamp
       };
       
     } catch (error) {

@@ -52,6 +52,42 @@ class DatingMessageService {
         throw new Error('Access denied to this dating chat');
       }
       
+      // Check if users are blocked (bidirectional check)
+      // Get the other participant
+      const otherParticipantId = chat.participants.find(p => p.toString() !== senderId.toString());
+      if (otherParticipantId) {
+        const [senderUser, otherUser] = await Promise.all([
+          User.findById(senderId).select('blockedUsers blockedBy'),
+          User.findById(otherParticipantId).select('blockedUsers blockedBy')
+        ]);
+        
+        if (senderUser && otherUser) {
+          // Check all blocking scenarios:
+          // 1. Sender has blocked the other user
+          // 2. Other user has blocked the sender
+          // 3. Sender is in other user's blockedBy list
+          // 4. Other user is in sender's blockedBy list
+          const senderBlockedOther = senderUser.blockedUsers?.some(id => id.toString() === otherParticipantId.toString());
+          const otherBlockedSender = otherUser.blockedUsers?.some(id => id.toString() === senderId.toString());
+          const senderInOtherBlockedBy = otherUser.blockedBy?.some(id => id.toString() === senderId.toString());
+          const otherInSenderBlockedBy = senderUser.blockedBy?.some(id => id.toString() === otherParticipantId.toString());
+          
+          const isBlocked = senderBlockedOther || otherBlockedSender || senderInOtherBlockedBy || otherInSenderBlockedBy;
+          
+          if (isBlocked) {
+            console.log('[DATING_MESSAGE_SERVICE] Message blocked - users have blocked each other:', {
+              senderId,
+              otherParticipantId,
+              senderBlockedOther,
+              otherBlockedSender,
+              senderInOtherBlockedBy,
+              otherInSenderBlockedBy
+            });
+            throw new Error('Cannot send message: Users have blocked each other');
+          }
+        }
+      }
+      
       // Handle location messages (no file upload needed)
       let locationData = null;
       if (type === 'location' && messageData.location) {
@@ -510,8 +546,9 @@ class DatingMessageService {
    * @param {string} userId - User ID
    * @returns {Promise<Object>} Deletion result
    */
-  static async deleteMessage(messageId, userId) {
+  static async deleteMessage(messageId, userId, deleteForEveryone = false) {
     try {
+      // Input validation
       if (!messageId || !userId) {
         throw new Error('Message ID and User ID are required');
       }
@@ -521,21 +558,77 @@ class DatingMessageService {
         throw new Error('Dating message not found');
       }
       
-      // Check if user is the sender
-      if (message.senderId.toString() !== userId.toString()) {
-        throw new Error('You can only delete your own messages');
+      // Check ownership for "Delete for Everyone"
+      if (deleteForEveryone && message.senderId.toString() !== userId.toString()) {
+        throw new Error('You can only delete your own messages for everyone');
       }
       
       // Check if message is already deleted by this user
-      if (message.deletedBy.includes(userId)) {
-        throw new Error('Message already deleted');
+      const alreadyDeleted = message.deletedBy.some(
+        deletion => deletion.userId.toString() === userId.toString()
+      );
+      
+      if (alreadyDeleted) {
+        throw new Error('Message already deleted by this user');
       }
       
-      await message.deleteForUser(userId);
+      // Delete message (method handles time restrictions and validation)
+      await message.deleteForUser(userId, deleteForEveryone);
+      
+      // Reload message to get updated values
+      let refreshedMessage = null;
+      try {
+        refreshedMessage = await DatingMessage.findById(messageId);
+      } catch (refreshError) {
+        console.error('[DatingMessageService] Error reloading message:', refreshError);
+        // Continue with original message if reload fails
+      }
+      
+      // Get chat for real-time updates
+      const DatingChat = require('../models/datingChatModel');
+      const chat = await DatingChat.findById(message.chatId);
+      
+      // Emit real-time deletion event
+      const realtime = enhancedRealtimeService;
+      if (realtime && realtime.io) {
+        if (deleteForEveryone) {
+          // Emit to all chat participants
+          realtime.io.to(`dating-chat:${message.chatId}`).emit('dating_message_deleted', {
+            messageId: message._id,
+            chatId: message.chatId,
+            deletedForEveryone: true,
+            deletedBy: userId,
+            timestamp: new Date()
+          });
+          console.log(`🔵 [DATING_MESSAGE_SERVICE] Message ${message._id} deleted for everyone - event emitted to chat ${message.chatId}`);
+        } else {
+          // Emit only to deleting user
+          realtime.io.to(`user:${userId}`).emit('dating_message_deleted', {
+            messageId: message._id,
+            chatId: message.chatId,
+            deletedForEveryone: false,
+            deletedBy: userId,
+            timestamp: new Date()
+          });
+          console.log(`🔵 [DATING_MESSAGE_SERVICE] Message ${message._id} deleted for user ${userId} only`);
+        }
+      }
+      
+      // Use refreshed message if available, otherwise use original message or fallback values
+      const finalMessage = refreshedMessage || message;
+      const finalMessageId = finalMessage && finalMessage._id ? finalMessage._id.toString() : messageId.toString();
+      const finalIsDeleted = finalMessage && finalMessage.isDeleted === true;
+      
+      // Use the deleteForEveryone parameter we already have, or get it from the message if available
+      let finalDeletedForEveryone = deleteForEveryone;
+      if (finalMessage && typeof finalMessage.deletedForEveryone === 'boolean') {
+        finalDeletedForEveryone = finalMessage.deletedForEveryone;
+      }
       
       return {
-        messageId: message._id,
-        isDeleted: message.isDeleted
+        messageId: finalMessageId,
+        isDeleted: finalIsDeleted,
+        deletedForEveryone: finalDeletedForEveryone
       };
       
     } catch (error) {

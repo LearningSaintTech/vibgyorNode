@@ -2,6 +2,7 @@ const ApiResponse = require('../../../utils/apiResponse');
 const DatingChatService = require('../services/datingChatService');
 const DatingMessageService = require('../services/datingMessageService');
 const DatingMatch = require('../models/datingMatchModel');
+const User = require('../../auth/model/userAuthModel');
 
 /**
  * Send a message to a dating match
@@ -52,6 +53,39 @@ async function sendDatingMessage(req, res) {
 
 		if (match.status !== 'active') {
 			return ApiResponse.badRequest(res, 'Match is not active');
+		}
+
+		// Check if users are blocked (bidirectional check)
+		const otherUserId = userAId === currentUserIdStr ? userBId : userAId;
+		const [currentUser, otherUser] = await Promise.all([
+			User.findById(currentUserId).select('blockedUsers blockedBy'),
+			User.findById(otherUserId).select('blockedUsers blockedBy')
+		]);
+
+		if (currentUser && otherUser) {
+			// Check all blocking scenarios:
+			// 1. Current user has blocked the other user
+			// 2. Other user has blocked the current user
+			// 3. Current user is in other user's blockedBy list
+			// 4. Other user is in current user's blockedBy list
+			const currentBlockedOther = currentUser.blockedUsers?.some(id => id.toString() === otherUserId);
+			const otherBlockedCurrent = otherUser.blockedUsers?.some(id => id.toString() === currentUserIdStr);
+			const currentInOtherBlockedBy = otherUser.blockedBy?.some(id => id.toString() === currentUserIdStr);
+			const otherInCurrentBlockedBy = currentUser.blockedBy?.some(id => id.toString() === otherUserId);
+
+			const isBlocked = currentBlockedOther || otherBlockedCurrent || currentInOtherBlockedBy || otherInCurrentBlockedBy;
+
+			if (isBlocked) {
+				console.log('[DATING][MESSAGE][SEND] Message blocked - users have blocked each other:', {
+					currentUserId: currentUserIdStr,
+					otherUserId,
+					currentBlockedOther,
+					otherBlockedCurrent,
+					currentInOtherBlockedBy,
+					otherInCurrentBlockedBy
+				});
+				return ApiResponse.forbidden(res, 'Cannot send message: Users have blocked each other');
+			}
 		}
 
 		// Get or create chat for this match
@@ -298,16 +332,38 @@ async function editDatingMessage(req, res) {
 async function deleteDatingMessage(req, res) {
 	try {
 		const { messageId } = req.params;
+		// Try to get deleteForEveryone from body, query, or default to false
+		const deleteForEveryone = req.body?.deleteForEveryone === true || 
+		                          req.query?.deleteForEveryone === 'true' || 
+		                          req.body?.deleteForEveryone === 'true' || 
+		                          false;
 		const userId = req.user?.userId;
 
-		const DatingMessageService = require('../services/datingMessageService');
-		const result = await DatingMessageService.deleteMessage(messageId, userId);
+		console.log('[DATING][MESSAGE][DELETE] Request details:', {
+			messageId,
+			body: req.body,
+			query: req.query,
+			deleteForEveryone,
+			userId
+		});
 
-		return ApiResponse.success(res, result, 'Dating message deleted successfully');
+		const DatingMessageService = require('../services/datingMessageService');
+		const result = await DatingMessageService.deleteMessage(messageId, userId, deleteForEveryone);
+
+		return ApiResponse.success(res, result, deleteForEveryone ? 'Dating message deleted for everyone' : 'Dating message deleted successfully');
 
 	} catch (error) {
 		console.error('[DATING][MESSAGE][DELETE] Error:', error);
-		return ApiResponse.serverError(res, `Failed to delete message: ${error.message}`);
+		
+		if (error.message.includes('not found') || error.message.includes('Access denied')) {
+			return ApiResponse.notFound(res, error.message);
+		} else if (error.message.includes('required') || error.message.includes('already deleted') || error.message.includes('only delete your own') || error.message.includes('older than 1 hour')) {
+			return ApiResponse.badRequest(res, error.message);
+		} else if (error.message.includes('only delete your own')) {
+			return ApiResponse.forbidden(res, error.message);
+		}
+		
+		return ApiResponse.serverError(res, error.message);
 	}
 }
 
@@ -488,14 +544,13 @@ async function markDatingMessagesAsRead(req, res) {
 	} catch (error) {
 		console.error('[DATING][MESSAGE][MARK_READ] Error:', error);
 		
-		let statusCode = 500;
 		if (error.message.includes('not found') || error.message.includes('Access denied')) {
-			statusCode = 404;
+			return ApiResponse.notFound(res, `Failed to mark messages as read: ${error.message}`);
 		} else if (error.message.includes('required')) {
-			statusCode = 400;
+			return ApiResponse.badRequest(res, `Failed to mark messages as read: ${error.message}`);
 		}
 		
-		return ApiResponse.error(res, statusCode, `Failed to mark messages as read: ${error.message}`);
+		return ApiResponse.serverError(res, `Failed to mark messages as read: ${error.message}`);
 	}
 }
 
