@@ -56,16 +56,13 @@ const MessageRequestSchema = new mongoose.Schema(
 	{ 
 		timestamps: true,
 		indexes: [
-			{ fromUserId: 1, toUserId: 1 }, // For finding requests between users
+			{ fromUserId: 1, toUserId: 1, unique: true }, // For finding requests between users, prevent duplicates
 			{ toUserId: 1, status: 1 }, // For getting pending requests for user
 			{ status: 1, requestedAt: -1 }, // For filtering by status
 			{ expiresAt: 1 } // For cleanup of expired requests
 		]
 	}
 );
-
-// Prevent duplicate requests
-MessageRequestSchema.index({ fromUserId: 1, toUserId: 1 }, { unique: true });
 
 // Virtual for request age
 MessageRequestSchema.virtual('ageInHours').get(function() {
@@ -82,116 +79,144 @@ MessageRequestSchema.methods.isExpired = function() {
 	return Date.now() > this.expiresAt.getTime();
 };
 
-// Method to accept request
+// Method to accept request - optimized with transaction for atomicity
 MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 	const Chat = mongoose.model('Chat');
 	const Message = mongoose.model('Message');
+	const session = await mongoose.startSession();
+	let chatId = null;
 	
-	this.status = 'accepted';
-	this.respondedAt = new Date();
-	this.responseMessage = responseMessage;
-	
-	// Create chat between users
-	const chat = await Chat.findOrCreateChat(this.fromUserId, this.toUserId, this.fromUserId);
-	
-	// Update chat request status
-	chat.requestStatus = 'accepted';
-	chat.acceptedAt = new Date();
-	await chat.save();
-	
-	this.chatId = chat._id;
-	await this.save();
-	
-	// ALWAYS send initial message if one was included in the request
-	// Extract and validate message from request
-	const requestMessage = this.message ? String(this.message).trim() : '';
-	
-	if (requestMessage && requestMessage !== '') {
-		try {
-			console.log('[MESSAGE_REQUEST] Sending initial message from request:', {
-				chatId: chat._id,
-				senderId: this.fromUserId,
-				toUserId: this.toUserId,
-				messageLength: requestMessage.length,
-				messagePreview: requestMessage.substring(0, 50) + (requestMessage.length > 50 ? '...' : ''),
-				requestId: this._id
-			});
+	try {
+		await session.withTransaction(async () => {
+			// Update request status
+			this.status = 'accepted';
+			this.respondedAt = new Date();
+			this.responseMessage = responseMessage;
 			
-			// Create the initial message from the request (MANDATORY: always send the message from the request)
-			const initialMessage = new Message({
-				chatId: chat._id,
-				senderId: this.fromUserId,
-				type: 'text',
-				content: requestMessage,
-				status: 'sent'
-			});
+			// Create chat between users (pass session for transaction)
+			const chat = await Chat.findOrCreateChat(this.fromUserId, this.toUserId, this.fromUserId, session);
+			this.chatId = chat._id;
+			chatId = chat._id;
 			
-			await initialMessage.save();
-			console.log('[MESSAGE_REQUEST] Initial message saved:', { messageId: initialMessage._id });
+			// Update chat request status if fields exist
+			if (chat.requestStatus !== undefined) {
+				chat.requestStatus = 'accepted';
+			}
+			if (chat.acceptedAt !== undefined) {
+				chat.acceptedAt = new Date();
+			}
 			
-			// Update chat's last message
-			chat.lastMessage = initialMessage._id;
-			chat.lastMessageAt = new Date();
+			// Save request and chat in transaction
+			await Promise.all([
+				this.save({ session }),
+				chat.save({ session })
+			]);
 			
-			// Increment unread count for the recipient (toUserId) using chat method
-			chat.incrementUnreadCount(this.toUserId);
+			// ALWAYS send initial message if one was included in the request
+			const requestMessage = this.message ? String(this.message).trim() : '';
 			
-			await chat.save();
-			console.log('[MESSAGE_REQUEST] Chat updated with initial message');
-			
-			console.log('[MESSAGE_REQUEST] ✅ Initial message sent successfully:', {
-				messageId: initialMessage._id,
-				chatId: chat._id,
-				senderId: this.fromUserId,
-				toUserId: this.toUserId,
-				contentLength: requestMessage.length
-			});
-		} catch (error) {
-			console.error('[MESSAGE_REQUEST] ❌ Error sending initial message:', {
-				error: error.message,
-				stack: error.stack,
-				chatId: chat._id,
-				senderId: this.fromUserId,
-				messageLength: requestMessage.length
-			});
-			// Don't fail the acceptance if message sending fails
-			// The chat is already created, so continue
-		}
-	} else {
-		console.log('[MESSAGE_REQUEST] No initial message to send (empty message in request):', {
-			requestId: this._id,
-			chatId: chat._id,
-			hasMessage: !!this.message,
-			messageValue: this.message
+			if (requestMessage && requestMessage !== '') {
+				try {
+					// Create the initial message from the request
+					const initialMessage = new Message({
+						chatId: chat._id,
+						senderId: this.fromUserId,
+						type: 'text',
+						content: requestMessage,
+						status: 'sent'
+					});
+					
+					await initialMessage.save({ session });
+					
+					// Convert toUserId to ObjectId for consistency
+					const toUserIdObj = mongoose.Types.ObjectId.isValid(this.toUserId) ? new mongoose.Types.ObjectId(this.toUserId) : this.toUserId;
+					
+					// Update chat's last message and increment unread count atomically
+					await chat.constructor.updateOne(
+						{ _id: chat._id, 'userSettings.userId': toUserIdObj },
+						{
+							$set: {
+								lastMessage: initialMessage._id,
+								lastMessageAt: new Date()
+							},
+							$inc: { 'userSettings.$.unreadCount': 1 }
+						},
+						{ session }
+					);
+					
+					// Update local instance
+					chat.lastMessage = initialMessage._id;
+					chat.lastMessageAt = new Date();
+					const toUserIdStr = toUserIdObj.toString();
+					const userSetting = chat.userSettings.find(
+						setting => setting.userId && setting.userId.toString() === toUserIdStr
+					);
+					if (userSetting) {
+						userSetting.unreadCount = (userSetting.unreadCount || 0) + 1;
+					}
+				} catch (error) {
+					// Don't fail the acceptance if message sending fails
+					// The chat is already created, so continue without aborting transaction
+					// Error is non-fatal - chat creation succeeded, message sending failed
+					// Could log to proper logging service if needed
+				}
+			}
 		});
+		
+		// Fetch and return the chat after transaction
+		const chat = await Chat.findById(chatId || this.chatId);
+		return chat;
+	} catch (error) {
+		throw new Error(`Failed to accept message request: ${error.message}`);
+	} finally {
+		await session.endSession();
 	}
-	
-	return chat;
 };
 
-// Method to reject request
-MessageRequestSchema.methods.reject = function(responseMessage = '') {
+// Method to reject request - optimized with atomic update
+MessageRequestSchema.methods.reject = async function(responseMessage = '') {
+	await this.constructor.updateOne(
+		{ _id: this._id },
+		{
+			$set: {
+				status: 'rejected',
+				respondedAt: new Date(),
+				responseMessage: responseMessage
+			}
+		}
+	);
+	// Update local instance
 	this.status = 'rejected';
 	this.respondedAt = new Date();
 	this.responseMessage = responseMessage;
-	return this.save();
+	return this;
 };
 
-// Method to expire request
-MessageRequestSchema.methods.expire = function() {
+// Method to expire request - optimized with atomic update
+MessageRequestSchema.methods.expire = async function() {
+	await this.constructor.updateOne(
+		{ _id: this._id },
+		{
+			$set: {
+				status: 'expired',
+				respondedAt: new Date()
+			}
+		}
+	);
+	// Update local instance
 	this.status = 'expired';
 	this.respondedAt = new Date();
-	return this.save();
+	return this;
 };
 
-// Static method to create message request
+// Static method to create message request - optimized with projection
 MessageRequestSchema.statics.createRequest = async function(fromUserId, toUserId, message = '') {
 	const User = mongoose.model('User');
 	
-	// Check if users exist and are active
+	// Check if users exist and are active - use projection to fetch only needed fields
 	const [fromUser, toUser] = await Promise.all([
-		User.findById(fromUserId),
-		User.findById(toUserId)
+		User.findById(fromUserId).select('isActive blockedUsers').lean(),
+		User.findById(toUserId).select('isActive blockedUsers').lean()
 	]);
 	
 	if (!fromUser || !toUser) {
@@ -202,15 +227,23 @@ MessageRequestSchema.statics.createRequest = async function(fromUserId, toUserId
 		throw new Error('Cannot send request to inactive users');
 	}
 	
-	// Check if users are blocked
-	if (fromUser.blockedUsers.includes(toUserId) || toUser.blockedUsers.includes(fromUserId)) {
+	// Check if users are blocked - use Set for O(1) lookup
+	const fromUserBlockedSet = new Set((fromUser.blockedUsers || []).map(id => id.toString()));
+	const toUserBlockedSet = new Set((toUser.blockedUsers || []).map(id => id.toString()));
+	const fromUserIdStr = fromUserId.toString();
+	const toUserIdStr = toUserId.toString();
+	
+	if (fromUserBlockedSet.has(toUserIdStr) || toUserBlockedSet.has(fromUserIdStr)) {
 		throw new Error('Cannot send request to blocked users');
 	}
 	
-	// Check if request already exists
+	// Check if request already exists - convert to ObjectId for consistency
+	const fromUserIdObj = mongoose.Types.ObjectId.isValid(fromUserId) ? new mongoose.Types.ObjectId(fromUserId) : fromUserId;
+	const toUserIdObj = mongoose.Types.ObjectId.isValid(toUserId) ? new mongoose.Types.ObjectId(toUserId) : toUserId;
+	
 	const existingRequest = await this.findOne({
-		fromUserId,
-		toUserId,
+		fromUserId: fromUserIdObj,
+		toUserId: toUserIdObj,
 		status: { $in: ['pending', 'accepted'] }
 	});
 	
@@ -223,23 +256,11 @@ MessageRequestSchema.statics.createRequest = async function(fromUserId, toUserId
 	
 	// Create new request with message (always save message, even if empty)
 	const messageText = message ? message.trim() : '';
-	console.log('[MESSAGE_REQUEST] Creating request with message:', {
-		fromUserId,
-		toUserId,
-		messageLength: messageText.length,
-		hasMessage: messageText.length > 0
-	});
 	
 	const request = await this.create({
-		fromUserId,
-		toUserId,
+		fromUserId: fromUserIdObj,
+		toUserId: toUserIdObj,
 		message: messageText
-	});
-	
-	console.log('[MESSAGE_REQUEST] Request created:', {
-		requestId: request._id,
-		savedMessage: request.message,
-		messageLength: request.message?.length || 0
 	});
 	
 	await request.populate([
@@ -254,8 +275,11 @@ MessageRequestSchema.statics.createRequest = async function(fromUserId, toUserId
 MessageRequestSchema.statics.getPendingRequests = async function(userId, page = 1, limit = 20) {
 	const skip = (page - 1) * limit;
 	
+	// Convert to ObjectId for consistency
+	const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+	
 	const requests = await this.find({
-		toUserId: userId,
+		toUserId: userIdObj,
 		status: 'pending',
 		expiresAt: { $gt: new Date() } // Not expired
 	})
@@ -272,8 +296,11 @@ MessageRequestSchema.statics.getPendingRequests = async function(userId, page = 
 MessageRequestSchema.statics.getSentRequests = async function(userId, page = 1, limit = 20) {
 	const skip = (page - 1) * limit;
 	
+	// Convert to ObjectId for consistency
+	const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+	
 	const requests = await this.find({
-		fromUserId: userId,
+		fromUserId: userIdObj,
 		status: { $in: ['pending', 'accepted', 'rejected'] }
 	})
 	.populate('toUserId', 'username fullName profilePictureUrl verificationStatus')
@@ -287,10 +314,14 @@ MessageRequestSchema.statics.getSentRequests = async function(userId, page = 1, 
 
 // Static method to get request between two users
 MessageRequestSchema.statics.getRequestBetweenUsers = async function(user1Id, user2Id) {
+	// Convert to ObjectId for consistency
+	const user1IdObj = mongoose.Types.ObjectId.isValid(user1Id) ? new mongoose.Types.ObjectId(user1Id) : user1Id;
+	const user2IdObj = mongoose.Types.ObjectId.isValid(user2Id) ? new mongoose.Types.ObjectId(user2Id) : user2Id;
+	
 	return this.findOne({
 		$or: [
-			{ fromUserId: user1Id, toUserId: user2Id },
-			{ fromUserId: user2Id, toUserId: user1Id }
+			{ fromUserId: user1IdObj, toUserId: user2IdObj },
+			{ fromUserId: user2IdObj, toUserId: user1IdObj }
 		],
 		status: { $in: ['pending', 'accepted'] }
 	})
@@ -311,46 +342,54 @@ MessageRequestSchema.statics.cleanupExpiredRequests = async function() {
 		}
 	);
 	
-	console.log(`[MESSAGE_REQUEST] Cleaned up ${result.modifiedCount} expired requests`);
 	return result.modifiedCount;
 };
 
-// Static method to get request statistics
+// Static method to get request statistics - optimized single aggregation
 MessageRequestSchema.statics.getRequestStats = async function(userId) {
-	const stats = await this.aggregate([
+	const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+	
+	// Combine all stats into single aggregation pipeline
+	const [statsResult] = await this.aggregate([
 		{
 			$match: {
 				$or: [
-					{ fromUserId: mongoose.Types.ObjectId(userId) },
-					{ toUserId: mongoose.Types.ObjectId(userId) }
+					{ fromUserId: userIdObj },
+					{ toUserId: userIdObj }
 				]
 			}
 		},
 		{
-			$group: {
-				_id: '$status',
-				count: { $sum: 1 }
+			$facet: {
+				byStatus: [
+					{
+						$group: {
+							_id: '$status',
+							count: { $sum: 1 }
+						}
+					}
+				],
+				totalCount: [
+					{ $count: 'total' }
+				],
+				pendingReceived: [
+					{
+						$match: {
+							toUserId: userIdObj,
+							status: 'pending',
+							expiresAt: { $gt: new Date() }
+						}
+					},
+					{ $count: 'count' }
+				]
 			}
 		}
 	]);
 	
-	const totalRequests = await this.countDocuments({
-		$or: [
-			{ fromUserId: userId },
-			{ toUserId: userId }
-		]
-	});
-	
-	const pendingReceived = await this.countDocuments({
-		toUserId: userId,
-		status: 'pending',
-		expiresAt: { $gt: new Date() }
-	});
-	
 	return {
-		totalRequests,
-		pendingReceived,
-		byStatus: stats.reduce((acc, stat) => {
+		totalRequests: statsResult?.totalCount[0]?.total || 0,
+		pendingReceived: statsResult?.pendingReceived[0]?.count || 0,
+		byStatus: (statsResult?.byStatus || []).reduce((acc, stat) => {
 			acc[stat._id] = stat.count;
 			return acc;
 		}, {})

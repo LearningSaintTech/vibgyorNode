@@ -14,36 +14,23 @@ class ChatController {
    * @param {Object} res - Express response object
    */
   static async createOrGetChat(req, res) {
-    console.log('🔵 [BACKEND_CHAT_CTRL] createOrGetChat called:', { 
-      userId: req.user?.userId,
-      otherUserId: req.body?.otherUserId,
-      timestamp: new Date().toISOString()
-    });
     try {
       const { otherUserId } = req.body;
       const userId = req.user.userId;
       
       // Input validation
       if (!otherUserId) {
-        console.warn('⚠️ [BACKEND_CHAT_CTRL] Other user ID missing');
         return res.status(400).json(createErrorResponse('Other user ID is required'));
       }
       
       if (otherUserId === userId.toString()) {
-        console.warn('⚠️ [BACKEND_CHAT_CTRL] Cannot create chat with self');
         return res.status(400).json(createErrorResponse('Cannot create chat with yourself'));
       }
       
-      console.log('🔵 [BACKEND_CHAT_CTRL] Calling ChatService.createOrGetChat...', { userId, otherUserId });
       const result = await ChatService.createOrGetChat(userId, otherUserId, userId);
       
       // Check if result indicates message request is needed
       if (result && result.canChat === false && result.needsMessageRequest) {
-        console.log('🔵 [BACKEND_CHAT_CTRL] Message request needed:', {
-          messageRequestExists: result.messageRequestExists,
-          reason: result.reason
-        });
-        
         return res.status(400).json(createErrorResponse(
           result.message || 'Cannot start chat. Send a message request first.',
           400,
@@ -56,22 +43,14 @@ class ChatController {
         ));
       }
       
-      console.log('✅ [BACKEND_CHAT_CTRL] ChatService.createOrGetChat success:', { chatId: result.chat._id, canChat: result.canChat });
-      
       res.status(200).json(createResponse(
         'Chat retrieved successfully',
         result,
         { chatId: result.chat._id }
       ));
-      console.log('✅ [BACKEND_CHAT_CTRL] Response sent to client');
       
     } catch (error) {
-      console.error('❌ [BACKEND_CHAT_CTRL] createOrGetChat error:', { 
-        error: error.message, 
-        stack: error.stack,
-        userId: req.user?.userId,
-        otherUserId: req.body?.otherUserId
-      });
+      console.error('[ChatController] createOrGetChat error:', error.message);
       
       // Normalize error message for comparison (case-insensitive)
       const errorMsg = (error.message || '').toLowerCase();
@@ -91,13 +70,6 @@ class ChatController {
         statusCode = 400; // Bad Request for business logic errors
       }
       
-      console.log('🔵 [BACKEND_CHAT_CTRL] Returning error response:', {
-        statusCode,
-        errorMessage: error.message,
-        errorMsg
-      });
-      
-      // Pass statusCode to createErrorResponse to ensure response object has correct status
       res.status(statusCode).json(createErrorResponse(error.message, statusCode));
     }
   }
@@ -109,14 +81,6 @@ class ChatController {
    * @param {Object} res - Express response object
    */
   static async getUserChats(req, res) {
-    console.log('🔵 [BACKEND_CHAT_CTRL] getUserChats called:', { 
-      userId: req.user?.userId,
-      page: req.query?.page,
-      limit: req.query?.limit,
-      search: req.query?.q || req.query?.search,
-      hasSearch: !!(req.query?.q || req.query?.search),
-      timestamp: new Date().toISOString()
-    });
     try {
       const userId = req.user.userId;
       const page = parseInt(req.query.page) || 1;
@@ -125,13 +89,7 @@ class ChatController {
       
       let result;
       if (searchQuery) {
-        console.log('🔵 [BACKEND_CHAT_CTRL] Searching chats...', { userId, searchQuery, page, limit });
         const searchResult = await ChatService.searchChats(userId, searchQuery, page, limit);
-        console.log('✅ [BACKEND_CHAT_CTRL] ChatService.searchChats success:', { 
-          chatsCount: searchResult.chats?.length || 0,
-          total: searchResult.total,
-          hasMore: searchResult.hasMore
-        });
         
         // Transform to match expected format
         result = {
@@ -145,11 +103,7 @@ class ChatController {
         };
       } else {
         const includeArchived = req.query.includeArchived === 'true';
-        console.log('🔵 [BACKEND_CHAT_CTRL] Getting all chats...', { userId, page, limit, includeArchived });
         const chats = await ChatService.getUserChats(userId, page, limit, includeArchived);
-        console.log('✅ [BACKEND_CHAT_CTRL] ChatService.getUserChats success:', { 
-          chatsCount: chats.length || 0
-        });
         
         // Get total count for pagination (only on first page for performance)
         let totalCount = chats.length;
@@ -183,14 +137,9 @@ class ChatController {
         { chats: result.chats || result },
         { pagination: result.pagination || { page, limit, total: result.chats?.length || result.length || 0, hasMore: false } }
       ));
-      console.log('✅ [BACKEND_CHAT_CTRL] Response sent to client');
       
     } catch (error) {
-      console.error('❌ [BACKEND_CHAT_CTRL] getUserChats error:', { 
-        error: error.message, 
-        stack: error.stack,
-        userId: req.user?.userId
-      });
+      console.error('[ChatController] getUserChats error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('required') || error.message.includes('Invalid')) {
@@ -220,7 +169,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] getChatDetails error:', error);
+      console.error('[ChatController] getChatDetails error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -262,7 +211,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] updateChatSettings error:', error);
+      console.error('[ChatController] updateChatSettings error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -294,7 +243,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] deleteChat error:', error);
+      console.error('[ChatController] deleteChat error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('not found') || error.message.includes('Access denied')) {
@@ -330,7 +279,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] searchChats error:', error);
+      console.error('[ChatController] searchChats error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('required') || error.message.includes('Invalid')) {
@@ -359,7 +308,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] getChatStats error:', error);
+      console.error('[ChatController] getChatStats error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('required')) {
@@ -389,7 +338,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] joinChat error:', error);
+      console.error('[ChatController] joinChat error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('Access denied')) {
@@ -421,7 +370,7 @@ class ChatController {
       ));
       
     } catch (error) {
-      console.error('[ChatController] leaveChat error:', error);
+      console.error('[ChatController] leaveChat error:', error.message);
       
       let statusCode = 500;
       if (error.message.includes('required')) {

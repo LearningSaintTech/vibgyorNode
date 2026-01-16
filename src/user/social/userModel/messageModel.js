@@ -255,10 +255,15 @@ const messageSchema = new Schema({
 
 // Indexes for optimal performance
 messageSchema.index({ chatId: 1, createdAt: -1 });
+messageSchema.index({ chatId: 1, isDeleted: 1, 'deletedBy.userId': 1, createdAt: -1 });
+messageSchema.index({ chatId: 1, deletedForEveryone: 1, createdAt: -1 });
+messageSchema.index({ chatId: 1, senderId: 1, 'readBy.userId': 1, isDeleted: 1 });
+messageSchema.index({ chatId: 1, type: 1, isDeleted: 1, 'deletedBy.userId': 1 }); // For getChatMedia
 messageSchema.index({ senderId: 1, createdAt: -1 });
 messageSchema.index({ type: 1, createdAt: -1 });
 messageSchema.index({ isDeleted: 1, deletedBy: 1 });
 messageSchema.index({ 'readBy.userId': 1 });
+messageSchema.index({ content: 'text' }); // Text index for search
 
 // Pre-save middleware
 messageSchema.pre('save', function(next) {
@@ -306,79 +311,205 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
   try {
 	const skip = (page - 1) * limit;
 	
-    // Build query - include messages deleted for everyone (to show placeholder)
-    // but exclude messages deleted "for me" by this user
-	const query = { 
-      chatId: chatId
-	};
+	// Convert chatId to ObjectId if needed
+	const chatIdObj = mongoose.Types.ObjectId.isValid(chatId) ? new mongoose.Types.ObjectId(chatId) : chatId;
+	const userIdObj = userId && mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 	
-	// If userId provided, exclude messages deleted "for me" by that user
-	// But include messages deleted "for everyone" (to show placeholder)
-	if (userId) {
-      // Exclude messages where user deleted it "for me" (not for everyone)
-      // Include messages that are:
-      // 1. Not deleted at all
-      // 2. Deleted for everyone (show placeholder)
-      // 3. Deleted by other users (not this user)
-      query.$or = [
-        { isDeleted: false }, // Not deleted
-        { deletedForEveryone: true }, // Deleted for everyone (show placeholder)
-        { 
-          // Not deleted by this user "for me"
-          $and: [
-            { 'deletedBy.userId': { $ne: userId } },
-            { deletedForEveryone: { $ne: true } }
-          ]
-        }
-      ];
-	} else {
-      // If no userId, just exclude hard-deleted messages that aren't deleted for everyone
-      query.$or = [
-        { isDeleted: false },
-        { deletedForEveryone: true }
-      ];
-	}
+	// Build base match query with proper ObjectId
+	const baseMatch = {
+		chatId: chatIdObj
+	};
 	
 	// If deletedAt timestamp provided, only show messages created after deletion
 	// This implements Instagram/WhatsApp behavior: when chat is deleted and then reappears,
 	// only messages sent after deletion are visible
 	if (deletedAt) {
-      query.createdAt = { $gt: deletedAt };
-      console.log(`🔵 [MESSAGE_MODEL] Filtering messages after deletion timestamp: ${deletedAt}`);
+		baseMatch.createdAt = { $gt: deletedAt };
 	}
 	
-	const messages = await this.find(query)
-		.populate('senderId', 'username fullName profilePictureUrl')
-		.populate('replyTo', 'content type senderId')
-		.populate('forwardedFrom', 'content type senderId')
-		.populate('reactions.userId', 'username fullName')
-		.sort({ createdAt: -1 })
-		.skip(skip)
-		.limit(limit)
-		.lean();
-
-	// Filter out messages deleted "for me" by this user (post-query filter for accuracy)
-	let filteredMessages = messages;
-	if (userId) {
-      filteredMessages = messages.filter(msg => {
-        // Include if not deleted
-        if (!msg.isDeleted) return true;
-        
-        // Include if deleted for everyone (show placeholder)
-        if (msg.deletedForEveryone) return true;
-        
-        // Exclude if this user deleted it "for me"
-        const userDeleted = msg.deletedBy?.some(deletion => 
-          deletion.userId?.toString() === userId.toString() && 
-          !deletion.deletedForEveryone
-        );
-        
-        return !userDeleted;
-      });
+	const pipeline = [
+		{ $match: baseMatch },
+		{
+			$addFields: {
+				userDeletedForMe: userIdObj ? {
+					$anyElementTrue: {
+						$map: {
+							input: { $ifNull: ['$deletedBy', []] },
+							as: 'deletion',
+							in: {
+								$and: [
+									{ $eq: ['$$deletion.userId', userIdObj] },
+									{ $ne: ['$$deletion.deletedForEveryone', true] }
+								]
+							}
+						}
+					}
+				} : false
+			}
+		},
+		{
+			$match: userIdObj ? {
+				$or: [
+					{ isDeleted: false },
+					{ deletedForEveryone: true },
+					{ userDeletedForMe: false }
+				]
+			} : {
+				$or: [
+					{ isDeleted: false },
+					{ deletedForEveryone: true }
+				]
+			}
+		},
+		{ $sort: { createdAt: -1 } },
+		{ $skip: skip },
+		{ $limit: limit }
+	];
+	
+	// Use $lookup to populate in the same aggregation pipeline (more efficient)
+	// Get collection names dynamically to avoid hardcoding
+	const User = mongoose.model('User');
+	const userCollectionName = User.collection.name;
+	const messageCollectionName = this.collection.name;
+	
+	const populatedPipeline = [
+		...pipeline,
+		{
+			$lookup: {
+				from: userCollectionName,
+				localField: 'senderId',
+				foreignField: '_id',
+				as: 'senderId',
+				pipeline: [
+					{
+						$project: {
+							username: 1,
+							fullName: 1,
+							profilePictureUrl: 1
+						}
+					}
+				]
+			}
+		},
+		{
+			$addFields: {
+				senderId: { $arrayElemAt: ['$senderId', 0] }
+			}
+		},
+		{
+			$lookup: {
+				from: messageCollectionName,
+				localField: 'replyTo',
+				foreignField: '_id',
+				as: 'replyTo',
+				pipeline: [
+					{
+						$project: {
+							content: 1,
+							type: 1,
+							senderId: 1
+						}
+					},
+					{
+						$lookup: {
+							from: userCollectionName,
+							localField: 'senderId',
+							foreignField: '_id',
+							as: 'senderId',
+							pipeline: [
+								{
+									$project: {
+										username: 1,
+										fullName: 1,
+										profilePictureUrl: 1
+									}
+								}
+							]
+						}
+					},
+					{
+						$addFields: {
+							senderId: { $arrayElemAt: ['$senderId', 0] }
+						}
+					},
+					{ $limit: 1 }
+				]
+			}
+		},
+		{
+			$addFields: {
+				replyTo: { $arrayElemAt: ['$replyTo', 0] }
+			}
+		},
+		{
+			$lookup: {
+				from: messageCollectionName,
+				localField: 'forwardedFrom',
+				foreignField: '_id',
+				as: 'forwardedFrom',
+				pipeline: [
+					{
+						$project: {
+							content: 1,
+							type: 1,
+							senderId: 1
+						}
+					},
+					{
+						$lookup: {
+							from: userCollectionName,
+							localField: 'senderId',
+							foreignField: '_id',
+							as: 'senderId',
+							pipeline: [
+								{
+									$project: {
+										username: 1,
+										fullName: 1,
+										profilePictureUrl: 1
+									}
+								}
+							]
+						}
+					},
+					{
+						$addFields: {
+							senderId: { $arrayElemAt: ['$senderId', 0] }
+						}
+					},
+					{ $limit: 1 }
+				]
+			}
+		},
+		{
+			$addFields: {
+				forwardedFrom: { $arrayElemAt: ['$forwardedFrom', 0] }
+			}
+		},
+		// For reactions, we'll populate separately as it's complex with nested arrays
+		// The main performance gain is from combining senderId, replyTo, forwardedFrom lookups
+	];
+	
+	let messages = await this.aggregate(populatedPipeline);
+	
+	// Populate reactions separately (complex nested array structure)
+	// Only populate if messages have reactions to avoid unnecessary query
+	if (messages.length > 0 && messages.some(m => m.reactions && m.reactions.length > 0)) {
+		const messageIds = messages.map(m => m._id);
+		const messagesWithReactions = await this.find({ _id: { $in: messageIds } })
+			.populate('reactions.userId', 'username fullName')
+			.lean();
+		
+		// Merge reactions into messages using Map for O(1) lookup
+		const reactionsMap = new Map(messagesWithReactions.map(m => [m._id.toString(), m.reactions || []]));
+		messages = messages.map(m => {
+			m.reactions = reactionsMap.get(m._id.toString()) || m.reactions || [];
+			return m;
+		});
 	}
 
 	// Transform deleted messages to show placeholder
-	const transformedMessages = filteredMessages.map(msg => {
+	const transformedMessages = messages.map(msg => {
 		// If message is deleted for everyone, show placeholder
 		if (msg.isDeleted && msg.deletedForEveryone) {
 			return {
@@ -393,19 +524,6 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 		return msg;
 	});
 
-	// Debug: Log voice messages to check duration
-	const voiceMessages = transformedMessages.filter(msg => msg.type === 'voice');
-	if (voiceMessages.length > 0) {
-		console.log('🔵 [MESSAGE_MODEL] Voice messages from database:', voiceMessages.map(msg => ({
-			messageId: msg._id,
-			hasMedia: !!msg.media,
-			mediaDuration: msg.media?.duration,
-			mediaKeys: msg.media ? Object.keys(msg.media) : [],
-			mediaUrl: msg.media?.url,
-			fullMedia: JSON.stringify(msg.media)
-		})));
-	}
-
 	return transformedMessages.reverse(); // Return in chronological order
   } catch (error) {
     throw new Error(`Failed to get chat messages: ${error.message}`);
@@ -414,15 +532,50 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 
 messageSchema.statics.getUnreadCount = async function(chatId, userId) {
   try {
-	const count = await this.countDocuments({
-      chatId: chatId,
-		senderId: { $ne: userId },
-		'readBy.userId': { $ne: userId },
-		isDeleted: false,
-      'deletedBy.userId': { $ne: userId }
-	});
+	// Use aggregation for better performance with complex conditions
+	const chatIdObj = mongoose.Types.ObjectId.isValid(chatId) ? new mongoose.Types.ObjectId(chatId) : chatId;
+	const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 	
-	return count;
+	const result = await this.aggregate([
+		{
+			$match: {
+				chatId: chatIdObj,
+				senderId: { $ne: userIdObj },
+				isDeleted: false
+			}
+		},
+		{
+			$addFields: {
+				readByUser: {
+					$anyElementTrue: {
+						$map: {
+							input: { $ifNull: ['$readBy', []] },
+							as: 'read',
+							in: { $eq: ['$$read.userId', userIdObj] }
+						}
+					}
+				},
+				deletedByUser: {
+					$anyElementTrue: {
+						$map: {
+							input: { $ifNull: ['$deletedBy', []] },
+							as: 'deletion',
+							in: { $eq: ['$$deletion.userId', userIdObj] }
+						}
+					}
+				}
+			}
+		},
+		{
+			$match: {
+				readByUser: false,
+				deletedByUser: false
+			}
+		},
+		{ $count: 'count' }
+	]);
+	
+	return result[0]?.count || 0;
   } catch (error) {
     throw new Error(`Failed to get unread count: ${error.message}`);
   }
@@ -430,17 +583,21 @@ messageSchema.statics.getUnreadCount = async function(chatId, userId) {
 
 messageSchema.statics.markChatAsRead = async function(chatId, userId) {
   try {
+    // Convert to ObjectId for consistency
+    const chatIdObj = mongoose.Types.ObjectId.isValid(chatId) ? new mongoose.Types.ObjectId(chatId) : chatId;
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
     const result = await this.updateMany(
       {
-        chatId: chatId,
-		senderId: { $ne: userId },
-		'readBy.userId': { $ne: userId },
+        chatId: chatIdObj,
+		senderId: { $ne: userIdObj },
+		'readBy.userId': { $ne: userIdObj },
         isDeleted: false
       },
       {
         $addToSet: {
           readBy: {
-            userId: userId,
+            userId: userIdObj,
             readAt: new Date()
           }
         },
@@ -460,12 +617,48 @@ messageSchema.statics.searchMessages = async function(chatId, query, userId, pag
   try {
 	const skip = (page - 1) * limit;
 	
+	// Convert to ObjectId for consistency
+	const chatIdObj = mongoose.Types.ObjectId.isValid(chatId) ? new mongoose.Types.ObjectId(chatId) : chatId;
+	const userIdObj = userId && mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+	
     const searchQuery = {
-      chatId: chatId,
-      content: { $regex: query, $options: 'i' },
-      isDeleted: false,
-      'deletedBy.userId': { $ne: userId }
+      chatId: chatIdObj,
+      isDeleted: false
     };
+    
+    // Try text search first (faster), fall back to regex
+    // Use try-catch instead of expensive index check
+    try {
+      searchQuery.$text = { $search: query };
+      // Text search requires score projection
+      const messages = await this.find(searchQuery, { score: { $meta: 'textScore' } })
+        .populate('senderId', 'username fullName profilePictureUrl')
+        .sort({ score: { $meta: 'textScore' }, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+      
+      // Exclude messages deleted by this user (post-filter for text search)
+      // Use Set for O(1) lookup if filtering many messages
+      if (userIdObj) {
+        const userIdStr = userIdObj.toString();
+        return messages.filter(msg => {
+          if (!msg.deletedBy || msg.deletedBy.length === 0) return true;
+          // Use Set for O(1) lookup when filtering many messages
+          const deletedBySet = new Set(msg.deletedBy.map(d => d.userId?.toString()));
+          return !deletedBySet.has(userIdStr);
+        });
+      }
+      return messages;
+    } catch (textSearchError) {
+      // Fall back to regex search if text index not available
+      searchQuery.content = { $regex: query, $options: 'i' };
+    }
+    
+    // Exclude messages deleted by this user
+    if (userIdObj) {
+      searchQuery['deletedBy.userId'] = { $ne: userIdObj };
+    }
     
     const messages = await this.find(searchQuery)
 		.populate('senderId', 'username fullName profilePictureUrl')
@@ -484,12 +677,19 @@ messageSchema.statics.getChatMedia = async function(chatId, type = null, userId,
   try {
 	const skip = (page - 1) * limit;
 	
+	// Convert to ObjectId for consistency
+	const chatIdObj = mongoose.Types.ObjectId.isValid(chatId) ? new mongoose.Types.ObjectId(chatId) : chatId;
+	const userIdObj = userId && mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+	
 	const query = {
-      chatId: chatId,
+      chatId: chatIdObj,
       type: { $in: ['audio', 'video', 'image', 'document', 'gif', 'voice'] },
-      isDeleted: false,
-      'deletedBy.userId': { $ne: userId }
+      isDeleted: false
     };
+    
+    if (userIdObj) {
+      query['deletedBy.userId'] = { $ne: userIdObj };
+    }
     
     if (type) {
       query.type = type;
@@ -519,17 +719,31 @@ messageSchema.methods.editMessage = async function(newContent) {
       throw new Error('Message is too old to edit');
     }
     
-    // Store edit history
+    // Store edit history and update content atomically
     if (this.content !== newContent) {
+      await this.constructor.updateOne(
+        { _id: this._id },
+        {
+          $push: {
+            editHistory: {
+              content: this.content,
+              editedAt: new Date()
+            }
+          },
+          $set: {
+            content: newContent,
+            editedAt: new Date()
+          }
+        }
+      );
+      
+      // Update local instance
       this.editHistory.push({
         content: this.content,
         editedAt: new Date()
       });
-      
       this.content = newContent;
       this.editedAt = new Date();
-      
-      await this.save();
     }
     
     return this;
@@ -550,10 +764,13 @@ messageSchema.methods.canDeleteForEveryone = function() {
 // No restrictions based on message type (text, image, video, audio, voice, location, gif, document, forwarded, system)
 messageSchema.methods.deleteForUser = async function(userId, deleteForEveryone = false) {
   try {
-    // Check if already deleted by this user
-    const alreadyDeleted = this.deletedBy.some(
-      deletion => deletion.userId.toString() === userId.toString()
-    );
+    // Convert userId to ObjectId for consistency (do this first)
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    const userIdStr = userIdObj.toString();
+    
+    // Check if already deleted by this user - use Set for O(1) lookup
+    const deletedByUserIdsSet = new Set(this.deletedBy.map(d => d.userId.toString()));
+    const alreadyDeleted = deletedByUserIdsSet.has(userIdStr);
     
     if (alreadyDeleted) {
       throw new Error('Message already deleted by this user');
@@ -562,7 +779,7 @@ messageSchema.methods.deleteForUser = async function(userId, deleteForEveryone =
     // Validate "Delete for Everyone" restrictions
     if (deleteForEveryone) {
       // Only sender can delete for everyone
-      if (this.senderId.toString() !== userId.toString()) {
+      if (this.senderId.toString() !== userIdStr) {
         throw new Error('You can only delete your own messages for everyone');
       }
       
@@ -572,42 +789,60 @@ messageSchema.methods.deleteForUser = async function(userId, deleteForEveryone =
       }
     }
     
-    // Add deletion record
-    this.deletedBy.push({
-      userId: userId,
-      deletedAt: new Date(),
-      deletedForEveryone: deleteForEveryone
-    });
+    // Build atomic update operation
+    const updateOps = {
+      $push: {
+        deletedBy: {
+          userId: userIdObj,
+          deletedAt: new Date(),
+          deletedForEveryone: deleteForEveryone
+        }
+      }
+    };
     
     // Handle deletion logic based on type
     if (deleteForEveryone) {
       // "Delete for Everyone" - hard delete, visible to all
-      this.isDeleted = true;
-      this.deletedForEveryone = true;
+      updateOps.$set = {
+        isDeleted: true,
+        deletedForEveryone: true
+      };
     } else {
       // "Delete for Me" - soft delete, only affects this user's view
       // Check if all participants have deleted the message (for cleanup)
       const Chat = mongoose.model('Chat');
-      const chat = await Chat.findById(this.chatId);
+      // Use projection to fetch only participants field
+      const chat = await Chat.findById(this.chatId).select('participants').lean();
       
-      if (this.senderId.toString() === userId.toString()) {
-        // If sender deletes "for me", don't hard delete
-        // Message remains visible to other participants
-      } else {
+      if (this.senderId.toString() !== userIdObj.toString()) {
         // Check if all participants have deleted the message
-        const participantIds = chat.participants.map(p => p.toString());
-        const deletedByParticipants = this.deletedBy.map(d => d.userId.toString());
-        const allParticipantsDeleted = participantIds.every(id => 
-          deletedByParticipants.includes(id)
+        // Use Set for O(1) lookups
+        const participantIdsSet = new Set((chat.participants || []).map(p => p.toString()));
+        const currentDeletedBy = [...this.deletedBy, { userId: userIdObj, deletedForEveryone: false }];
+        const deletedByParticipantsSet = new Set(currentDeletedBy.map(d => d.userId.toString()));
+        const allParticipantsDeleted = Array.from(participantIdsSet).every(id => 
+          deletedByParticipantsSet.has(id)
         );
         
         if (allParticipantsDeleted) {
-          this.isDeleted = true;
+          updateOps.$set = { isDeleted: true };
         }
       }
     }
     
-    await this.save();
+    // Execute atomic update
+    await this.constructor.updateOne({ _id: this._id }, updateOps);
+    
+    // Update local instance
+    this.deletedBy.push({
+      userId: userIdObj,
+      deletedAt: new Date(),
+      deletedForEveryone: deleteForEveryone
+    });
+    if (updateOps.$set) {
+      Object.assign(this, updateOps.$set);
+    }
+    
     return this;
   } catch (error) {
     throw new Error(`Failed to delete message: ${error.message}`);
@@ -616,19 +851,35 @@ messageSchema.methods.deleteForUser = async function(userId, deleteForEveryone =
 
 messageSchema.methods.addReaction = async function(userId, emoji) {
   try {
-    // Remove existing reaction from this user
-    this.reactions = this.reactions.filter(
-      reaction => reaction.userId.toString() !== userId.toString()
+    // Convert userId to ObjectId for consistency
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Use atomic update instead of full document save
+    await this.constructor.updateOne(
+      { _id: this._id },
+      {
+        $pull: { reactions: { userId: userIdObj } },
+        $push: {
+          reactions: {
+            userId: userIdObj,
+            emoji: emoji,
+            createdAt: new Date()
+          }
+        }
+      }
     );
     
-    // Add new reaction
+    // Update local instance
+    const userIdStr = userIdObj.toString();
+    this.reactions = this.reactions.filter(
+      reaction => reaction.userId.toString() !== userIdStr
+    );
     this.reactions.push({
-      userId: userId,
+      userId: userIdObj,
       emoji: emoji,
       createdAt: new Date()
     });
     
-    await this.save();
     return this;
   } catch (error) {
     throw new Error(`Failed to add reaction: ${error.message}`);
@@ -637,11 +888,21 @@ messageSchema.methods.addReaction = async function(userId, emoji) {
 
 messageSchema.methods.removeReaction = async function(userId) {
   try {
-    this.reactions = this.reactions.filter(
-      reaction => reaction.userId.toString() !== userId.toString()
+    // Convert userId to ObjectId for consistency
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Use atomic update instead of full document save
+    await this.constructor.updateOne(
+      { _id: this._id },
+      { $pull: { reactions: { userId: userIdObj } } }
     );
     
-    await this.save();
+    // Update local instance
+    const userIdStr = userIdObj.toString();
+    this.reactions = this.reactions.filter(
+      reaction => reaction.userId.toString() !== userIdStr
+    );
+    
     return this;
   } catch (error) {
     throw new Error(`Failed to remove reaction: ${error.message}`);
@@ -650,22 +911,43 @@ messageSchema.methods.removeReaction = async function(userId) {
 
 messageSchema.methods.markAsRead = async function(userId) {
   try {
-    const alreadyRead = this.readBy.some(
-      read => read.userId.toString() === userId.toString()
-    );
+    // Convert userId to ObjectId for consistency
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Use Set for O(1) lookup instead of O(n) array.some()
+    const userIdStr = userIdObj.toString();
+    const readByUserIdsSet = new Set(this.readBy.map(r => r.userId.toString()));
+    const alreadyRead = readByUserIdsSet.has(userIdStr);
     
     if (!alreadyRead) {
-      this.readBy.push({
-        userId: userId,
-        readAt: new Date()
-      });
+      // Use atomic update instead of full document save
+      const updateObj = {
+        $addToSet: {
+          readBy: {
+            userId: userIdObj,
+            readAt: new Date()
+          }
+        }
+      };
       
       // Update status to delivered if not already read
       if (this.status !== 'read') {
-        this.status = 'delivered';
+        updateObj.$set = { status: 'delivered' };
       }
       
-      await this.save();
+      await this.constructor.updateOne(
+        { _id: this._id },
+        updateObj
+      );
+      
+      // Update local instance
+      this.readBy.push({
+        userId: userIdObj,
+        readAt: new Date()
+      });
+      if (this.status !== 'read') {
+        this.status = 'delivered';
+      }
     }
     
     return this;

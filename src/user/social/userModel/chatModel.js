@@ -125,6 +125,8 @@ const chatSchema = new Schema({
 chatSchema.index({ participants: 1, isActive: 1 });
 chatSchema.index({ lastMessageAt: -1 });
 chatSchema.index({ 'userSettings.userId': 1, isActive: 1 });
+chatSchema.index({ 'userSettings.userId': 1, 'userSettings.isArchived': 1, isActive: 1 });
+chatSchema.index({ participants: 1, isActive: 1, lastMessageAt: -1 });
 chatSchema.index({ 'activeCall.callId': 1 });
 
 // Schema-level validation for participants
@@ -135,49 +137,52 @@ chatSchema.pre('validate', function(next) {
   next();
 });
 
-// Pre-save middleware
+// Pre-save middleware - optimized with Set for O(1) lookups
 chatSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   
-  // Clean up invalid userSettings entries (those with undefined/null userId)
-  this.userSettings = (this.userSettings || []).filter(us => us && us.userId != null);
-  
-  // Ensure userSettings exists for all participants
-  // Always check to fix existing broken data
-  if (this.participants && this.participants.length > 0) {
-    const participantIds = this.participants.map(p => {
-      return p.toString ? p.toString() : String(p);
-    });
-    const existingUserIds = this.userSettings
-      .filter(us => us.userId)
-      .map(us => {
-        return us.userId.toString ? us.userId.toString() : String(us.userId);
-      });
+  // Only process if participants or userSettings are modified
+  if (this.isModified('participants') || this.isModified('userSettings') || this.isNew) {
+    // Clean up invalid userSettings entries (those with undefined/null userId)
+    this.userSettings = (this.userSettings || []).filter(us => us && us.userId != null);
     
-    participantIds.forEach((participantId) => {
-      if (!existingUserIds.includes(participantId)) {
-        // Find the participant ObjectId (not string)
-        const participantObjId = this.participants.find(p => {
-          const pId = p.toString ? p.toString() : String(p);
-          return pId === participantId;
-        });
-        
-        if (participantObjId) {
+    // Ensure userSettings exists for all participants
+    // Always check to fix existing broken data
+    if (this.participants && this.participants.length > 0) {
+      // Use Set for O(1) lookups instead of array.includes() which is O(n)
+      const existingUserIdsSet = new Set(
+        this.userSettings
+          .filter(us => us.userId)
+          .map(us => {
+            return us.userId.toString ? us.userId.toString() : String(us.userId);
+          })
+      );
+      
+      // Create a Map for quick participant lookup
+      const participantMap = new Map();
+      this.participants.forEach(p => {
+        const pId = p.toString ? p.toString() : String(p);
+        participantMap.set(pId, p);
+      });
+      
+      // Add missing userSettings
+      participantMap.forEach((participantObjId, participantId) => {
+        if (!existingUserIdsSet.has(participantId)) {
           this.userSettings.push({
             userId: participantObjId, // Use ObjectId, not string
             unreadCount: 0,
             lastReadAt: new Date()
           });
         }
-      }
-    });
+      });
+    }
   }
   
   next();
 });
 
 // Static methods
-chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy) {
+chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy, session = null) {
   try {
     // Validate input
     if (!userId1 || !userId2) {
@@ -188,23 +193,39 @@ chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy
       throw new Error('Cannot create chat with yourself');
     }
     
-    // Look for existing chat
-	let chat = await this.findOne({
-      participants: { $all: [userId1, userId2] },
-      isActive: true,
-      chatType: 'direct'
-    });
-
-	if (!chat) {
-		// Create new chat
-      chat = new this({
-        participants: [userId1, userId2],
-        chatType: 'direct',
-        createdBy: createdBy || userId1
-      });
-      
-      await chat.save();
-	}
+    // Convert to ObjectId for consistency
+    const userId1Obj = mongoose.Types.ObjectId.isValid(userId1) ? new mongoose.Types.ObjectId(userId1) : userId1;
+    const userId2Obj = mongoose.Types.ObjectId.isValid(userId2) ? new mongoose.Types.ObjectId(userId2) : userId2;
+    const createdByObj = createdBy ? (mongoose.Types.ObjectId.isValid(createdBy) ? new mongoose.Types.ObjectId(createdBy) : createdBy) : userId1Obj;
+    
+    // Use findOneAndUpdate with upsert for atomic operation (prevents race conditions)
+    // This ensures only one chat is created even with concurrent requests
+    // Support session for transaction compatibility
+    const options = {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true
+    };
+    if (session) {
+      options.session = session;
+    }
+    
+    const chat = await this.findOneAndUpdate(
+      {
+        participants: { $all: [userId1Obj, userId2Obj] },
+        isActive: true,
+        chatType: 'direct'
+      },
+      {
+        $setOnInsert: {
+          participants: [userId1Obj, userId2Obj],
+          chatType: 'direct',
+          createdBy: createdByObj,
+          isActive: true
+        }
+      },
+      options
+    );
 
 	return chat;
   } catch (error) {
@@ -213,63 +234,111 @@ chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy
 };
 
 chatSchema.statics.getUserChats = async function(userId, page = 1, limit = 20, includeArchived = false) {
-  console.log('🔵 [CHAT_MODEL] getUserChats called:', { userId, page, limit, includeArchived, timestamp: new Date().toISOString() });
   try {
 	const skip = (page - 1) * limit;
 	
-	const query = {
-		participants: userId,
-		isActive: true
-	};
-	console.log('🔵 [CHAT_MODEL] Query:', JSON.stringify(query));
+	// Use aggregation pipeline to filter archived chats in MongoDB instead of JavaScript
+	// This is much more efficient and uses indexes
+	const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 	
-	const chats = await this.find(query)
-	.populate('participants', 'username fullName profilePictureUrl isActive')
-	.populate('lastMessage')
-	.sort({ lastMessageAt: -1, updatedAt: -1 })
-	.skip(skip)
-	.limit(limit)
-	.lean();
-
-	console.log('🔵 [CHAT_MODEL] Raw query result:', { 
-		chatsCount: chats.length,
-		chatIds: chats.map(c => c._id),
-		hasParticipants: chats.map(c => c.participants?.length)
-	});
-	
-	// Filter archived chats based on includeArchived parameter
-	const filteredChats = chats.filter(chat => {
-		const userSetting = chat.userSettings?.find(setting => 
-			setting.userId?.toString() === userId.toString() || 
-			setting.userId?.toString() === userId
-		);
-		const isArchived = userSetting?.isArchived || false;
-		
-		if (includeArchived) {
-			// If includeArchived is true, only return archived chats
-			if (isArchived) {
-				console.log('🔵 [CHAT_MODEL] Including archived chat:', { chatId: chat._id, userId });
+	const pipeline = [
+		{
+			$match: {
+				participants: userIdObj,
+				isActive: true
 			}
-			return isArchived;
-		} else {
-			// If includeArchived is false, filter out archived chats (default behavior)
-			if (isArchived) {
-				console.log('🔵 [CHAT_MODEL] Filtering out archived chat:', { chatId: chat._id, userId });
+		},
+		{
+			$addFields: {
+				userSetting: {
+					$arrayElemAt: [
+						{
+							$filter: {
+								input: '$userSettings',
+								as: 'setting',
+								cond: {
+									$or: [
+										{ $eq: ['$$setting.userId', userIdObj] },
+										{ $eq: [{ $toString: '$$setting.userId' }, userIdObj.toString()] }
+									]
+								}
+							}
+						},
+						0
+					]
+				}
 			}
-			return !isArchived;
+		},
+		{
+			$match: {
+				$expr: includeArchived
+					? { $eq: ['$userSetting.isArchived', true] }
+					: {
+						$or: [
+							{ $ne: ['$userSetting.isArchived', true] },
+							{ $eq: ['$userSetting', null] }
+						]
+					}
+			}
+		},
+		{
+			$sort: { lastMessageAt: -1, updatedAt: -1 }
+		},
+		{
+			$skip: skip
+		},
+		{
+			$limit: limit
 		}
-	});
+	];
 	
-	console.log('✅ [CHAT_MODEL] getUserChats result:', { 
-		rawCount: chats.length, 
-		filteredCount: filteredChats.length,
-		includeArchived,
-		userId
-	});
-
-	return filteredChats;
+	// Use $lookup to populate in the same aggregation pipeline (more efficient)
+	// Get collection names dynamically to avoid hardcoding
+	const User = mongoose.model('User');
+	const Message = mongoose.model('Message');
+	const userCollectionName = User.collection.name;
+	const messageCollectionName = Message.collection.name;
+	
+	const populatedPipeline = [
+		...pipeline,
+		{
+			$lookup: {
+				from: userCollectionName,
+				localField: 'participants',
+				foreignField: '_id',
+				as: 'participants',
+				pipeline: [
+					{
+						$project: {
+							username: 1,
+							fullName: 1,
+							profilePictureUrl: 1,
+							isActive: 1
+						}
+					}
+				]
+			}
+		},
+		{
+			$lookup: {
+				from: messageCollectionName,
+				localField: 'lastMessage',
+				foreignField: '_id',
+				as: 'lastMessage',
+				pipeline: [{ $limit: 1 }]
+			}
+		},
+		{
+			$addFields: {
+				lastMessage: { $arrayElemAt: ['$lastMessage', 0] }
+			}
+		}
+	];
+	
+	const chats = await this.aggregate(populatedPipeline);
+	
+	return chats;
   } catch (error) {
-    console.error('❌ [CHAT_MODEL] getUserChats error:', { error: error.message, stack: error.stack, userId });
     throw new Error(`Failed to get user chats: ${error.message}`);
   }
 };
@@ -291,39 +360,49 @@ chatSchema.statics.canUsersChat = async function(userId1, userId2) {
       return { canChat: false, reason: 'user_inactive' };
     }
     
-    // Check if there's an existing chat
-    const existingChat = await this.findOne({
-      participants: { $all: [userId1, userId2] },
-      isActive: true
-    });
+    // Convert userIds to ObjectId for consistent querying
+    const userId1Obj = mongoose.Types.ObjectId.isValid(userId1) ? new mongoose.Types.ObjectId(userId1) : userId1;
+    const userId2Obj = mongoose.Types.ObjectId.isValid(userId2) ? new mongoose.Types.ObjectId(userId2) : userId2;
+    
+    // Check if there's an existing chat and message request in parallel
+    const MessageRequest = mongoose.model('MessageRequest');
+    const [existingChat, messageRequest] = await Promise.all([
+      this.findOne({
+        participants: { $all: [userId1Obj, userId2Obj] },
+        isActive: true
+      }),
+      MessageRequest.findOne({
+        $or: [
+          { fromUserId: userId1Obj, toUserId: userId2Obj },
+          { fromUserId: userId2Obj, toUserId: userId1Obj }
+        ],
+        status: 'accepted'
+      })
+    ]);
     
     if (existingChat) {
       return { canChat: true, reason: 'existing_chat' };
     }
     
-    // Check if users follow each other and privacy settings
-    const user1FollowingIds = (user1.following || []).map(id => id.toString());
-    const user2FollowingIds = (user2.following || []).map(id => id.toString());
+    if (messageRequest) {
+      return { canChat: true, reason: 'accepted_request' };
+    }
     
-    const user1FollowsUser2 = user1FollowingIds.includes(userId2.toString());
-    const user2FollowsUser1 = user2FollowingIds.includes(userId1.toString());
+    // Check if users follow each other and privacy settings
+    // Use Set for O(1) lookups instead of array.includes() which is O(n)
+    const user1FollowingSet = new Set((user1.following || []).map(id => id.toString()));
+    const user2FollowingSet = new Set((user2.following || []).map(id => id.toString()));
+    
+    const userId1Str = userId1.toString();
+    const userId2Str = userId2.toString();
+    
+    const user1FollowsUser2 = user1FollowingSet.has(userId2Str);
+    const user2FollowsUser1 = user2FollowingSet.has(userId1Str);
     const isMutualFollow = user1FollowsUser2 && user2FollowsUser1;
     
     // Get privacy settings
     const user1AllowMessages = user1.privacySettings?.allowMessages || 'followers';
     const user2AllowMessages = user2.privacySettings?.allowMessages || 'followers';
-    
-    console.log('[ChatModel] canUsersChat - Follow & Privacy check:', {
-      userId1: userId1.toString(),
-      userId2: userId2.toString(),
-      user1FollowingCount: user1FollowingIds.length,
-      user2FollowingCount: user2FollowingIds.length,
-      user1FollowsUser2,
-      user2FollowsUser1,
-      isMutualFollow,
-      user1AllowMessages,
-      user2AllowMessages
-    });
     
     // Mutual follow - always allows chat
     if (isMutualFollow) {
@@ -350,20 +429,6 @@ chatSchema.statics.canUsersChat = async function(userId1, userId2) {
     if (user1AllowMessages === 'everyone') {
       return { canChat: true, reason: 'public_messaging_allowed' };
     }
-    
-    // Check message request permissions
-    const MessageRequest = mongoose.model('MessageRequest');
-    const messageRequest = await MessageRequest.findOne({
-      $or: [
-        { fromUserId: userId1, toUserId: userId2 },
-        { fromUserId: userId2, toUserId: userId1 }
-      ],
-      status: 'accepted'
-    });
-    
-    if (messageRequest) {
-		return { canChat: true, reason: 'accepted_request' };
-	}
 
 	return { canChat: false, reason: 'no_permission' };
   } catch (error) {
@@ -374,23 +439,37 @@ chatSchema.statics.canUsersChat = async function(userId1, userId2) {
 // Instance methods
 chatSchema.methods.updateUserSettings = async function(userId, updates) {
   try {
-    const userSetting = this.userSettings.find(
-      setting => setting.userId && setting.userId.toString() === userId.toString()
+    // Convert userId to ObjectId for consistency
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Build update object with timestamps
+    const updateObj = {};
+    Object.keys(updates).forEach(key => {
+      updateObj[`userSettings.$.${key}`] = key.includes('At') && updates[key] ? new Date() : updates[key];
+    });
+    
+    // Use findOneAndUpdate to return updated document in one operation
+    // Note: $elemMatch in projection doesn't work with findOneAndUpdate, so fetch full document
+    const updatedChat = await this.constructor.findOneAndUpdate(
+      { _id: this._id, 'userSettings.userId': userIdObj },
+      { $set: updateObj },
+      { new: true }
+    ).lean();
+    
+    if (!updatedChat) {
+      throw new Error('User not found in chat participants');
+    }
+    
+    // Find the updated userSetting
+    const userIdStr = userIdObj.toString();
+    const userSetting = updatedChat.userSettings?.find(
+      setting => setting.userId && setting.userId.toString() === userIdStr
     );
     
     if (!userSetting) {
       throw new Error('User not found in chat participants');
     }
     
-    // Update settings with timestamps
-    Object.keys(updates).forEach(key => {
-      userSetting[key] = updates[key];
-      if (key.includes('At') && updates[key]) {
-        userSetting[key] = new Date();
-      }
-    });
-    
-    await this.save();
     return userSetting;
   } catch (error) {
     throw new Error(`Failed to update user settings: ${error.message}`);
@@ -409,21 +488,44 @@ chatSchema.methods.getUserSettings = function(userId) {
   };
 };
 
-chatSchema.methods.incrementUnreadCount = function(userId) {
-  const userSetting = this.userSettings.find(
-    setting => setting.userId && setting.userId.toString() === userId.toString()
-  );
+chatSchema.methods.incrementUnreadCount = async function(userId) {
+  // Convert userId to ObjectId for consistency
+  const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
   
+  // Use atomic update for thread-safety and immediate persistence
+  await this.constructor.updateOne(
+    { _id: this._id, 'userSettings.userId': userIdObj },
+    { $inc: { 'userSettings.$.unreadCount': 1 } }
+  );
+  // Update local instance if needed
+  const userIdStr = userIdObj.toString();
+  const userSetting = this.userSettings.find(
+    setting => setting.userId && setting.userId.toString() === userIdStr
+  );
   if (userSetting) {
     userSetting.unreadCount = (userSetting.unreadCount || 0) + 1;
   }
 };
 
-chatSchema.methods.resetUnreadCount = function(userId) {
-  const userSetting = this.userSettings.find(
-    setting => setting.userId && setting.userId.toString() === userId.toString()
-  );
+chatSchema.methods.resetUnreadCount = async function(userId) {
+  // Convert userId to ObjectId for consistency
+  const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
   
+  // Use atomic update for thread-safety and immediate persistence
+  await this.constructor.updateOne(
+    { _id: this._id, 'userSettings.userId': userIdObj },
+    {
+      $set: {
+        'userSettings.$.unreadCount': 0,
+        'userSettings.$.lastReadAt': new Date()
+      }
+    }
+  );
+  // Update local instance if needed
+  const userIdStr = userIdObj.toString();
+  const userSetting = this.userSettings.find(
+    setting => setting.userId && setting.userId.toString() === userIdStr
+  );
   if (userSetting) {
     userSetting.unreadCount = 0;
     userSetting.lastReadAt = new Date();
@@ -431,29 +533,51 @@ chatSchema.methods.resetUnreadCount = function(userId) {
 };
 
 chatSchema.methods.setActiveCall = async function(callData) {
+  // Use updateOne for atomic update instead of full document save
+  await this.constructor.updateOne(
+    { _id: this._id },
+    {
+      $set: {
+        'activeCall.callId': callData.callId,
+        'activeCall.type': callData.type,
+        'activeCall.status': callData.status,
+        'activeCall.startedAt': callData.startedAt || new Date()
+      }
+    }
+  );
+  // Update local instance
   this.activeCall = {
     callId: callData.callId,
     type: callData.type,
     status: callData.status,
     startedAt: callData.startedAt || new Date()
   };
-  await this.save();
 };
 
 chatSchema.methods.clearActiveCall = async function() {
+  // Use updateOne for atomic update instead of full document save
+  await this.constructor.updateOne(
+    { _id: this._id },
+    {
+      $set: {
+        'activeCall.callId': null,
+        'activeCall.type': null,
+        'activeCall.status': null,
+        'activeCall.startedAt': null
+      }
+    }
+  );
+  // Update local instance
   this.activeCall = {
     callId: null,
     type: null,
     status: null,
     startedAt: null
   };
-  await this.save();
 };
 
-// Virtual fields
-chatSchema.virtual('otherParticipant').get(function() {
-  return this.participants.find(p => p._id.toString() !== this.currentUserId);
-});
+// Virtual fields - removed broken virtual that references non-existent currentUserId
+// If needed, should be implemented as a method with userId parameter
 
 // Export model
 const Chat = mongoose.model('Chat', chatSchema);

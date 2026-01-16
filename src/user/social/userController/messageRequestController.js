@@ -10,7 +10,6 @@ const enhancedRealtimeService = require('../../../services/enhancedRealtimeServi
 // Send message request
 async function sendMessageRequest(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] sendMessageRequest request');
 		const { userId } = req.params || {};
 		const { message = '' } = req.body || {};
 		const currentUserId = req.user?.userId;
@@ -21,8 +20,8 @@ async function sendMessageRequest(req, res) {
 
 		// Check if both users exist and are active
 		const [currentUser, targetUser] = await Promise.all([
-			User.findById(currentUserId),
-			User.findById(userId)
+			User.findById(currentUserId).select('isActive').lean(),
+			User.findById(userId).select('isActive').lean()
 		]);
 
 		if (!currentUser || !targetUser) {
@@ -33,38 +32,16 @@ async function sendMessageRequest(req, res) {
 			return ApiResponse.badRequest(res, 'Cannot send request to inactive users');
 		}
 
-		// Check if users can already chat (mutual followers)
+		// Check if users can already chat (any reason - existing chat, mutual follow, etc.)
+		// This already checks for existing chats, so no need for separate check
 		const canChatResult = await Chat.canUsersChat(currentUserId, userId);
-		if (canChatResult.canChat && canChatResult.reason === 'mutual_follow') {
+		if (canChatResult.canChat) {
 			return ApiResponse.badRequest(res, 'You can already chat with this user');
-		}
-
-		// Check if there's already an accepted chat
-		const existingChat = await Chat.findOne({
-			participants: { $all: [currentUserId, userId] },
-			requestStatus: 'accepted'
-		});
-
-		if (existingChat) {
-			return ApiResponse.badRequest(res, 'Chat already exists with this user');
 		}
 
 		// Create message request with message (ensure message is always passed)
 		const messageText = message || '';
-		console.log('[USER][MESSAGE_REQUEST] Creating request with message:', {
-			fromUserId: currentUserId,
-			toUserId: userId,
-			messageLength: messageText.length,
-			hasMessage: messageText.trim().length > 0
-		});
-		
 		const request = await MessageRequest.createRequest(currentUserId, userId, messageText);
-		
-		console.log('[USER][MESSAGE_REQUEST] Request created successfully:', {
-			requestId: request._id,
-			savedMessage: request.message,
-			messageLength: request.message?.length || 0
-		});
 
 		// Send notification to target user
 		try {
@@ -84,7 +61,6 @@ async function sendMessageRequest(req, res) {
 			// Don't fail request creation if notification fails
 		}
 
-		console.log('[USER][MESSAGE_REQUEST] Message request sent successfully');
 		return ApiResponse.created(res, {
 			requestId: request._id,
 			fromUserId: request.fromUserId,
@@ -108,13 +84,11 @@ async function sendMessageRequest(req, res) {
 // Get pending message requests
 async function getPendingRequests(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] getPendingRequests request');
 		const { page = 1, limit = 20 } = req.query || {};
 		const currentUserId = req.user?.userId;
 
 		const requests = await MessageRequest.getPendingRequests(currentUserId, parseInt(page), parseInt(limit));
 
-		console.log('[USER][MESSAGE_REQUEST] Pending requests fetched successfully');
 		return ApiResponse.success(res, {
 			requests,
 			pagination: {
@@ -132,13 +106,11 @@ async function getPendingRequests(req, res) {
 // Get sent message requests
 async function getSentRequests(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] getSentRequests request');
 		const { page = 1, limit = 20 } = req.query || {};
 		const currentUserId = req.user?.userId;
 
 		const requests = await MessageRequest.getSentRequests(currentUserId, parseInt(page), parseInt(limit));
 
-		console.log('[USER][MESSAGE_REQUEST] Sent requests fetched successfully');
 		return ApiResponse.success(res, {
 			requests,
 			pagination: {
@@ -156,7 +128,6 @@ async function getSentRequests(req, res) {
 // Accept message request
 async function acceptMessageRequest(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] acceptMessageRequest request');
 		const { requestId } = req.params || {};
 		const { responseMessage = '' } = req.body || {};
 		const currentUserId = req.user?.userId;
@@ -185,14 +156,6 @@ async function acceptMessageRequest(req, res) {
 			return ApiResponse.badRequest(res, 'Request has expired');
 		}
 
-		// Log the request message before accepting
-		console.log('[USER][MESSAGE_REQUEST] Accepting request with initial message:', {
-			requestId: request._id,
-			hasMessage: !!(request.message && request.message.trim()),
-			messageLength: request.message?.length || 0,
-			messagePreview: request.message ? request.message.substring(0, 50) + (request.message.length > 50 ? '...' : '') : 'no message'
-		});
-
 		// Accept the request (this will create the chat and send initial message if present)
 		const chat = await request.accept(responseMessage);
 
@@ -209,23 +172,17 @@ async function acceptMessageRequest(req, res) {
 				})
 				.sort({ createdAt: -1 })
 				.limit(1)
-				.populate('senderId', 'username fullName profilePictureUrl');
+				.populate('senderId', 'username fullName profilePictureUrl')
+				.lean();
 				
-				if (initialMessage) {
-					console.log('[MESSAGE_REQUEST] Broadcasting initial message:', {
-						messageId: initialMessage._id,
-						chatId: chat._id
-					});
-					
+				if (initialMessage && enhancedRealtimeService.io) {
 					// Broadcast message via realtime service
-					if (enhancedRealtimeService.io) {
-						enhancedRealtimeService.emitToChat(chat._id.toString(), 'message_received', {
-							message: initialMessage
-						});
-					}
+					enhancedRealtimeService.emitToChat(chat._id.toString(), 'message_received', {
+						message: initialMessage
+					});
 				}
 			} catch (broadcastError) {
-				console.error('[MESSAGE_REQUEST] Error broadcasting initial message:', broadcastError);
+				console.error('[MESSAGE_REQUEST] Error broadcasting initial message:', broadcastError?.message || broadcastError);
 				// Don't fail acceptance if broadcast fails
 			}
 		}
@@ -245,18 +202,11 @@ async function acceptMessageRequest(req, res) {
 				}
 			});
 		} catch (notificationError) {
-			console.error('[MESSAGE_REQUEST] Notification error:', notificationError);
+			console.error('[MESSAGE_REQUEST] Notification error:', notificationError?.message || notificationError);
 			// Don't fail acceptance if notification fails
 		}
 
 		const initialMessageSent = requestMessage !== '';
-		
-		console.log('[USER][MESSAGE_REQUEST] Message request accepted successfully:', {
-			requestId: request._id,
-			chatId: chat._id,
-			initialMessageSent,
-			messageLength: requestMessage.length
-		});
 		
 		return ApiResponse.success(res, {
 			requestId: request._id,
@@ -279,7 +229,6 @@ async function acceptMessageRequest(req, res) {
 // Reject message request
 async function rejectMessageRequest(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] rejectMessageRequest request');
 		const { requestId } = req.params || {};
 		const { responseMessage = '' } = req.body || {};
 		const currentUserId = req.user?.userId;
@@ -305,7 +254,6 @@ async function rejectMessageRequest(req, res) {
 		// Reject the request
 		await request.reject(responseMessage);
 
-		console.log('[USER][MESSAGE_REQUEST] Message request rejected successfully');
 		return ApiResponse.success(res, {
 			requestId: request._id,
 			status: request.status,
@@ -320,11 +268,10 @@ async function rejectMessageRequest(req, res) {
 // Delete message request
 async function deleteMessageRequest(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] deleteMessageRequest request');
 		const { requestId } = req.params || {};
 		const currentUserId = req.user?.userId;
 
-		const request = await MessageRequest.findById(requestId);
+		const request = await MessageRequest.findById(requestId).select('fromUserId status');
 
 		if (!request) {
 			return ApiResponse.notFound(res, 'Message request not found');
@@ -342,7 +289,6 @@ async function deleteMessageRequest(req, res) {
 
 		await MessageRequest.findByIdAndDelete(requestId);
 
-		console.log('[USER][MESSAGE_REQUEST] Message request deleted successfully');
 		return ApiResponse.success(res, {
 			requestId: request._id,
 			message: 'Message request deleted successfully'
@@ -356,13 +302,13 @@ async function deleteMessageRequest(req, res) {
 // Get message request details
 async function getMessageRequestDetails(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] getMessageRequestDetails request');
 		const { requestId } = req.params || {};
 		const currentUserId = req.user?.userId;
 
 		const request = await MessageRequest.findById(requestId)
 			.populate('fromUserId', 'username fullName profilePictureUrl verificationStatus')
-			.populate('toUserId', 'username fullName profilePictureUrl verificationStatus');
+			.populate('toUserId', 'username fullName profilePictureUrl verificationStatus')
+			.lean();
 
 		if (!request) {
 			return ApiResponse.notFound(res, 'Message request not found');
@@ -376,11 +322,11 @@ async function getMessageRequestDetails(req, res) {
 			return ApiResponse.forbidden(res, 'Access denied to this request');
 		}
 
-		console.log('[USER][MESSAGE_REQUEST] Message request details fetched successfully');
+		// Convert to plain object and add virtuals
 		return ApiResponse.success(res, {
-			...request.toObject(),
-			isExpired: request.isExpired(),
-			timeUntilExpiry: request.timeUntilExpiry
+			...request,
+			isExpired: request.expiresAt ? Date.now() > new Date(request.expiresAt).getTime() : false,
+			timeUntilExpiry: request.expiresAt ? Math.floor((new Date(request.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60)) : null
 		});
 	} catch (e) {
 		console.error('[USER][MESSAGE_REQUEST] getMessageRequestDetails error:', e?.message || e);
@@ -391,12 +337,10 @@ async function getMessageRequestDetails(req, res) {
 // Get message request statistics
 async function getMessageRequestStats(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] getMessageRequestStats request');
 		const currentUserId = req.user?.userId;
 
 		const stats = await MessageRequest.getRequestStats(currentUserId);
 
-		console.log('[USER][MESSAGE_REQUEST] Message request stats fetched successfully');
 		return ApiResponse.success(res, stats);
 	} catch (e) {
 		console.error('[USER][MESSAGE_REQUEST] getMessageRequestStats error:', e?.message || e);
@@ -407,7 +351,6 @@ async function getMessageRequestStats(req, res) {
 // Get request between two users
 async function getRequestBetweenUsers(req, res) {
 	try {
-		console.log('[USER][MESSAGE_REQUEST] getRequestBetweenUsers request');
 		const { userId } = req.params || {};
 		const currentUserId = req.user?.userId;
 
@@ -421,11 +364,12 @@ async function getRequestBetweenUsers(req, res) {
 			return ApiResponse.notFound(res, 'No request found between these users');
 		}
 
-		console.log('[USER][MESSAGE_REQUEST] Request between users fetched successfully');
+		// Convert to plain object and add virtuals
+		const requestObj = request.toObject ? request.toObject() : request;
 		return ApiResponse.success(res, {
-			...request.toObject(),
-			isExpired: request.isExpired(),
-			timeUntilExpiry: request.timeUntilExpiry
+			...requestObj,
+			isExpired: requestObj.expiresAt ? Date.now() > new Date(requestObj.expiresAt).getTime() : false,
+			timeUntilExpiry: requestObj.expiresAt ? Math.floor((new Date(requestObj.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60)) : null
 		});
 	} catch (e) {
 		console.error('[USER][MESSAGE_REQUEST] getRequestBetweenUsers error:', e?.message || e);
