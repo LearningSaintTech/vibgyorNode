@@ -10,7 +10,9 @@ const {
 	deleteMessageRequest,
 	getMessageRequestDetails,
 	getMessageRequestStats,
-	getRequestBetweenUsers
+	getRequestBetweenUsers,
+	cleanupRejectedRequests,
+	cleanupOldRequests
 } = require('../userController/messageRequestController');
 
 // Message request routes (User only)
@@ -23,5 +25,9 @@ router.delete('/:requestId', authorize([Roles.USER]), deleteMessageRequest);
 router.get('/:requestId', authorize([Roles.USER]), getMessageRequestDetails);
 router.get('/stats', authorize([Roles.USER]), getMessageRequestStats);
 router.get('/between/:userId', authorize([Roles.USER]), getRequestBetweenUsers);
+
+// Cleanup routes (Admin only for safety)
+router.post('/cleanup/rejected', authorize([Roles.ADMIN, Roles.SUBADMIN]), cleanupRejectedRequests);
+router.post('/cleanup/old', authorize([Roles.ADMIN, Roles.SUBADMIN]), cleanupOldRequests);
 
 module.exports = router;

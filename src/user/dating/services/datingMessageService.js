@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const DatingMessage = require('../models/datingMessageModel');
 const DatingChat = require('../models/datingChatModel');
 const DatingMatch = require('../models/datingMatchModel');
@@ -42,19 +43,23 @@ class DatingMessageService {
       }
       
       // Validate chat exists and user is participant
-      const chat = await DatingChat.findById(chatId);
+      const chat = await DatingChat.findById(chatId)
+        .select('participants lastMessage lastMessageAt')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === senderId.toString());
-      if (!isParticipant) {
+      // Use Set for O(1) participant lookup
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const senderIdStr = senderId.toString();
+      if (!participantSet.has(senderIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
       // Check if users are blocked (bidirectional check)
       // Get the other participant
-      const otherParticipantId = chat.participants.find(p => p.toString() !== senderId.toString());
+      const otherParticipantId = chat.participants.find(p => p.toString() !== senderIdStr);
       if (otherParticipantId) {
         const [senderUser, otherUser] = await Promise.all([
           User.findById(senderId).select('blockedUsers blockedBy'),
@@ -62,15 +67,22 @@ class DatingMessageService {
         ]);
         
         if (senderUser && otherUser) {
-          // Check all blocking scenarios:
+          // Check all blocking scenarios using Set for O(1) lookups:
           // 1. Sender has blocked the other user
           // 2. Other user has blocked the sender
           // 3. Sender is in other user's blockedBy list
           // 4. Other user is in sender's blockedBy list
-          const senderBlockedOther = senderUser.blockedUsers?.some(id => id.toString() === otherParticipantId.toString());
-          const otherBlockedSender = otherUser.blockedUsers?.some(id => id.toString() === senderId.toString());
-          const senderInOtherBlockedBy = otherUser.blockedBy?.some(id => id.toString() === senderId.toString());
-          const otherInSenderBlockedBy = senderUser.blockedBy?.some(id => id.toString() === otherParticipantId.toString());
+          const senderBlockedSet = new Set((senderUser.blockedUsers || []).map(id => id.toString()));
+          const otherBlockedSet = new Set((otherUser.blockedUsers || []).map(id => id.toString()));
+          const senderBlockedBySet = new Set((senderUser.blockedBy || []).map(id => id.toString()));
+          const otherBlockedBySet = new Set((otherUser.blockedBy || []).map(id => id.toString()));
+          
+          const otherParticipantIdStr = otherParticipantId.toString();
+          // senderIdStr already declared above (line 55)
+          const senderBlockedOther = senderBlockedSet.has(otherParticipantIdStr);
+          const otherBlockedSender = otherBlockedSet.has(senderIdStr);
+          const senderInOtherBlockedBy = otherBlockedBySet.has(senderIdStr);
+          const otherInSenderBlockedBy = senderBlockedBySet.has(otherParticipantIdStr);
           
           const isBlocked = senderBlockedOther || otherBlockedSender || senderInOtherBlockedBy || otherInSenderBlockedBy;
           
@@ -217,17 +229,21 @@ class DatingMessageService {
         }
       }
       
-      // Validate replyTo message if provided
+      // Validate replyTo message if provided (optimized with lean and select)
       if (replyTo) {
-        const replyMessage = await DatingMessage.findById(replyTo);
+        const replyMessage = await DatingMessage.findById(replyTo)
+          .select('chatId')
+          .lean();
         if (!replyMessage || replyMessage.chatId.toString() !== chatId) {
           throw new Error('Invalid reply message');
         }
       }
       
-      // Validate forwardedFrom message if provided
+      // Validate forwardedFrom message if provided (optimized with lean)
       if (forwardedFrom) {
-        const forwardedMessage = await DatingMessage.findById(forwardedFrom);
+        const forwardedMessage = await DatingMessage.findById(forwardedFrom)
+          .select('_id')
+          .lean();
         if (!forwardedMessage) {
           throw new Error('Invalid forwarded message');
         }
@@ -264,41 +280,49 @@ class DatingMessageService {
         { path: 'forwardedFrom', select: 'content type senderId' }
       ]);
       
-      // Update chat's last message and increment unread count
-      chat.lastMessage = message._id;
-      chat.lastMessageAt = new Date();
-      
-      // Increment unread count for all participants except the sender
-      chat.participants.forEach(participantId => {
-        if (participantId.toString() !== senderId.toString()) {
-          chat.incrementUnreadCount(participantId);
+      // Update chat's last message and increment unread count atomically
+      // Note: chat is now a lean object, so we need to use updateOne
+      const senderIdObj = mongoose.Types.ObjectId.isValid(senderId) ? new mongoose.Types.ObjectId(senderId) : senderId;
+      await DatingChat.updateOne(
+        { _id: chatId },
+        {
+          $set: {
+            lastMessage: message._id,
+            lastMessageAt: new Date()
+          },
+          $inc: {
+            'userSettings.$[elem].unreadCount': 1
+          }
+        },
+        {
+          arrayFilters: [
+            { 'elem.userId': { $ne: senderIdObj } }
+          ]
         }
-      });
+      );
       
-      await chat.save();
-      
-      // Send notifications to all participants except sender
-      chat.participants.forEach(async (participantId) => {
-        if (participantId.toString() !== senderId.toString()) {
-          try {
-            await notificationService.create({
+      // Send notifications to all participants except sender in parallel
+      await Promise.allSettled(
+        chat.participants
+          .filter(p => p.toString() !== senderIdStr)
+          .map(participantId => 
+            notificationService.create({
               context: 'dating',
               type: 'message_received',
               recipientId: participantId.toString(),
-              senderId: senderId.toString(),
+              senderId: senderIdStr,
               data: {
                 chatId: chatId,
                 messageId: message._id.toString(),
                 messageType: type,
                 contentType: 'message'
               }
-            });
-          } catch (notificationError) {
-            console.error('[DATING_MESSAGE_SERVICE] Notification error for participant:', participantId, notificationError);
-            // Don't fail message send if notification fails
-          }
-        }
-      });
+            }).catch(err => {
+              console.error('[DATING_MESSAGE_SERVICE] Notification error for participant:', participantId, err);
+              return null; // Don't fail message send if notification fails
+            })
+          )
+      );
       
       // Emit real-time message to chat participants (dating-specific room)
       const realtime = enhancedRealtimeService;
@@ -399,14 +423,17 @@ class DatingMessageService {
         throw new Error('Invalid pagination parameters');
       }
       
-      // Validate chat access
-      const chat = await DatingChat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await DatingChat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
@@ -439,22 +466,33 @@ class DatingMessageService {
         throw new Error('Chat ID and User ID are required');
       }
       
-      // Validate chat access
-      const chat = await DatingChat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await DatingChat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
-      const readCount = await DatingMessage.markChatAsRead(chatId, userId);
-      
-      // Reset unread count for this user in the chat
-      chat.resetUnreadCount(userId);
-      await chat.save();
+      // Mark messages as read and reset unread count atomically
+      const [readCount] = await Promise.all([
+        DatingMessage.markChatAsRead(chatId, userId),
+        DatingChat.updateOne(
+          { _id: chatId, 'userSettings.userId': userId },
+          {
+            $set: {
+              'userSettings.$.unreadCount': 0,
+              'userSettings.$.lastReadAt': new Date()
+            }
+          }
+        )
+      ]);
       
       return {
         chatId,
@@ -480,13 +518,16 @@ class DatingMessageService {
         throw new Error('Message ID, User ID, and content are required');
       }
       
-      const message = await DatingMessage.findById(messageId);
+      const message = await DatingMessage.findById(messageId)
+        .select('senderId createdAt isDeleted')
+        .lean();
       if (!message) {
         throw new Error('Dating message not found');
       }
       
       // Check if user is the sender
-      if (message.senderId.toString() !== userId.toString()) {
+      const userIdStr = userId.toString();
+      if (message.senderId.toString() !== userIdStr) {
         throw new Error('You can only edit your own messages');
       }
       
@@ -501,26 +542,30 @@ class DatingMessageService {
         throw new Error('Cannot edit deleted message');
       }
       
-      await message.editMessage(newContent.trim());
+      // Fetch full message document for editing (need mongoose document for instance method)
+      const messageDoc = await DatingMessage.findById(messageId);
+      await messageDoc.editMessage(newContent.trim());
       
       // Emit message update to chat participants
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`dating-chat:${message.chatId}`).emit('dating_message_update', {
-            messageId: message._id,
-            chatId: message.chatId,
-            content: message.content,
-            editedAt: message.editedAt
+          realtime.to(`dating-chat:${messageDoc.chatId}`).emit('dating_message_update', {
+            messageId: messageDoc._id,
+            chatId: messageDoc.chatId,
+            content: messageDoc.content,
+            editedAt: messageDoc.editedAt
           });
           
-          const chat = await DatingChat.findById(message.chatId);
+          const chat = await DatingChat.findById(messageDoc.chatId)
+            .select('participants')
+            .lean();
           chat.participants.forEach(participantId => {
             realtime.to(`user:${participantId}`).emit('dating_message_update', {
-              messageId: message._id,
-              chatId: message.chatId,
-              content: message.content,
-              editedAt: message.editedAt
+              messageId: messageDoc._id,
+              chatId: messageDoc.chatId,
+              content: messageDoc.content,
+              editedAt: messageDoc.editedAt
             });
           });
         }
@@ -529,9 +574,9 @@ class DatingMessageService {
       }
       
       return {
-        messageId: message._id,
-        content: message.content,
-        editedAt: message.editedAt
+        messageId: messageDoc._id,
+        content: messageDoc.content,
+        editedAt: messageDoc.editedAt
       };
       
     } catch (error) {
@@ -553,22 +598,21 @@ class DatingMessageService {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await DatingMessage.findById(messageId);
+      const message = await DatingMessage.findById(messageId)
+        .select('senderId chatId deletedBy createdAt');
       if (!message) {
         throw new Error('Dating message not found');
       }
       
       // Check ownership for "Delete for Everyone"
-      if (deleteForEveryone && message.senderId.toString() !== userId.toString()) {
+      const userIdStr = userId.toString();
+      if (deleteForEveryone && message.senderId.toString() !== userIdStr) {
         throw new Error('You can only delete your own messages for everyone');
       }
       
-      // Check if message is already deleted by this user
-      const alreadyDeleted = message.deletedBy.some(
-        deletion => deletion.userId.toString() === userId.toString()
-      );
-      
-      if (alreadyDeleted) {
+      // Check if message is already deleted by this user using Set for O(1) lookup
+      const deletedBySet = new Set((message.deletedBy || []).map(d => d.userId.toString()));
+      if (deletedBySet.has(userIdStr)) {
         throw new Error('Message already deleted by this user');
       }
       
@@ -584,9 +628,11 @@ class DatingMessageService {
         // Continue with original message if reload fails
       }
       
-      // Get chat for real-time updates
+      // Get chat for real-time updates (lean for read-only access)
       const DatingChat = require('../models/datingChatModel');
-      const chat = await DatingChat.findById(message.chatId);
+      const chat = await DatingChat.findById(message.chatId)
+        .select('participants')
+        .lean();
       
       // Emit real-time deletion event
       const realtime = enhancedRealtimeService;
@@ -650,15 +696,19 @@ class DatingMessageService {
         throw new Error('Message ID, User ID, and emoji are required');
       }
       
-      const message = await DatingMessage.findById(messageId);
+      const message = await DatingMessage.findById(messageId)
+        .select('chatId isDeleted');
       if (!message) {
         throw new Error('Dating message not found');
       }
       
-      // Check if user is participant in the chat
-      const chat = await DatingChat.findById(message.chatId);
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      // Check if user is participant in the chat with lean query and Set lookup
+      const chat = await DatingChat.findById(message.chatId)
+        .select('participants')
+        .lean();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this message');
       }
       
@@ -667,19 +717,21 @@ class DatingMessageService {
         throw new Error('Cannot react to deleted message');
       }
       
-      await message.addReaction(userId, emoji);
+      // Fetch full message for instance method
+      const messageDoc = await DatingMessage.findById(messageId);
+      await messageDoc.addReaction(userId, emoji);
       
       // Emit reaction to chat participants
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
           const reactionData = {
-            messageId: message._id,
-            chatId: message.chatId,
-            reactions: message.reactions
+            messageId: messageDoc._id,
+            chatId: messageDoc.chatId,
+            reactions: messageDoc.reactions
           };
           
-          realtime.to(`dating-chat:${message.chatId}`).emit('dating_message_reaction', reactionData);
+          realtime.to(`dating-chat:${messageDoc.chatId}`).emit('dating_message_reaction', reactionData);
           
           chat.participants.forEach(participantId => {
             realtime.to(`user:${participantId}`).emit('dating_message_reaction', reactionData);
@@ -690,8 +742,8 @@ class DatingMessageService {
       }
       
       return {
-        messageId: message._id,
-        reactions: message.reactions
+        messageId: messageDoc._id,
+        reactions: messageDoc.reactions
       };
       
     } catch (error) {
@@ -712,35 +764,41 @@ class DatingMessageService {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await DatingMessage.findById(messageId);
+      const message = await DatingMessage.findById(messageId)
+        .select('chatId');
       if (!message) {
         throw new Error('Dating message not found');
       }
       
-      // Check if user is participant in the chat
-      const chat = await DatingChat.findById(message.chatId);
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      // Check if user is participant in the chat with lean query and Set lookup
+      const chat = await DatingChat.findById(message.chatId)
+        .select('participants')
+        .lean();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this message');
       }
       
-      await message.removeReaction(userId);
+      // Fetch full message for instance method
+      const messageDoc = await DatingMessage.findById(messageId);
+      await messageDoc.removeReaction(userId);
       
       // Emit reaction update to chat participants
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`dating-chat:${message.chatId}`).emit('dating_message_reaction', {
-            messageId: message._id,
-            chatId: message.chatId,
-            reactions: message.reactions
+          realtime.to(`dating-chat:${messageDoc.chatId}`).emit('dating_message_reaction', {
+            messageId: messageDoc._id,
+            chatId: messageDoc.chatId,
+            reactions: messageDoc.reactions
           });
           
           chat.participants.forEach(participantId => {
             realtime.to(`user:${participantId}`).emit('dating_message_reaction', {
-              messageId: message._id,
-              chatId: message.chatId,
-              reactions: message.reactions
+              messageId: messageDoc._id,
+              chatId: messageDoc.chatId,
+              reactions: messageDoc.reactions
             });
           });
         }
@@ -749,8 +807,8 @@ class DatingMessageService {
       }
       
       return {
-        messageId: message._id,
-        reactions: message.reactions
+        messageId: messageDoc._id,
+        reactions: messageDoc.reactions
       };
       
     } catch (error) {
@@ -772,23 +830,35 @@ class DatingMessageService {
         throw new Error('Message ID, Target Chat ID, and User ID are required');
       }
       
-      // Find the original message
+      // Find the original message first, then fetch both chats in parallel
       const originalMessage = await DatingMessage.findById(messageId)
-        .populate('senderId', 'username fullName profilePictureUrl');
+        .populate('senderId', 'username fullName profilePictureUrl')
+        .select('chatId content media senderId')
+        .lean();
       
       if (!originalMessage) {
         throw new Error('Original message not found');
       }
       
-      // Check if user has access to the original message
-      const originalChat = await DatingChat.findById(originalMessage.chatId);
-      if (!originalChat || !originalChat.participants.includes(userId)) {
+      // Fetch both chats in parallel with lean queries
+      const [originalChat, targetChat] = await Promise.all([
+        DatingChat.findById(originalMessage.chatId)
+          .select('participants')
+          .lean(),
+        DatingChat.findById(targetChatId)
+          .select('participants lastMessage lastMessageAt')
+          .lean()
+      ]);
+      
+      // Check access using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const originalParticipantSet = new Set(originalChat.participants.map(p => p.toString()));
+      const targetParticipantSet = new Set(targetChat.participants.map(p => p.toString()));
+      
+      if (!originalParticipantSet.has(userIdStr)) {
         throw new Error('Access denied to original message');
       }
-      
-      // Check if user has access to target chat
-      const targetChat = await DatingChat.findById(targetChatId);
-      if (!targetChat || !targetChat.participants.includes(userId)) {
+      if (!targetParticipantSet.has(userIdStr)) {
         throw new Error('Access denied to target chat');
       }
       
@@ -805,18 +875,25 @@ class DatingMessageService {
       
       await forwardedMessage.save();
       
-      // Update target chat's last message
-      targetChat.lastMessage = forwardedMessage._id;
-      targetChat.lastMessageAt = new Date();
-      
-      // Increment unread count for all participants except the sender
-      targetChat.participants.forEach(participantId => {
-        if (participantId.toString() !== userId.toString()) {
-          targetChat.incrementUnreadCount(participantId);
+      // Update target chat's last message and increment unread count atomically
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      await DatingChat.updateOne(
+        { _id: targetChatId },
+        {
+          $set: {
+            lastMessage: forwardedMessage._id,
+            lastMessageAt: new Date()
+          },
+          $inc: {
+            'userSettings.$[elem].unreadCount': 1
+          }
+        },
+        {
+          arrayFilters: [
+            { 'elem.userId': { $ne: userIdObj } }
+          ]
         }
-      });
-      
-      await targetChat.save();
+      );
       
       // Emit real-time message to target chat participants
       const realtime = enhancedRealtimeService;
@@ -878,14 +955,17 @@ class DatingMessageService {
         throw new Error('Invalid pagination parameters');
       }
       
-      // Validate chat access
-      const chat = await DatingChat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await DatingChat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
@@ -926,14 +1006,17 @@ class DatingMessageService {
         throw new Error('Invalid pagination parameters');
       }
       
-      // Validate chat access
-      const chat = await DatingChat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await DatingChat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
@@ -978,15 +1061,19 @@ class DatingMessageService {
         throw new Error('Dating message not found');
       }
       
-      // Check if user is participant in the chat
-      const chat = await DatingChat.findById(message.chatId);
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      // Check if user is participant in the chat with lean query and Set lookup
+      const chat = await DatingChat.findById(message.chatId)
+        .select('participants')
+        .lean();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this message');
       }
       
-      // Check if message is deleted by this user
-      if (message.deletedBy.includes(userId)) {
+      // Check if message is deleted by this user using Set for O(1) lookup
+      const deletedBySet = new Set((message.deletedBy || []).map(d => d.userId?.toString() || d.toString()));
+      if (deletedBySet.has(userIdStr)) {
         throw new Error('Message not found');
       }
       
@@ -1017,12 +1104,10 @@ class DatingMessageService {
         throw new Error('Message is not a one-view message');
       }
       
-      // Check if already viewed by this user
-      const alreadyViewed = message.viewedBy.some(
-        view => view.userId.toString() === userId.toString()
-      );
-      
-      if (alreadyViewed) {
+      // Check if already viewed by this user using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const viewedBySet = new Set((message.viewedBy || []).map(v => v.userId?.toString() || v.toString()));
+      if (viewedBySet.has(userIdStr)) {
         return message;
       }
       

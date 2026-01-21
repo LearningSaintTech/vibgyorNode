@@ -139,6 +139,8 @@ datingChatSchema.index({ matchId: 1 }, { unique: true });
 datingChatSchema.index({ participants: 1, isActive: 1 });
 datingChatSchema.index({ lastMessageAt: -1 });
 datingChatSchema.index({ 'userSettings.userId': 1, isActive: 1 });
+datingChatSchema.index({ 'userSettings.userId': 1, 'userSettings.isArchived': 1, isActive: 1 });
+datingChatSchema.index({ participants: 1, isActive: 1, lastMessageAt: -1 });
 datingChatSchema.index({ 'activeCall.callId': 1 });
 
 // Schema-level validation
@@ -149,38 +151,62 @@ datingChatSchema.pre('validate', function(next) {
   next();
 });
 
-// Pre-save middleware
+// Pre-save middleware - optimized with Set for O(1) lookups
 datingChatSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   
-  // Ensure userSettings exists for all participants
-  if (this.isNew || this.isModified('participants')) {
-    const participantIds = this.participants.map(p => p.toString());
-    const existingUserIds = this.userSettings.map(us => us.userId.toString());
+  // Only process if participants or userSettings are modified
+  if (this.isModified('participants') || this.isModified('userSettings') || this.isNew) {
+    // Clean up invalid userSettings entries (those with undefined/null userId)
+    this.userSettings = (this.userSettings || []).filter(us => us && us.userId != null);
     
-    participantIds.forEach(participantId => {
-      if (!existingUserIds.includes(participantId)) {
-        this.userSettings.push({
-          userId: participantId,
-          unreadCount: 0,
-          lastReadAt: new Date()
-        });
-      }
-    });
+    // Ensure userSettings exists for all participants
+    // Always check to fix existing broken data
+    if (this.participants && this.participants.length > 0) {
+      // Use Set for O(1) lookups instead of array.includes() which is O(n)
+      const existingUserIdsSet = new Set(
+        this.userSettings
+          .filter(us => us.userId)
+          .map(us => {
+            return us.userId.toString ? us.userId.toString() : String(us.userId);
+          })
+      );
+      
+      // Create a Map for quick participant lookup
+      const participantMap = new Map();
+      this.participants.forEach(p => {
+        const pId = p.toString ? p.toString() : String(p);
+        participantMap.set(pId, p);
+      });
+      
+      // Add missing userSettings
+      participantMap.forEach((participantObjId, participantId) => {
+        if (!existingUserIdsSet.has(participantId)) {
+          this.userSettings.push({
+            userId: participantObjId, // Use ObjectId, not string
+            unreadCount: 0,
+            lastReadAt: new Date()
+          });
+        }
+      });
+    }
   }
   
   next();
 });
 
 // Static methods
-datingChatSchema.statics.findOrCreateByMatch = async function(matchId, userId) {
+datingChatSchema.statics.findOrCreateByMatch = async function(matchId, userId, session = null) {
   try {
     if (!matchId || !userId) {
       throw new Error('Match ID and User ID are required');
     }
     
     const DatingMatch = mongoose.model('DatingMatch');
-    const match = await DatingMatch.findById(matchId);
+    // Use projection to fetch only needed fields for better performance
+    const match = await DatingMatch.findById(matchId)
+      .select('userA userB status')
+      .lean();
     
     if (!match) {
       throw new Error('Match not found');
@@ -199,41 +225,173 @@ datingChatSchema.statics.findOrCreateByMatch = async function(matchId, userId) {
       throw new Error('Match is not active');
     }
     
-    // Look for existing chat
-    let chat = await this.findOne({ matchId: matchId, isActive: true });
+    // Convert to ObjectId for consistency
+    const matchIdObj = mongoose.Types.ObjectId.isValid(matchId) ? new mongoose.Types.ObjectId(matchId) : matchId;
+    const userAObj = mongoose.Types.ObjectId.isValid(match.userA) ? new mongoose.Types.ObjectId(match.userA) : match.userA;
+    const userBObj = mongoose.Types.ObjectId.isValid(match.userB) ? new mongoose.Types.ObjectId(match.userB) : match.userB;
     
-    if (!chat) {
-      // Create new chat
-      chat = new this({
-        matchId: matchId,
-        participants: [match.userA, match.userB],
-        chatType: 'direct'
-      });
-      
-      await chat.save();
+    // Use findOneAndUpdate with upsert for atomic operation (prevents race conditions)
+    // This ensures only one chat is created even with concurrent requests
+    // Support session for transaction compatibility
+    const options = {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true
+    };
+    if (session) {
+      options.session = session;
     }
     
+    const chat = await this.findOneAndUpdate(
+      {
+        matchId: matchIdObj,
+        isActive: true
+      },
+      {
+        $setOnInsert: {
+          matchId: matchIdObj,
+          participants: [userAObj, userBObj],
+          chatType: 'direct',
+          isActive: true
+        }
+      },
+      options
+    );
+
     return chat;
   } catch (error) {
     throw new Error(`Failed to find or create dating chat: ${error.message}`);
   }
 };
 
-datingChatSchema.statics.getUserDatingChats = async function(userId, page = 1, limit = 20) {
+datingChatSchema.statics.getUserDatingChats = async function(userId, page = 1, limit = 20, includeArchived = false) {
   try {
     const skip = (page - 1) * limit;
     
-    const chats = await this.find({
-      participants: userId,
-      isActive: true
-    })
-    .populate('participants', 'username fullName profilePictureUrl isActive')
-    .populate('matchId', 'status createdAt lastInteractionAt')
-    .populate('lastMessage')
-    .sort({ lastMessageAt: -1, updatedAt: -1 })
-    .skip(skip)
-    .limit(limit)
-    .lean();
+    // Use aggregation pipeline to filter archived chats in MongoDB instead of JavaScript
+    // This is much more efficient and uses indexes
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    const pipeline = [
+      {
+        $match: {
+          participants: userIdObj,
+          isActive: true
+        }
+      },
+      {
+        $addFields: {
+          userSetting: {
+            $arrayElemAt: [
+              {
+                $filter: {
+                  input: '$userSettings',
+                  as: 'setting',
+                  cond: {
+                    $or: [
+                      { $eq: ['$$setting.userId', userIdObj] },
+                      { $eq: [{ $toString: '$$setting.userId' }, userIdObj.toString()] }
+                    ]
+                  }
+                }
+              },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $match: {
+          $expr: includeArchived
+            ? { $eq: ['$userSetting.isArchived', true] }
+            : {
+              $or: [
+                { $ne: ['$userSetting.isArchived', true] },
+                { $eq: ['$userSetting', null] }
+              ]
+            }
+        }
+      },
+      {
+        $sort: { lastMessageAt: -1, updatedAt: -1 }
+      },
+      {
+        $skip: skip
+      },
+      {
+        $limit: limit
+      }
+    ];
+    
+    // Use $lookup to populate in the same aggregation pipeline (more efficient)
+    // Get collection names dynamically to avoid hardcoding
+    const User = mongoose.model('User');
+    const DatingMatch = mongoose.model('DatingMatch');
+    const DatingMessage = mongoose.model('DatingMessage');
+    const userCollectionName = User.collection.name;
+    const matchCollectionName = DatingMatch.collection.name;
+    const messageCollectionName = DatingMessage.collection.name;
+    
+    const populatedPipeline = [
+      ...pipeline,
+      {
+        $lookup: {
+          from: userCollectionName,
+          localField: 'participants',
+          foreignField: '_id',
+          as: 'participants',
+          pipeline: [
+            {
+              $project: {
+                username: 1,
+                fullName: 1,
+                profilePictureUrl: 1,
+                isActive: 1
+              }
+            }
+          ]
+        }
+      },
+      {
+        $lookup: {
+          from: matchCollectionName,
+          localField: 'matchId',
+          foreignField: '_id',
+          as: 'matchId',
+          pipeline: [
+            {
+              $project: {
+                status: 1,
+                createdAt: 1,
+                lastInteractionAt: 1
+              }
+            },
+            { $limit: 1 }
+          ]
+        }
+      },
+      {
+        $addFields: {
+          matchId: { $arrayElemAt: ['$matchId', 0] }
+        }
+      },
+      {
+        $lookup: {
+          from: messageCollectionName,
+          localField: 'lastMessage',
+          foreignField: '_id',
+          as: 'lastMessage',
+          pipeline: [{ $limit: 1 }]
+        }
+      },
+      {
+        $addFields: {
+          lastMessage: { $arrayElemAt: ['$lastMessage', 0] }
+        }
+      }
+    ];
+    
+    const chats = await this.aggregate(populatedPipeline);
     
     return chats;
   } catch (error) {
@@ -244,23 +402,37 @@ datingChatSchema.statics.getUserDatingChats = async function(userId, page = 1, l
 // Instance methods
 datingChatSchema.methods.updateUserSettings = async function(userId, updates) {
   try {
-    const userSetting = this.userSettings.find(
-      setting => setting.userId.toString() === userId.toString()
+    // Convert userId to ObjectId for consistency
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+    
+    // Build update object with timestamps
+    const updateObj = {};
+    Object.keys(updates).forEach(key => {
+      updateObj[`userSettings.$.${key}`] = key.includes('At') && updates[key] ? new Date() : updates[key];
+    });
+    
+    // Use findOneAndUpdate to return updated document in one operation
+    // Note: $elemMatch in projection doesn't work with findOneAndUpdate, so fetch full document
+    const updatedChat = await this.constructor.findOneAndUpdate(
+      { _id: this._id, 'userSettings.userId': userIdObj },
+      { $set: updateObj },
+      { new: true }
+    ).lean();
+    
+    if (!updatedChat) {
+      throw new Error('User not found in chat participants');
+    }
+    
+    // Find the updated userSetting
+    const userIdStr = userIdObj.toString();
+    const userSetting = updatedChat.userSettings?.find(
+      setting => setting.userId && setting.userId.toString() === userIdStr
     );
     
     if (!userSetting) {
       throw new Error('User not found in chat participants');
     }
     
-    // Update settings with timestamps
-    Object.keys(updates).forEach(key => {
-      userSetting[key] = updates[key];
-      if (key.includes('At') && updates[key]) {
-        userSetting[key] = new Date();
-      }
-    });
-    
-    await this.save();
     return userSetting;
   } catch (error) {
     throw new Error(`Failed to update user settings: ${error.message}`);
@@ -268,9 +440,21 @@ datingChatSchema.methods.updateUserSettings = async function(userId, updates) {
 };
 
 datingChatSchema.methods.getUserSettings = function(userId) {
-  return this.userSettings.find(
-    setting => setting.userId.toString() === userId.toString()
-  ) || {
+  // Convert userId to string for comparison
+  const userIdStr = userId.toString ? userId.toString() : String(userId);
+  
+  // Use find with early return - userSettings array is typically small (2 participants)
+  // For consistency, we could use Set, but for small arrays, find() is acceptable
+  // However, if userSettings grows, this could be optimized further
+  const userSetting = this.userSettings.find(
+    setting => {
+      if (!setting || !setting.userId) return false;
+      const settingUserIdStr = setting.userId.toString ? setting.userId.toString() : String(setting.userId);
+      return settingUserIdStr === userIdStr;
+    }
+  );
+  
+  return userSetting || {
     isArchived: false,
     isPinned: false,
     isMuted: false,
@@ -279,21 +463,44 @@ datingChatSchema.methods.getUserSettings = function(userId) {
   };
 };
 
-datingChatSchema.methods.incrementUnreadCount = function(userId) {
-  const userSetting = this.userSettings.find(
-    setting => setting.userId.toString() === userId.toString()
-  );
+datingChatSchema.methods.incrementUnreadCount = async function(userId) {
+  // Convert userId to ObjectId for consistency
+  const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
   
+  // Use atomic update for thread-safety and immediate persistence
+  await this.constructor.updateOne(
+    { _id: this._id, 'userSettings.userId': userIdObj },
+    { $inc: { 'userSettings.$.unreadCount': 1 } }
+  );
+  // Update local instance if needed
+  const userIdStr = userIdObj.toString();
+  const userSetting = this.userSettings.find(
+    setting => setting.userId && setting.userId.toString() === userIdStr
+  );
   if (userSetting) {
     userSetting.unreadCount = (userSetting.unreadCount || 0) + 1;
   }
 };
 
-datingChatSchema.methods.resetUnreadCount = function(userId) {
-  const userSetting = this.userSettings.find(
-    setting => setting.userId.toString() === userId.toString()
-  );
+datingChatSchema.methods.resetUnreadCount = async function(userId) {
+  // Convert userId to ObjectId for consistency
+  const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
   
+  // Use atomic update for thread-safety and immediate persistence
+  await this.constructor.updateOne(
+    { _id: this._id, 'userSettings.userId': userIdObj },
+    {
+      $set: {
+        'userSettings.$.unreadCount': 0,
+        'userSettings.$.lastReadAt': new Date()
+      }
+    }
+  );
+  // Update local instance if needed
+  const userIdStr = userIdObj.toString();
+  const userSetting = this.userSettings.find(
+    setting => setting.userId && setting.userId.toString() === userIdStr
+  );
   if (userSetting) {
     userSetting.unreadCount = 0;
     userSetting.lastReadAt = new Date();
@@ -301,23 +508,47 @@ datingChatSchema.methods.resetUnreadCount = function(userId) {
 };
 
 datingChatSchema.methods.setActiveCall = async function(callData) {
+  // Use updateOne for atomic update instead of full document save
+  await this.constructor.updateOne(
+    { _id: this._id },
+    {
+      $set: {
+        'activeCall.callId': callData.callId,
+        'activeCall.type': callData.type,
+        'activeCall.status': callData.status,
+        'activeCall.startedAt': callData.startedAt || new Date()
+      }
+    }
+  );
+  // Update local instance
   this.activeCall = {
     callId: callData.callId,
     type: callData.type,
     status: callData.status,
     startedAt: callData.startedAt || new Date()
   };
-  await this.save();
 };
 
 datingChatSchema.methods.clearActiveCall = async function() {
+  // Use updateOne for atomic update instead of full document save
+  await this.constructor.updateOne(
+    { _id: this._id },
+    {
+      $set: {
+        'activeCall.callId': null,
+        'activeCall.type': null,
+        'activeCall.status': null,
+        'activeCall.startedAt': null
+      }
+    }
+  );
+  // Update local instance
   this.activeCall = {
     callId: null,
     type: null,
     status: null,
     startedAt: null
   };
-  await this.save();
 };
 
 // Export model

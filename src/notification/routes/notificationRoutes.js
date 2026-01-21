@@ -4,6 +4,7 @@ const { authorize } = require('../../middleware/authMiddleware');
 const notificationService = require('../services/notificationService');
 const ApiResponse = require('../../utils/apiResponse');
 const User = require('../../user/auth/model/userAuthModel');
+const { invalidateUserCache, cacheService } = require('../../middleware/cacheMiddleware');
 
 /**
  * Validate FCM token format
@@ -52,6 +53,18 @@ router.get('/', authorize(), async (req, res) => {
     } = req.query;
 
     console.log('[NOTIFICATION ROUTES] Query params:', { page, limit, status, type, context, priority });
+
+    // Invalidate any stale cache before fetching fresh data
+    // This ensures we don't return cached data with deleted/rejected notifications
+    try {
+      invalidateUserCache(userId, 'notifications:*');
+      cacheService.deletePattern(`cache:GET:/api/v1/notifications*:${userId}*`);
+      cacheService.deletePattern(`cache:GET:/notifications*:${userId}*`);
+      console.log('[NOTIFICATION ROUTES] ✅ Cache invalidated before fetching fresh notifications');
+    } catch (cacheError) {
+      console.error('[NOTIFICATION ROUTES] Error invalidating cache:', cacheError);
+      // Continue even if cache invalidation fails
+    }
 
     console.log('[NOTIFICATION ROUTES] Calling notificationService.getUserNotifications...');
     const result = await notificationService.getUserNotifications(userId, {
@@ -127,6 +140,15 @@ router.get('/unread-count', authorize(), async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
     const { context = 'all' } = req.query;
+
+    // Invalidate cache for unread count to ensure fresh data
+    try {
+      invalidateUserCache(userId, 'notifications:unread-count:*');
+      cacheService.deletePattern(`cache:GET:/api/v1/notifications/unread-count*:${userId}*`);
+    } catch (cacheError) {
+      console.error('[NOTIFICATION ROUTES] Error invalidating cache for unread count:', cacheError);
+      // Continue even if cache invalidation fails
+    }
 
     const count = await notificationService.getUnreadCount(userId, context);
 

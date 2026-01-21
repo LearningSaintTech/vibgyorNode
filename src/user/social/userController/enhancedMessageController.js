@@ -218,7 +218,7 @@ class MessageController {
         statusCode = 404;
       } else if (error.message.includes('required') || error.message.includes('already deleted')) {
         statusCode = 400;
-      } else if (error.message.includes('only delete your own') || error.message.includes('older than 1 hour')) {
+      } else if (error.message.includes('older than 1 hour')) {
         statusCode = 400; // Bad request for time restrictions
       } else if (error.message.includes('only delete your own')) {
         statusCode = 403;

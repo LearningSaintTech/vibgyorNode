@@ -1371,6 +1371,34 @@ class EnhancedRealtimeService {
   }
 
   /**
+   * Emit event to all users viewing a specific post (room-based)
+   */
+  emitToPost(postId, event, data) {
+    if (this.io) {
+      const room = `post:${postId}`;
+      const clientCount = this.io.sockets.adapter.rooms.get(room)?.size || 0;
+      this.io.to(room).emit(event, data);
+      console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to post room ${room} (${clientCount} client(s))`);
+    } else {
+      console.error('[REALTIME_SERVICE] ❌ Cannot emit to post - Socket.IO not initialized');
+    }
+  }
+
+  /**
+   * Emit event to all users viewing a specific story (room-based)
+   */
+  emitToStory(storyId, event, data) {
+    if (this.io) {
+      const room = `story:${storyId}`;
+      const clientCount = this.io.sockets.adapter.rooms.get(room)?.size || 0;
+      this.io.to(room).emit(event, data);
+      console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to story room ${room} (${clientCount} client(s))`);
+    } else {
+      console.error('[REALTIME_SERVICE] ❌ Cannot emit to story - Socket.IO not initialized');
+    }
+  }
+
+  /**
    * Broadcast to all connected users
    */
   broadcast(event, data) {

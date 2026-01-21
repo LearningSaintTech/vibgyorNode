@@ -7,6 +7,7 @@ const feedAlgorithmService = require('../../../services/feedAlgorithmService');
 const notificationService = require('../../../notification/services/notificationService');
 const contentModeration = require('../userModel/contentModerationModel');
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
+const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 
 // Helper function to normalize location with all fields visible
 function normalizeLocation(location) {
@@ -1245,6 +1246,18 @@ async function deletePost(req, res) {
     post.status = 'deleted';
     await post.save();
 
+    // Emit real-time event for post deletion
+    try {
+      enhancedRealtimeService.emitToPost(postId, 'post:deleted', {
+        postId: postId,
+        timestamp: new Date()
+      });
+      console.log('[POST] ✅ Real-time event emitted: post:deleted');
+    } catch (realtimeError) {
+      console.error('[POST] Error emitting real-time delete event:', realtimeError);
+      // Don't fail the delete action if real-time event fails
+    }
+
     console.log('[POST] Post deleted successfully:', postId);
     return ApiResponse.success(res, null, 'Post deleted successfully');
   } catch (error) {
@@ -1294,6 +1307,45 @@ async function toggleLike(req, res) {
       await post.removeLike(userId);
       // OPTIMIZED: Invalidate feed cache when post is unliked
       invalidateUserCache(userId, 'feed:*');
+      
+      // Emit real-time event for unlike
+      try {
+        const currentUser = await User.findById(userId).select('username fullName profilePictureUrl');
+        // Use emitToPost to emit to post room (clients viewing this post will receive it)
+        // Also emit globally so feed screens can update without joining rooms
+        enhancedRealtimeService.emitToPost(postId, 'post:unliked', {
+          postId: postId,
+          userId: userId,
+          user: {
+            _id: currentUser._id,
+            username: currentUser.username,
+            fullName: currentUser.fullName,
+            profilePictureUrl: currentUser.profilePictureUrl
+          },
+          likesCount: post.likesCount,
+          timestamp: new Date()
+        });
+        // Also emit globally for feed screens that don't join post rooms
+        if (enhancedRealtimeService.io) {
+          enhancedRealtimeService.io.emit('post:unliked', {
+            postId: postId,
+            userId: userId,
+            user: {
+              _id: currentUser._id,
+              username: currentUser.username,
+              fullName: currentUser.fullName,
+              profilePictureUrl: currentUser.profilePictureUrl
+            },
+            likesCount: post.likesCount,
+            timestamp: new Date()
+          });
+        }
+        console.log('[POST] ✅ Real-time event emitted: post:unliked (to post room and globally)');
+      } catch (realtimeError) {
+        console.error('[POST] Error emitting real-time unlike event:', realtimeError);
+        // Don't fail the unlike action if real-time event fails
+      }
+      
       return ApiResponse.success(res, { liked: false, likesCount: post.likesCount }, 'Post unliked');
     } else {
       await post.addLike(userId);
@@ -1315,6 +1367,44 @@ async function toggleLike(req, res) {
           console.error('[POST] Like notification error:', notificationError);
           // Don't fail the like action if notification fails
         }
+      }
+
+      // Emit real-time event for like
+      try {
+        const currentUser = await User.findById(userId).select('username fullName profilePictureUrl');
+        // Use emitToPost to emit to post room (clients viewing this post will receive it)
+        // Also emit globally so feed screens can update without joining rooms
+        enhancedRealtimeService.emitToPost(postId, 'post:liked', {
+          postId: postId,
+          userId: userId,
+          user: {
+            _id: currentUser._id,
+            username: currentUser.username,
+            fullName: currentUser.fullName,
+            profilePictureUrl: currentUser.profilePictureUrl
+          },
+          likesCount: post.likesCount,
+          timestamp: new Date()
+        });
+        // Also emit globally for feed screens that don't join post rooms
+        if (enhancedRealtimeService.io) {
+          enhancedRealtimeService.io.emit('post:liked', {
+            postId: postId,
+            userId: userId,
+            user: {
+              _id: currentUser._id,
+              username: currentUser.username,
+              fullName: currentUser.fullName,
+              profilePictureUrl: currentUser.profilePictureUrl
+            },
+            likesCount: post.likesCount,
+            timestamp: new Date()
+          });
+        }
+        console.log('[POST] ✅ Real-time event emitted: post:liked (to post room and globally)');
+      } catch (realtimeError) {
+        console.error('[POST] Error emitting real-time like event:', realtimeError);
+        // Don't fail the like action if real-time event fails
       }
 
       // OPTIMIZED: Invalidate feed cache when post is liked
@@ -1581,6 +1671,36 @@ async function addComment(req, res) {
       }
     }
 
+    // Emit real-time event for new comment
+    try {
+      const commentData = {
+        _id: newComment._id,
+        postId: postId,
+        user: {
+          _id: newComment.user._id,
+          username: newComment.user.username,
+          fullName: newComment.user.fullName,
+          profilePictureUrl: newComment.user.profilePictureUrl
+        },
+        content: newComment.content,
+        parentComment: newComment.parentComment,
+        likesCount: 0,
+        createdAt: newComment.createdAt,
+        commentsCount: post.commentsCount
+      };
+      
+      // Emit to post room and globally
+      enhancedRealtimeService.emitToPost(postId, 'post:comment_added', commentData);
+      // Also emit globally for feed screens that don't join post rooms
+      if (enhancedRealtimeService.io) {
+        enhancedRealtimeService.io.emit('post:comment_added', commentData);
+      }
+      console.log('[POST] ✅ Real-time event emitted: post:comment_added (to post room and globally)');
+    } catch (realtimeError) {
+      console.error('[POST] Error emitting real-time comment event:', realtimeError);
+      // Don't fail the comment action if real-time event fails
+    }
+
     console.log('[POST] Comment added successfully');
     return ApiResponse.success(res, {
       comment: newComment,
@@ -1712,6 +1832,33 @@ async function toggleCommentLike(req, res) {
       comment.likes.splice(existingLikeIndex, 1);
       await post.save();
 
+      // Emit real-time event for comment unlike
+      try {
+        const currentUser = await User.findById(userId).select('username fullName');
+        const unlikeData = {
+          postId: postId,
+          commentId: commentId,
+          userId: userId,
+          user: {
+            _id: currentUser._id,
+            username: currentUser.username,
+            fullName: currentUser.fullName
+          },
+          likesCount: comment.likes.length,
+          timestamp: new Date()
+        };
+        // Emit to post room and globally
+        enhancedRealtimeService.emitToPost(postId, 'post:comment_unliked', unlikeData);
+        // Also emit globally for feed screens that don't join post rooms
+        if (enhancedRealtimeService.io) {
+          enhancedRealtimeService.io.emit('post:comment_unliked', unlikeData);
+        }
+        console.log('[POST] ✅ Real-time event emitted: post:comment_unliked (to post room and globally)');
+      } catch (realtimeError) {
+        console.error('[POST] Error emitting real-time comment unlike event:', realtimeError);
+        // Don't fail the unlike action if real-time event fails
+      }
+
       console.log('[POST] Comment unliked successfully:', {
         postId,
         commentId,
@@ -1730,6 +1877,33 @@ async function toggleCommentLike(req, res) {
         likedAt: new Date()
       });
       await post.save();
+
+      // Emit real-time event for comment like
+      try {
+        const currentUser = await User.findById(userId).select('username fullName');
+        const likeData = {
+          postId: postId,
+          commentId: commentId,
+          userId: userId,
+          user: {
+            _id: currentUser._id,
+            username: currentUser.username,
+            fullName: currentUser.fullName
+          },
+          likesCount: comment.likes.length,
+          timestamp: new Date()
+        };
+        // Emit to post room and globally
+        enhancedRealtimeService.emitToPost(postId, 'post:comment_liked', likeData);
+        // Also emit globally for feed screens that don't join post rooms
+        if (enhancedRealtimeService.io) {
+          enhancedRealtimeService.io.emit('post:comment_liked', likeData);
+        }
+        console.log('[POST] ✅ Real-time event emitted: post:comment_liked (to post room and globally)');
+      } catch (realtimeError) {
+        console.error('[POST] Error emitting real-time comment like event:', realtimeError);
+        // Don't fail the like action if real-time event fails
+      }
 
       console.log('[POST] Comment liked successfully:', {
         postId,
@@ -1801,6 +1975,32 @@ async function editComment(req, res) {
     const userLike = commentObj.likes?.find(like => like.user.toString() === userId);
     const isLiked = !!userLike;
 
+    // Emit real-time event for comment edit
+    try {
+      const editData = {
+        postId: postId,
+        commentId: commentId,
+        comment: {
+          _id: commentObj._id,
+          user: commentObj.user,
+          content: commentObj.content,
+          isEdited: true,
+          editedAt: commentObj.editedAt
+        },
+        timestamp: new Date()
+      };
+      // Emit to post room and globally
+      enhancedRealtimeService.emitToPost(postId, 'post:comment_edited', editData);
+      // Also emit globally for feed screens that don't join post rooms
+      if (enhancedRealtimeService.io) {
+        enhancedRealtimeService.io.emit('post:comment_edited', editData);
+      }
+      console.log('[POST] ✅ Real-time event emitted: post:comment_edited (to post room and globally)');
+    } catch (realtimeError) {
+      console.error('[POST] Error emitting real-time comment edit event:', realtimeError);
+      // Don't fail the edit action if real-time event fails
+    }
+
     console.log('[POST] Comment edited successfully');
     return ApiResponse.success(res, {
       comment: {
@@ -1849,9 +2049,32 @@ async function deleteComment(req, res) {
       return ApiResponse.forbidden(res, 'Only the post owner or comment author can delete comments');
     }
 
+    // Store comment ID before deletion for real-time event
+    const commentIdToDelete = commentId;
+
     // Remove the comment
     comment.deleteOne();
     await post.save();
+
+    // Emit real-time event for comment deletion
+    try {
+      const deleteData = {
+        postId: postId,
+        commentId: commentIdToDelete,
+        commentsCount: post.comments.length,
+        timestamp: new Date()
+      };
+      // Emit to post room and globally
+      enhancedRealtimeService.emitToPost(postId, 'post:comment_deleted', deleteData);
+      // Also emit globally for feed screens that don't join post rooms
+      if (enhancedRealtimeService.io) {
+        enhancedRealtimeService.io.emit('post:comment_deleted', deleteData);
+      }
+      console.log('[POST] ✅ Real-time event emitted: post:comment_deleted (to post room and globally)');
+    } catch (realtimeError) {
+      console.error('[POST] Error emitting real-time comment delete event:', realtimeError);
+      // Don't fail the delete action if real-time event fails
+    }
 
     const deletedBy = isPostOwner ? 'post owner' : 'comment author';
     console.log(`[POST] Comment deleted successfully by ${deletedBy}`);
@@ -1877,6 +2100,28 @@ async function sharePost(req, res) {
     }
 
     await post.addShare(userId, shareType, shareMessage);
+
+    // Emit real-time event for post share
+    try {
+      const currentUser = await User.findById(userId).select('username fullName profilePictureUrl');
+      enhancedRealtimeService.broadcast(`post:${postId}`, 'post:shared', {
+        postId: postId,
+        userId: userId,
+        user: {
+          _id: currentUser._id,
+          username: currentUser.username,
+          fullName: currentUser.fullName,
+          profilePictureUrl: currentUser.profilePictureUrl
+        },
+        shareType: shareType,
+        sharesCount: post.sharesCount,
+        timestamp: new Date()
+      });
+      console.log('[POST] ✅ Real-time event emitted: post:shared');
+    } catch (realtimeError) {
+      console.error('[POST] Error emitting real-time share event:', realtimeError);
+      // Don't fail the share action if real-time event fails
+    }
 
     console.log('[POST] Post shared successfully');
     return ApiResponse.success(res, {

@@ -184,6 +184,8 @@ chatSchema.pre('save', function(next) {
 // Static methods
 chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy, session = null) {
   try {
+    console.log('[CHAT_MODEL] findOrCreateChat called:', { userId1, userId2, createdBy, hasSession: !!session });
+    
     // Validate input
     if (!userId1 || !userId2) {
       throw new Error('Both user IDs are required');
@@ -198,37 +200,157 @@ chatSchema.statics.findOrCreateChat = async function(userId1, userId2, createdBy
     const userId2Obj = mongoose.Types.ObjectId.isValid(userId2) ? new mongoose.Types.ObjectId(userId2) : userId2;
     const createdByObj = createdBy ? (mongoose.Types.ObjectId.isValid(createdBy) ? new mongoose.Types.ObjectId(createdBy) : createdBy) : userId1Obj;
     
+    console.log('[CHAT_MODEL] Converted IDs:', { userId1Obj, userId2Obj, createdByObj });
+    
     // Use findOneAndUpdate with upsert for atomic operation (prevents race conditions)
     // This ensures only one chat is created even with concurrent requests
-    // Support session for transaction compatibility
+    // Support session for transaction compatibility (only if session is provided and valid)
     const options = {
       upsert: true,
       new: true,
       setDefaultsOnInsert: true
     };
+    
+    // Only add session if provided and not null
+    // If session causes transaction errors, it will be handled by the caller
     if (session) {
       options.session = session;
     }
     
-    const chat = await this.findOneAndUpdate(
-      {
+    console.log('[CHAT_MODEL] Finding or creating chat...');
+    let chat;
+    try {
+      // Use a query that doesn't conflict with $setOnInsert
+      // First try to find existing chat
+      chat = await this.findOne({
         participants: { $all: [userId1Obj, userId2Obj] },
         isActive: true,
         chatType: 'direct'
-      },
-      {
-        $setOnInsert: {
+      }, null, session ? { session } : {});
+      
+      // If not found, create new one
+      if (!chat) {
+        chat = new this({
           participants: [userId1Obj, userId2Obj],
           chatType: 'direct',
           createdBy: createdByObj,
           isActive: true
+        });
+        await chat.save(session ? { session } : {});
+        console.log('[CHAT_MODEL] ✅ New chat created:', chat._id);
+      } else {
+        console.log('[CHAT_MODEL] ✅ Existing chat found:', chat._id);
+      }
+    } catch (sessionError) {
+      // If error is due to transaction/replica set or MongoDB query conflict, retry without session
+      const isTransactionError = sessionError.message && (
+        sessionError.message.includes('replica set') ||
+        sessionError.message.includes('mongos') ||
+        sessionError.code === 20 || // IllegalOperation
+        sessionError.codeName === 'IllegalOperation'
+      );
+      
+      const isQueryConflictError = sessionError.message && (
+        sessionError.message.includes('cannot infer query fields') ||
+        sessionError.message.includes('matched twice') ||
+        sessionError.code === 54 || // NotSingleValueField
+        sessionError.codeName === 'NotSingleValueField'
+      );
+      
+      if (isTransactionError || isQueryConflictError) {
+        console.log('[CHAT_MODEL] ⚠️ Error detected (transaction or query conflict), retrying without session...');
+        // Retry without session using findOne + save approach
+        try {
+          chat = await this.findOne({
+            participants: { $all: [userId1Obj, userId2Obj] },
+            isActive: true,
+            chatType: 'direct'
+          });
+          
+          if (!chat) {
+            chat = new this({
+              participants: [userId1Obj, userId2Obj],
+              chatType: 'direct',
+              createdBy: createdByObj,
+              isActive: true
+            });
+            await chat.save();
+            console.log('[CHAT_MODEL] ✅ New chat created (without session):', chat._id);
+          } else {
+            console.log('[CHAT_MODEL] ✅ Existing chat found (without session):', chat._id);
+          }
+        } catch (retryError) {
+          console.error('[CHAT_MODEL] ❌ Error in retry (without session):', retryError);
+          throw retryError;
         }
-      },
-      options
-    );
+      } else {
+        throw sessionError;
+      }
+    }
+
+    if (!chat) {
+      console.error('[CHAT_MODEL] ❌ Chat is null after creation/find');
+      throw new Error('Failed to create or find chat');
+    }
+    
+    console.log('[CHAT_MODEL] ✅ Chat found/created:', chat._id);
+    
+    // Ensure userSettings exist for both users
+    // Don't use session if it caused errors before
+    const saveOptions = session ? { session } : {};
+    if (!chat.userSettings || chat.userSettings.length === 0) {
+      console.log('[CHAT_MODEL] Initializing userSettings for chat:', chat._id);
+      chat.userSettings = [
+        { userId: userId1Obj, unreadCount: 0, isArchived: false },
+        { userId: userId2Obj, unreadCount: 0, isArchived: false }
+      ];
+      try {
+        await chat.save(saveOptions);
+        console.log('[CHAT_MODEL] ✅ UserSettings initialized');
+      } catch (saveError) {
+        // If save with session fails, try without
+        if (session && (saveError.message?.includes('replica set') || saveError.code === 20)) {
+          await chat.save();
+          console.log('[CHAT_MODEL] ✅ UserSettings initialized (without session)');
+        } else {
+          throw saveError;
+        }
+      }
+    } else {
+      // Ensure both users have settings
+      const userId1Str = userId1Obj.toString();
+      const userId2Str = userId2Obj.toString();
+      const hasUser1 = chat.userSettings.some(us => us.userId?.toString() === userId1Str);
+      const hasUser2 = chat.userSettings.some(us => us.userId?.toString() === userId2Str);
+      
+      if (!hasUser1) {
+        chat.userSettings.push({ userId: userId1Obj, unreadCount: 0, isArchived: false });
+      }
+      if (!hasUser2) {
+        chat.userSettings.push({ userId: userId2Obj, unreadCount: 0, isArchived: false });
+      }
+      
+      if (!hasUser1 || !hasUser2) {
+        try {
+          await chat.save(saveOptions);
+          console.log('[CHAT_MODEL] ✅ UserSettings updated for missing users');
+        } catch (saveError) {
+          // If save with session fails, try without
+          if (session && (saveError.message?.includes('replica set') || saveError.code === 20)) {
+            await chat.save();
+            console.log('[CHAT_MODEL] ✅ UserSettings updated (without session)');
+          } else {
+            throw saveError;
+          }
+        }
+      }
+    }
 
 	return chat;
   } catch (error) {
+    console.error('[CHAT_MODEL] ❌ Error in findOrCreateChat:', error);
+    console.error('[CHAT_MODEL] ❌ Error message:', error.message);
+    console.error('[CHAT_MODEL] ❌ Error stack:', error.stack);
     throw new Error(`Failed to find or create chat: ${error.message}`);
   }
 };

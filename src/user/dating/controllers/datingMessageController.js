@@ -10,8 +10,6 @@ const User = require('../../auth/model/userAuthModel');
  */
 async function sendDatingMessage(req, res) {
 	try {
-		console.log('[DATING][MESSAGE][SEND] payload', { body: req.body, userId: req.user?.userId });
-		
 		const { matchId, message, type = 'text', replyTo, forwardedFrom } = req.body || {};
 		const currentUserId = req.user?.userId;
 		const file = req.file || null;
@@ -36,8 +34,10 @@ async function sendDatingMessage(req, res) {
 			}
 		}
 
-		// Verify match exists and is active
-		const match = await DatingMatch.findById(matchId);
+		// Verify match exists and is active - use projection to fetch only needed fields
+		const match = await DatingMatch.findById(matchId)
+			.select('userA userB status')
+			.lean();
 		if (!match) {
 			return ApiResponse.notFound(res, 'Match not found');
 		}
@@ -63,27 +63,24 @@ async function sendDatingMessage(req, res) {
 		]);
 
 		if (currentUser && otherUser) {
-			// Check all blocking scenarios:
+			// Check all blocking scenarios using Set for O(1) lookups
 			// 1. Current user has blocked the other user
 			// 2. Other user has blocked the current user
 			// 3. Current user is in other user's blockedBy list
 			// 4. Other user is in current user's blockedBy list
-			const currentBlockedOther = currentUser.blockedUsers?.some(id => id.toString() === otherUserId);
-			const otherBlockedCurrent = otherUser.blockedUsers?.some(id => id.toString() === currentUserIdStr);
-			const currentInOtherBlockedBy = otherUser.blockedBy?.some(id => id.toString() === currentUserIdStr);
-			const otherInCurrentBlockedBy = currentUser.blockedBy?.some(id => id.toString() === otherUserId);
+			const currentBlockedSet = new Set((currentUser.blockedUsers || []).map(id => id.toString()));
+			const otherBlockedSet = new Set((otherUser.blockedUsers || []).map(id => id.toString()));
+			const currentBlockedBySet = new Set((currentUser.blockedBy || []).map(id => id.toString()));
+			const otherBlockedBySet = new Set((otherUser.blockedBy || []).map(id => id.toString()));
+
+			const currentBlockedOther = currentBlockedSet.has(otherUserId);
+			const otherBlockedCurrent = otherBlockedSet.has(currentUserIdStr);
+			const currentInOtherBlockedBy = otherBlockedBySet.has(currentUserIdStr);
+			const otherInCurrentBlockedBy = currentBlockedBySet.has(otherUserId);
 
 			const isBlocked = currentBlockedOther || otherBlockedCurrent || currentInOtherBlockedBy || otherInCurrentBlockedBy;
 
 			if (isBlocked) {
-				console.log('[DATING][MESSAGE][SEND] Message blocked - users have blocked each other:', {
-					currentUserId: currentUserIdStr,
-					otherUserId,
-					currentBlockedOther,
-					otherBlockedCurrent,
-					currentInOtherBlockedBy,
-					otherInCurrentBlockedBy
-				});
 				return ApiResponse.forbidden(res, 'Cannot send message: Users have blocked each other');
 			}
 		}
@@ -118,15 +115,13 @@ async function sendDatingMessage(req, res) {
 
 		const newMessage = await DatingMessageService.sendMessage(messageData, file);
 
-		console.log('[DATING][MESSAGE][SEND] success', { messageId: newMessage._id, chatId: chat._id });
-
 		return ApiResponse.created(res, {
 			message: newMessage
 		}, 'Message sent successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][SEND] Error:', error);
-		return ApiResponse.serverError(res, `Failed to send message: ${error.message}`);
+		console.error('[DATING][MESSAGE][SEND] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to send message: ${error?.message || error}`);
 	}
 }
 
@@ -136,8 +131,6 @@ async function sendDatingMessage(req, res) {
  */
 async function getDatingMessages(req, res) {
 	try {
-		console.log('[DATING][MESSAGE][GET] payload', { params: req.params, query: req.query, userId: req.user?.userId });
-		
 		const { chatId, matchId } = req.params;
 		const { page = 1, limit = 50 } = req.query;
 		const currentUserId = req.user?.userId;
@@ -146,8 +139,10 @@ async function getDatingMessages(req, res) {
 
 		// If matchId is provided (legacy route), get or create chat
 		if (matchId && !chatId) {
-			// Verify match exists and user is part of it
-			const match = await DatingMatch.findById(matchId);
+			// Verify match exists and user is part of it - use projection to fetch only needed fields
+			const match = await DatingMatch.findById(matchId)
+				.select('userA userB status')
+				.lean();
 			if (!match) {
 				return ApiResponse.notFound(res, 'Match not found');
 			}
@@ -178,16 +173,14 @@ async function getDatingMessages(req, res) {
 		// Mark messages as read when user fetches them
 		await DatingMessageService.markMessagesAsRead(finalChatId, currentUserId);
 
-		console.log('[DATING][MESSAGE][GET] success', { chatId: finalChatId, messageCount: result.messages.length });
-
 		return ApiResponse.success(res, {
 			messages: result.messages,
 			pagination: result.pagination
 		}, 'Messages retrieved successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][GET] Error:', error);
-		return ApiResponse.serverError(res, `Failed to get messages: ${error.message}`);
+		console.error('[DATING][MESSAGE][GET] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to get messages: ${error?.message || error}`);
 	}
 }
 
@@ -197,13 +190,11 @@ async function getDatingMessages(req, res) {
  */
 async function getDatingConversations(req, res) {
 	try {
-		console.log('[DATING][CONVERSATIONS] payload', { query: req.query, userId: req.user?.userId });
-		
 		const currentUserId = req.user?.userId;
 		const { page = 1, limit = 20 } = req.query;
 		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
-		// Get all active matches for current user
+		// Get all active matches for current user - use projection to fetch only needed fields
 		const matches = await DatingMatch.find({
 			status: 'active',
 			$or: [
@@ -211,6 +202,7 @@ async function getDatingConversations(req, res) {
 				{ userB: currentUserId }
 			]
 		})
+			.select('userA userB createdAt lastInteractionAt')
 			.sort({ lastInteractionAt: -1 })
 			.skip(skip)
 			.limit(parseInt(limit, 10))
@@ -227,25 +219,19 @@ async function getDatingConversations(req, res) {
 						? match.userB 
 						: match.userA;
 
-					// Get user info
+					// Get user info and chat details in parallel
 					const User = require('../../auth/model/userAuthModel');
-					const otherUser = await User.findById(otherUserId)
-						.select('username fullName profilePictureUrl')
-						.lean();
-
-					// Get chat details with unread count
-					const chatDetails = await DatingChatService.getChatDetails(chat._id, currentUserId);
-
-					// Get last message
 					const DatingMessage = require('../models/datingMessageModel');
-					let lastMessage = null;
-					if (chat.lastMessage) {
-						const lastMsg = await DatingMessage.findById(chat.lastMessage)
+					const [otherUser, chatDetails, lastMsg] = await Promise.all([
+						User.findById(otherUserId)
+							.select('username fullName profilePictureUrl')
+							.lean(),
+						DatingChatService.getChatDetails(chat._id, currentUserId),
+						chat.lastMessage ? DatingMessage.findById(chat.lastMessage)
 							.select('content type createdAt senderId')
 							.populate('senderId', 'username fullName')
-							.lean();
-						lastMessage = lastMsg;
-					}
+							.lean() : Promise.resolve(null)
+					]);
 
 					return {
 						matchId: match._id,
@@ -256,18 +242,18 @@ async function getDatingConversations(req, res) {
 							fullName: otherUser.fullName,
 							profilePictureUrl: otherUser.profilePictureUrl
 						},
-						lastMessage: lastMessage ? {
-							content: lastMessage.content,
-							type: lastMessage.type,
-							createdAt: lastMessage.createdAt,
-							senderId: lastMessage.senderId
+						lastMessage: lastMsg ? {
+							content: lastMsg.content,
+							type: lastMsg.type,
+							createdAt: lastMsg.createdAt,
+							senderId: lastMsg.senderId
 						} : null,
 						lastMessageAt: chat.lastMessageAt || match.lastInteractionAt,
 						unreadCount: chatDetails.unreadCount || 0,
 						matchedAt: match.createdAt
 					};
 				} catch (error) {
-					console.error('[DATING][CONVERSATIONS] Error processing match:', match._id, error);
+					console.error('[DATING][CONVERSATIONS] Error processing match:', match._id, error?.message || error);
 					return null;
 				}
 			})
@@ -283,8 +269,6 @@ async function getDatingConversations(req, res) {
 			return timeB - timeA;
 		});
 
-		console.log('[DATING][CONVERSATIONS] success', { count: validConversations.length });
-
 		return ApiResponse.success(res, {
 			conversations: validConversations,
 			pagination: {
@@ -295,8 +279,8 @@ async function getDatingConversations(req, res) {
 		}, 'Conversations retrieved successfully');
 
 	} catch (error) {
-		console.error('[DATING][CONVERSATIONS] Error:', error);
-		return ApiResponse.serverError(res, `Failed to get conversations: ${error.message}`);
+		console.error('[DATING][CONVERSATIONS] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to get conversations: ${error?.message || error}`);
 	}
 }
 
@@ -320,8 +304,8 @@ async function editDatingMessage(req, res) {
 		return ApiResponse.success(res, result, 'Dating message edited successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][EDIT] Error:', error);
-		return ApiResponse.serverError(res, `Failed to edit message: ${error.message}`);
+		console.error('[DATING][MESSAGE][EDIT] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to edit message: ${error?.message || error}`);
 	}
 }
 
@@ -339,31 +323,24 @@ async function deleteDatingMessage(req, res) {
 		                          false;
 		const userId = req.user?.userId;
 
-		console.log('[DATING][MESSAGE][DELETE] Request details:', {
-			messageId,
-			body: req.body,
-			query: req.query,
-			deleteForEveryone,
-			userId
-		});
-
 		const DatingMessageService = require('../services/datingMessageService');
 		const result = await DatingMessageService.deleteMessage(messageId, userId, deleteForEveryone);
 
 		return ApiResponse.success(res, result, deleteForEveryone ? 'Dating message deleted for everyone' : 'Dating message deleted successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][DELETE] Error:', error);
+		const errorMsg = error?.message || String(error);
+		console.error('[DATING][MESSAGE][DELETE] Error:', errorMsg);
 		
-		if (error.message.includes('not found') || error.message.includes('Access denied')) {
-			return ApiResponse.notFound(res, error.message);
-		} else if (error.message.includes('required') || error.message.includes('already deleted') || error.message.includes('only delete your own') || error.message.includes('older than 1 hour')) {
-			return ApiResponse.badRequest(res, error.message);
-		} else if (error.message.includes('only delete your own')) {
-			return ApiResponse.forbidden(res, error.message);
+		if (errorMsg.includes('not found') || errorMsg.includes('Access denied')) {
+			return ApiResponse.notFound(res, errorMsg);
+		} else if (errorMsg.includes('required') || errorMsg.includes('already deleted') || errorMsg.includes('only delete your own') || errorMsg.includes('older than 1 hour')) {
+			return ApiResponse.badRequest(res, errorMsg);
+		} else if (errorMsg.includes('only delete your own')) {
+			return ApiResponse.forbidden(res, errorMsg);
 		}
 		
-		return ApiResponse.serverError(res, error.message);
+		return ApiResponse.serverError(res, errorMsg);
 	}
 }
 
@@ -387,8 +364,8 @@ async function reactToDatingMessage(req, res) {
 		return ApiResponse.success(res, result, 'Reaction added successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][REACT] Error:', error);
-		return ApiResponse.serverError(res, `Failed to add reaction: ${error.message}`);
+		console.error('[DATING][MESSAGE][REACT] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to add reaction: ${error?.message || error}`);
 	}
 }
 
@@ -407,8 +384,8 @@ async function removeDatingReaction(req, res) {
 		return ApiResponse.success(res, result, 'Reaction removed successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][REMOVE_REACT] Error:', error);
-		return ApiResponse.serverError(res, `Failed to remove reaction: ${error.message}`);
+		console.error('[DATING][MESSAGE][REMOVE_REACT] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to remove reaction: ${error?.message || error}`);
 	}
 }
 
@@ -432,8 +409,8 @@ async function forwardDatingMessage(req, res) {
 		return ApiResponse.success(res, result, 'Message forwarded successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][FORWARD] Error:', error);
-		return ApiResponse.serverError(res, `Failed to forward message: ${error.message}`);
+		console.error('[DATING][MESSAGE][FORWARD] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to forward message: ${error?.message || error}`);
 	}
 }
 
@@ -457,8 +434,8 @@ async function searchDatingMessages(req, res) {
 		return ApiResponse.success(res, result, 'Messages search completed successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][SEARCH] Error:', error);
-		return ApiResponse.serverError(res, `Failed to search messages: ${error.message}`);
+		console.error('[DATING][MESSAGE][SEARCH] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to search messages: ${error?.message || error}`);
 	}
 }
 
@@ -478,8 +455,8 @@ async function getDatingChatMedia(req, res) {
 		return ApiResponse.success(res, result, 'Chat media retrieved successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][MEDIA] Error:', error);
-		return ApiResponse.serverError(res, `Failed to get chat media: ${error.message}`);
+		console.error('[DATING][MESSAGE][MEDIA] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to get chat media: ${error?.message || error}`);
 	}
 }
 
@@ -498,8 +475,8 @@ async function getDatingMessageDetails(req, res) {
 		return ApiResponse.success(res, { message }, 'Message details retrieved successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][DETAILS] Error:', error);
-		return ApiResponse.serverError(res, `Failed to get message details: ${error.message}`);
+		console.error('[DATING][MESSAGE][DETAILS] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to get message details: ${error?.message || error}`);
 	}
 }
 
@@ -518,8 +495,8 @@ async function markOneViewAsViewed(req, res) {
 		return ApiResponse.success(res, { message }, 'One-view message marked as viewed');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][ONE_VIEW] Error:', error);
-		return ApiResponse.serverError(res, `Failed to mark one-view: ${error.message}`);
+		console.error('[DATING][MESSAGE][ONE_VIEW] Error:', error?.message || error);
+		return ApiResponse.serverError(res, `Failed to mark one-view: ${error?.message || error}`);
 	}
 }
 
@@ -542,15 +519,16 @@ async function markDatingMessagesAsRead(req, res) {
 		return ApiResponse.success(res, result, 'Messages marked as read successfully');
 
 	} catch (error) {
-		console.error('[DATING][MESSAGE][MARK_READ] Error:', error);
+		const errorMsg = error?.message || String(error);
+		console.error('[DATING][MESSAGE][MARK_READ] Error:', errorMsg);
 		
-		if (error.message.includes('not found') || error.message.includes('Access denied')) {
-			return ApiResponse.notFound(res, `Failed to mark messages as read: ${error.message}`);
-		} else if (error.message.includes('required')) {
-			return ApiResponse.badRequest(res, `Failed to mark messages as read: ${error.message}`);
+		if (errorMsg.includes('not found') || errorMsg.includes('Access denied')) {
+			return ApiResponse.notFound(res, `Failed to mark messages as read: ${errorMsg}`);
+		} else if (errorMsg.includes('required')) {
+			return ApiResponse.badRequest(res, `Failed to mark messages as read: ${errorMsg}`);
 		}
 		
-		return ApiResponse.serverError(res, `Failed to mark messages as read: ${error.message}`);
+		return ApiResponse.serverError(res, `Failed to mark messages as read: ${errorMsg}`);
 	}
 }
 

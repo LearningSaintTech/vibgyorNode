@@ -79,22 +79,54 @@ MessageRequestSchema.methods.isExpired = function() {
 	return Date.now() > this.expiresAt.getTime();
 };
 
-// Method to accept request - optimized with transaction for atomicity
+// Method to accept request - optimized with transaction for atomicity (falls back to non-transactional if replica set not available)
 MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 	const Chat = mongoose.model('Chat');
 	const Message = mongoose.model('Message');
-	const session = await mongoose.startSession();
 	let chatId = null;
+	let session = null;
+	let useTransaction = false;
 	
 	try {
-		await session.withTransaction(async () => {
+		console.log('[MESSAGE_REQUEST_MODEL] Starting accept for request:', this._id);
+		console.log('[MESSAGE_REQUEST_MODEL] Request details:', {
+			requestId: this._id,
+			fromUserId: this.fromUserId,
+			toUserId: this.toUserId,
+			status: this.status,
+			message: this.message
+		});
+		
+		// Try to start a session for transaction support
+		try {
+			session = await mongoose.startSession();
+			// Test if transactions are supported by checking connection type
+			const connection = mongoose.connection;
+			// If we can start a session, try to use transactions
+			// We'll catch the error if transactions aren't supported
+			useTransaction = true;
+			console.log('[MESSAGE_REQUEST_MODEL] Session created, attempting to use transaction...');
+		} catch (sessionError) {
+			console.log('[MESSAGE_REQUEST_MODEL] ⚠️ Cannot create session, using non-transactional mode:', sessionError.message);
+			useTransaction = false;
+		}
+		
+		const performAccept = async (sessionParam) => {
 			// Update request status
 			this.status = 'accepted';
 			this.respondedAt = new Date();
 			this.responseMessage = responseMessage;
 			
-			// Create chat between users (pass session for transaction)
-			const chat = await Chat.findOrCreateChat(this.fromUserId, this.toUserId, this.fromUserId, session);
+			console.log('[MESSAGE_REQUEST_MODEL] Creating chat between users...');
+			// Create chat between users (pass session if available)
+			const chat = await Chat.findOrCreateChat(this.fromUserId, this.toUserId, this.fromUserId, sessionParam);
+			
+			if (!chat) {
+				console.error('[MESSAGE_REQUEST_MODEL] ❌ Chat.findOrCreateChat returned null');
+				throw new Error('Failed to create chat - findOrCreateChat returned null');
+			}
+			
+			console.log('[MESSAGE_REQUEST_MODEL] ✅ Chat created:', chat._id);
 			this.chatId = chat._id;
 			chatId = chat._id;
 			
@@ -106,17 +138,21 @@ MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 				chat.acceptedAt = new Date();
 			}
 			
-			// Save request and chat in transaction
+			console.log('[MESSAGE_REQUEST_MODEL] Saving request and chat...');
+			// Save request and chat (with or without session)
+			const saveOptions = sessionParam ? { session: sessionParam } : {};
 			await Promise.all([
-				this.save({ session }),
-				chat.save({ session })
+				this.save(saveOptions),
+				chat.save(saveOptions)
 			]);
+			console.log('[MESSAGE_REQUEST_MODEL] ✅ Request and chat saved successfully');
 			
 			// ALWAYS send initial message if one was included in the request
 			const requestMessage = this.message ? String(this.message).trim() : '';
 			
 			if (requestMessage && requestMessage !== '') {
 				try {
+					console.log('[MESSAGE_REQUEST_MODEL] Creating initial message:', requestMessage);
 					// Create the initial message from the request
 					const initialMessage = new Message({
 						chatId: chat._id,
@@ -126,12 +162,14 @@ MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 						status: 'sent'
 					});
 					
-					await initialMessage.save({ session });
+					await initialMessage.save(saveOptions);
+					console.log('[MESSAGE_REQUEST_MODEL] ✅ Initial message saved:', initialMessage._id);
 					
 					// Convert toUserId to ObjectId for consistency
 					const toUserIdObj = mongoose.Types.ObjectId.isValid(this.toUserId) ? new mongoose.Types.ObjectId(this.toUserId) : this.toUserId;
 					
 					// Update chat's last message and increment unread count atomically
+					const updateOptions = sessionParam ? { session: sessionParam } : {};
 					await chat.constructor.updateOne(
 						{ _id: chat._id, 'userSettings.userId': toUserIdObj },
 						{
@@ -141,7 +179,7 @@ MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 							},
 							$inc: { 'userSettings.$.unreadCount': 1 }
 						},
-						{ session }
+						updateOptions
 					);
 					
 					// Update local instance
@@ -154,22 +192,72 @@ MessageRequestSchema.methods.accept = async function(responseMessage = '') {
 					if (userSetting) {
 						userSetting.unreadCount = (userSetting.unreadCount || 0) + 1;
 					}
+					console.log('[MESSAGE_REQUEST_MODEL] ✅ Chat updated with initial message');
 				} catch (error) {
+					console.error('[MESSAGE_REQUEST_MODEL] ⚠️ Error creating initial message (non-fatal):', error.message);
+					console.error('[MESSAGE_REQUEST_MODEL] ⚠️ Error stack:', error.stack);
 					// Don't fail the acceptance if message sending fails
-					// The chat is already created, so continue without aborting transaction
+					// The chat is already created, so continue
 					// Error is non-fatal - chat creation succeeded, message sending failed
-					// Could log to proper logging service if needed
 				}
 			}
-		});
+		};
 		
-		// Fetch and return the chat after transaction
+		// Try to use transaction if available, otherwise use non-transactional mode
+		if (useTransaction && session) {
+			try {
+				await session.withTransaction(async () => {
+					await performAccept(session);
+				});
+				console.log('[MESSAGE_REQUEST_MODEL] ✅ Transaction completed successfully');
+			} catch (transactionError) {
+				// If transaction fails due to replica set requirement, fall back to non-transactional
+				if (transactionError.message && (
+					transactionError.message.includes('replica set') ||
+					transactionError.message.includes('mongos') ||
+					transactionError.code === 20 || // IllegalOperation
+					transactionError.codeName === 'IllegalOperation'
+				)) {
+					console.log('[MESSAGE_REQUEST_MODEL] ⚠️ Transactions not supported, falling back to non-transactional mode');
+					await session.endSession();
+					session = null;
+					useTransaction = false;
+					// Retry without transaction
+					await performAccept(null);
+				} else {
+					throw transactionError;
+				}
+			}
+		} else {
+			// No transaction support, use regular operations
+			await performAccept(null);
+		}
+		
+		console.log('[MESSAGE_REQUEST_MODEL] Fetching chat...');
+		// Fetch and return the chat after operations
 		const chat = await Chat.findById(chatId || this.chatId);
+		
+		if (!chat) {
+			console.error('[MESSAGE_REQUEST_MODEL] ❌ Chat not found after operations:', chatId || this.chatId);
+			throw new Error('Chat not found after completion');
+		}
+		
+		console.log('[MESSAGE_REQUEST_MODEL] ✅ Chat fetched successfully:', chat._id);
 		return chat;
 	} catch (error) {
+		console.error('[MESSAGE_REQUEST_MODEL] ❌ Error in accept method:', error);
+		console.error('[MESSAGE_REQUEST_MODEL] ❌ Error message:', error.message);
+		console.error('[MESSAGE_REQUEST_MODEL] ❌ Error stack:', error.stack);
+		console.error('[MESSAGE_REQUEST_MODEL] ❌ Request state:', {
+			requestId: this._id,
+			status: this.status,
+			chatId: this.chatId || chatId
+		});
 		throw new Error(`Failed to accept message request: ${error.message}`);
 	} finally {
-		await session.endSession();
+		if (session) {
+			await session.endSession();
+		}
 	}
 };
 
@@ -343,6 +431,40 @@ MessageRequestSchema.statics.cleanupExpiredRequests = async function() {
 	);
 	
 	return result.modifiedCount;
+};
+
+// Static method to cleanup old rejected message requests
+// Deletes rejected requests older than specified days (default: 30 days)
+MessageRequestSchema.statics.cleanupRejectedRequests = async function(daysOld = 30) {
+	const cutoffDate = new Date();
+	cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+	
+	const result = await this.deleteMany({
+		status: 'rejected',
+		respondedAt: { $lt: cutoffDate }
+	});
+	
+	console.log(`[MESSAGE_REQUEST] Cleaned up ${result.deletedCount} rejected message requests older than ${daysOld} days`);
+	return result.deletedCount;
+};
+
+// Static method to cleanup all old non-pending requests (rejected, expired, accepted)
+// Deletes requests older than specified days (default: 30 days)
+MessageRequestSchema.statics.cleanupOldRequests = async function(daysOld = 30) {
+	const cutoffDate = new Date();
+	cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+	
+	const result = await this.deleteMany({
+		status: { $in: ['rejected', 'expired'] },
+		$or: [
+			{ respondedAt: { $lt: cutoffDate } },
+			{ updatedAt: { $lt: cutoffDate } },
+			{ createdAt: { $lt: cutoffDate } }
+		]
+	});
+	
+	console.log(`[MESSAGE_REQUEST] Cleaned up ${result.deletedCount} old message requests (rejected/expired) older than ${daysOld} days`);
+	return result.deletedCount;
 };
 
 // Static method to get request statistics - optimized single aggregation

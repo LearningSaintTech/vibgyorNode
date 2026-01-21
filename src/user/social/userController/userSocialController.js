@@ -4,6 +4,7 @@ const FollowRequest = require('../userModel/followRequestModel');
 const Post = require('../userModel/postModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const notificationService = require('../../../notification/services/notificationService');
+const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 
 // Send follow request to a user (or directly follow if public account)
 async function sendFollowRequest(req, res) {
@@ -123,6 +124,45 @@ async function sendFollowRequest(req, res) {
 			} catch (notificationError) {
 				console.error('[USER][SOCIAL] Error creating notification for follow:', notificationError);
 				// Don't fail the request if notification fails
+			}
+
+			// Emit real-time follow status update for public account (direct follow)
+			try {
+				const [updatedCurrentUser, updatedTargetUser] = await Promise.all([
+					User.findById(currentUserId).select('following followers'),
+					User.findById(userId).select('following followers')
+				]);
+
+				// Emit to both users
+				enhancedRealtimeService.emitToUser(
+					currentUserId,
+					'follow_status:updated',
+					{
+						userId: userId,
+						followerId: currentUserId,
+						status: 'following',
+						followerCount: updatedTargetUser.followers.length,
+						followingCount: updatedCurrentUser.following.length,
+						timestamp: new Date()
+					}
+				);
+
+				enhancedRealtimeService.emitToUser(
+					userId,
+					'follow_status:updated',
+					{
+						userId: userId,
+						followerId: currentUserId,
+						status: 'following',
+						followerCount: updatedTargetUser.followers.length,
+						followingCount: updatedCurrentUser.following.length,
+						timestamp: new Date()
+					}
+				);
+				console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_status:updated to both users');
+			} catch (realtimeError) {
+				console.error('[USER][SOCIAL] Error emitting real-time follow status update:', realtimeError);
+				// Don't fail the request if real-time event fails
 			}
 
 			console.log('[USER][SOCIAL] User followed successfully (public account)');
@@ -270,6 +310,31 @@ async function sendFollowRequest(req, res) {
 			createdAt: followRequest.createdAt
 		};
 
+		// Emit real-time event to recipient
+		try {
+			enhancedRealtimeService.emitToUser(
+				userId, // recipient
+				'follow_request:received',
+				{
+					requestId: followRequest._id.toString(),
+					requester: {
+						_id: currentUser._id,
+						username: currentUser.username,
+						fullName: currentUser.fullName,
+						profilePictureUrl: currentUser.profilePictureUrl,
+						verificationStatus: currentUser.verificationStatus
+					},
+					message: followRequest.message,
+					createdAt: followRequest.createdAt,
+					timestamp: new Date()
+				}
+			);
+			console.log('[USER][SOCIAL] ✅ Real-time event emitted: follow_request:received to user', userId);
+		} catch (realtimeError) {
+			console.error('[USER][SOCIAL] Error emitting real-time event:', realtimeError);
+			// Don't fail the request if real-time event fails
+		}
+
 		console.log('[USER][SOCIAL] Follow request sent successfully, returning response:', responseData);
 		return ApiResponse.created(res, responseData, 'Follow request sent successfully');
 	} catch (e) {
@@ -394,6 +459,28 @@ async function unfollowUser(req, res) {
 				}
 			}
 
+			// Emit real-time event for cancelled follow request
+			try {
+				const currentUserInfo = await User.findById(currentUserId).select('username fullName');
+				enhancedRealtimeService.emitToUser(
+					userId, // recipient
+					'follow_request:cancelled',
+					{
+						requestId: deletedRequest._id.toString(),
+						requester: {
+							_id: currentUserId,
+							username: currentUserInfo.username,
+							fullName: currentUserInfo.fullName
+						},
+						timestamp: new Date()
+					}
+				);
+				console.log('[USER][SOCIAL] ✅ Real-time event emitted: follow_request:cancelled to recipient');
+			} catch (realtimeError) {
+				console.error('[USER][SOCIAL] Error emitting real-time event:', realtimeError);
+				// Don't fail the request if real-time event fails
+			}
+
 			const responseData = {
 				following: currentUser.following.length,
 				followers: targetUser.followers.length,
@@ -425,6 +512,72 @@ async function unfollowUser(req, res) {
 		]);
 
 		console.log('[USER][SOCIAL] User unfollowed and follow request status updated to cancelled');
+
+		// Emit real-time events for unfollow
+		try {
+			// Get updated counts
+			const [updatedCurrentUser, updatedTargetUser] = await Promise.all([
+				User.findById(currentUserId).select('following followers'),
+				User.findById(userId).select('following followers')
+			]);
+
+			// Check if there was a pending request that was cancelled
+			const pendingRequest = await FollowRequest.findOne({
+				requester: currentUserId,
+				recipient: userId,
+				status: 'pending'
+			});
+
+			if (pendingRequest) {
+				// Emit cancelled event if there was a pending request
+				const currentUserInfo = await User.findById(currentUserId).select('username fullName');
+				enhancedRealtimeService.emitToUser(
+					userId, // recipient
+					'follow_request:cancelled',
+					{
+						requestId: pendingRequest._id.toString(),
+						requester: {
+							_id: currentUserId,
+							username: currentUserInfo.username,
+							fullName: currentUserInfo.fullName
+						},
+						timestamp: new Date()
+					}
+				);
+				console.log('[USER][SOCIAL] ✅ Real-time event emitted: follow_request:cancelled');
+			}
+
+			// Emit follow status update to both users
+			enhancedRealtimeService.emitToUser(
+				userId,
+				'follow_status:updated',
+				{
+					userId: userId,
+					followerId: currentUserId,
+					status: 'not_following',
+					followerCount: updatedTargetUser.followers.length,
+					followingCount: updatedCurrentUser.following.length,
+					timestamp: new Date()
+				}
+			);
+
+			enhancedRealtimeService.emitToUser(
+				currentUserId,
+				'follow_status:updated',
+				{
+					userId: userId,
+					followerId: currentUserId,
+					status: 'not_following',
+					followerCount: updatedTargetUser.followers.length,
+					followingCount: updatedCurrentUser.following.length,
+					timestamp: new Date()
+				}
+			);
+			console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_status:updated to both users');
+		} catch (realtimeError) {
+			console.error('[USER][SOCIAL] Error emitting real-time events:', realtimeError);
+			// Don't fail the request if real-time event fails
+		}
 
 		const responseData = {
 			following: currentUser.following.length - 1,
@@ -506,6 +659,61 @@ async function removeFollower(req, res) {
 		]);
 
 		console.log('[USER][SOCIAL] Follower removed and follow request set to pending');
+
+		// Emit real-time events
+		try {
+			// Get updated counts
+			const updatedCurrentUser = await User.findById(currentUserId).select('followers');
+			const followerUser = await User.findById(userId).select('following');
+
+			// Emit to removed follower
+			const currentUserInfo = await User.findById(currentUserId).select('username fullName');
+			enhancedRealtimeService.emitToUser(
+				userId, // removed follower
+				'follower:removed',
+				{
+					userId: currentUserId,
+					removedBy: {
+						_id: currentUser._id,
+						username: currentUserInfo.username,
+						fullName: currentUserInfo.fullName
+					},
+					followerCount: updatedCurrentUser.followers.length,
+					timestamp: new Date()
+				}
+			);
+
+			// Also emit follow status update
+			enhancedRealtimeService.emitToUser(
+				userId,
+				'follow_status:updated',
+				{
+					userId: currentUserId,
+					followerId: userId,
+					status: 'not_following',
+					followerCount: updatedCurrentUser.followers.length,
+					followingCount: followerUser.following.length,
+					timestamp: new Date()
+				}
+			);
+
+			enhancedRealtimeService.emitToUser(
+				currentUserId,
+				'follow_status:updated',
+				{
+					userId: currentUserId,
+					followerId: userId,
+					status: 'not_following',
+					followerCount: updatedCurrentUser.followers.length,
+					followingCount: followerUser.following.length,
+					timestamp: new Date()
+				}
+			);
+			console.log('[USER][SOCIAL] ✅ Real-time events emitted: follower:removed and follow_status:updated');
+		} catch (realtimeError) {
+			console.error('[USER][SOCIAL] Error emitting real-time events:', realtimeError);
+			// Don't fail the request if real-time event fails
+		}
 
 		const responseData = {
 			removedUser: {
@@ -1450,6 +1658,62 @@ async function acceptFollowRequest(req, res) {
 			// Don't fail the request if notification fails
 		}
 
+		// Emit real-time events
+		try {
+			// Get updated counts
+			const [updatedRequester, updatedRecipient] = await Promise.all([
+				User.findById(followRequest.requester._id).select('following followers username fullName profilePictureUrl'),
+				User.findById(followRequest.recipient._id).select('following followers username fullName profilePictureUrl')
+			]);
+
+			// Emit to requester - follow request accepted
+			enhancedRealtimeService.emitToUser(
+				followRequest.requester._id.toString(),
+				'follow_request:accepted',
+				{
+					requestId: followRequest._id.toString(),
+					recipient: {
+						_id: recipient._id,
+						username: recipient.username,
+						fullName: recipient.fullName,
+						profilePictureUrl: updatedRecipient.profilePictureUrl
+					},
+					timestamp: new Date()
+				}
+			);
+
+			// Emit follow status update to both users
+			enhancedRealtimeService.emitToUser(
+				followRequest.requester._id.toString(),
+				'follow_status:updated',
+				{
+					userId: recipient._id.toString(),
+					followerId: followRequest.requester._id.toString(),
+					status: 'following',
+					followerCount: updatedRecipient.followers.length,
+					followingCount: updatedRequester.following.length,
+					timestamp: new Date()
+				}
+			);
+
+			enhancedRealtimeService.emitToUser(
+				recipient._id.toString(),
+				'follow_status:updated',
+				{
+					userId: recipient._id.toString(),
+					followerId: followRequest.requester._id.toString(),
+					status: 'following',
+					followerCount: updatedRecipient.followers.length,
+					followingCount: updatedRequester.following.length,
+					timestamp: new Date()
+				}
+			);
+			console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_request:accepted and follow_status:updated');
+		} catch (realtimeError) {
+			console.error('[USER][SOCIAL] Error emitting real-time events:', realtimeError);
+			// Don't fail the request if real-time event fails
+		}
+
 		const responseData = {
 			requestId: followRequest._id,
 			requester: {
@@ -1553,6 +1817,28 @@ async function rejectFollowRequest(req, res) {
 			// Log error but don't fail the request
 			console.error('[USER][SOCIAL] Error updating follow_request notification status:', notificationUpdateError);
 			console.error('[USER][SOCIAL] Follow request was rejected but notification update failed');
+		}
+
+		// Emit real-time event to requester
+		try {
+			const currentUser = await User.findById(currentUserId).select('username fullName');
+			enhancedRealtimeService.emitToUser(
+				followRequest.requester._id.toString(),
+				'follow_request:rejected',
+				{
+					requestId: followRequest._id.toString(),
+					recipient: {
+						_id: currentUserId,
+						username: currentUser.username,
+						fullName: currentUser.fullName
+					},
+					timestamp: new Date()
+				}
+			);
+			console.log('[USER][SOCIAL] ✅ Real-time event emitted: follow_request:rejected to requester');
+		} catch (realtimeError) {
+			console.error('[USER][SOCIAL] Error emitting real-time event:', realtimeError);
+			// Don't fail the request if real-time event fails
 		}
 
 		const responseData = {

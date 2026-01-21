@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Message = require('../userModel/messageModel');
 const Chat = require('../userModel/chatModel');
 const User = require('../../auth/model/userAuthModel');
@@ -53,17 +54,21 @@ class MessageService {
         throw new Error('Message content is required for text messages');
       }
       
-      // Validate chat exists and user is participant
+      // Validate chat exists and user is participant (optimized with lean and Set)
       console.log('🔵 [BACKEND_MSG_SVC] Validating chat access...', { chatId, senderId });
-      const chat = await Chat.findById(chatId);
+      const chat = await Chat.findById(chatId)
+        .select('participants lastMessage lastMessageAt userSettings')
+        .lean();
       if (!chat) {
         console.error('❌ [BACKEND_MSG_SVC] Chat not found:', chatId);
         throw new Error('Chat not found');
       }
       console.log('✅ [BACKEND_MSG_SVC] Chat found:', { chatId, participantsCount: chat.participants.length });
       
-      const isParticipant = chat.participants.some(p => p.toString() === senderId.toString());
-      if (!isParticipant) {
+      // Use Set for O(1) participant lookup
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const senderIdStr = senderId.toString();
+      if (!participantSet.has(senderIdStr)) {
         console.error('❌ [BACKEND_MSG_SVC] Access denied - user not participant:', { chatId, senderId, participants: chat.participants });
         throw new Error('Access denied to this chat');
       }
@@ -237,17 +242,21 @@ class MessageService {
         }
       }
       
-      // Validate replyTo message if provided
+      // Validate replyTo message if provided (optimized with lean and select)
       if (replyTo) {
-        const replyMessage = await Message.findById(replyTo);
+        const replyMessage = await Message.findById(replyTo)
+          .select('chatId')
+          .lean();
         if (!replyMessage || replyMessage.chatId.toString() !== chatId) {
           throw new Error('Invalid reply message');
         }
       }
       
-      // Validate forwardedFrom message if provided
+      // Validate forwardedFrom message if provided (optimized with lean)
       if (forwardedFrom) {
-        const forwardedMessage = await Message.findById(forwardedFrom);
+        const forwardedMessage = await Message.findById(forwardedFrom)
+          .select('_id')
+          .lean();
         if (!forwardedMessage) {
           throw new Error('Invalid forwarded message');
         }
@@ -308,63 +317,78 @@ class MessageService {
         { path: 'forwardedFrom', select: 'content type senderId' }
       ]);
       
-      // Update chat's last message and increment unread count
-      chat.lastMessage = message._id;
-      chat.lastMessageAt = new Date();
+      // Update chat's last message and increment unread count atomically
+      // Note: chat is now a lean object, so we need to use updateOne
+      const senderIdObj = mongoose.Types.ObjectId.isValid(senderId) ? new mongoose.Types.ObjectId(senderId) : senderId;
       
-      // Increment unread count for all participants except the sender
-      // Also unarchive chat if it was deleted by recipient (Instagram/WhatsApp behavior)
-      const participantUpdates = [];
-      for (const participantId of chat.participants) {
-        if (participantId.toString() !== senderId.toString()) {
-          chat.incrementUnreadCount(participantId);
-          
-          // Check if recipient had deleted the chat
-          const recipientSettings = chat.getUserSettings(participantId);
+      // Build arrayFilters for unread count increment (exclude sender)
+      const arrayFilters = [{ 'elem.userId': { $ne: senderIdObj } }];
+      
+      // Check for recipients who had deleted the chat (need to unarchive but keep deletedAt)
+      const unarchiveUpdates = [];
+      chat.participants.forEach(participant => {
+        const pIdStr = participant.toString();
+        if (pIdStr !== senderIdStr) {
+          const recipientSettings = chat.userSettings?.find(us => {
+            const usIdStr = us.userId?.toString() || String(us.userId);
+            return usIdStr === pIdStr;
+          });
           if (recipientSettings?.deletedAt) {
-            // Unarchive chat for recipient so it reappears in their list
-            // BUT keep deletedAt timestamp so only messages sent after deletion are visible
-            // This implements Instagram/WhatsApp behavior: chat reappears but only shows new messages
-            console.log(`🔵 [MESSAGE_SERVICE] Unarchiving chat ${chatId} for recipient ${participantId} - new message received (keeping deletedAt filter)`);
-            participantUpdates.push(
-              chat.updateUserSettings(participantId, {
-                isArchived: false
-                // Keep deletedAt - don't clear it! This ensures only messages after deletion are shown
-              })
+            // Unarchive but keep deletedAt
+            const participantIdObj = mongoose.Types.ObjectId.isValid(participant) 
+              ? new mongoose.Types.ObjectId(participant) 
+              : participant;
+            unarchiveUpdates.push(
+              Chat.updateOne(
+                { _id: chatId, 'userSettings.userId': participantIdObj },
+                { $set: { 'userSettings.$.isArchived': false } }
+              )
             );
+            console.log(`🔵 [MESSAGE_SERVICE] Unarchiving chat ${chatId} for recipient ${pIdStr} - new message received (keeping deletedAt filter)`);
           }
         }
-      }
+      });
       
-      // Wait for all participant updates to complete
-      if (participantUpdates.length > 0) {
-        await Promise.all(participantUpdates);
-      }
+      // Execute all updates in parallel
+      await Promise.all([
+        Chat.updateOne(
+          { _id: chatId },
+          {
+            $set: {
+              lastMessage: message._id,
+              lastMessageAt: new Date()
+            },
+            $inc: {
+              'userSettings.$[elem].unreadCount': 1
+            }
+          },
+          { arrayFilters }
+        ),
+        ...unarchiveUpdates
+      ]);
       
-      await chat.save();
-      
-      // Send notifications to all participants except sender
-      chat.participants.forEach(async (participantId) => {
-        if (participantId.toString() !== senderId.toString()) {
-          try {
-            await notificationService.create({
+      // Send notifications to all participants except sender in parallel
+      await Promise.allSettled(
+        chat.participants
+          .filter(p => p.toString() !== senderIdStr)
+          .map(participantId => 
+            notificationService.create({
               context: 'social',
               type: 'message_received',
               recipientId: participantId.toString(),
-              senderId: senderId.toString(),
+              senderId: senderIdStr,
               data: {
                 chatId: chatId,
                 messageId: message._id.toString(),
                 messageType: type,
                 contentType: 'message'
               }
-            });
-          } catch (notificationError) {
-            console.error('[MESSAGE_SERVICE] Notification error for participant:', participantId, notificationError);
-            // Don't fail message send if notification fails
-          }
-        }
-      });
+            }).catch(err => {
+              console.error('[MESSAGE_SERVICE] Notification error for participant:', participantId, err);
+              return null; // Don't fail message send if notification fails
+            })
+          )
+      );
       
       // Emit real-time message to chat participants
       const realtime = enhancedRealtimeService;
@@ -467,24 +491,30 @@ class MessageService {
         throw new Error('Invalid pagination parameters');
       }
       
-      // Validate chat access
+      // Validate chat access with lean query and Set lookup
       console.log('🔵 [BACKEND_MSG_SVC] Validating chat access...', { chatId, userId });
-      const chat = await Chat.findById(chatId);
+      const chat = await Chat.findById(chatId)
+        .select('participants userSettings')
+        .lean();
       if (!chat) {
         console.error('❌ [BACKEND_MSG_SVC] Chat not found:', chatId);
         throw new Error('Chat not found');
       }
       console.log('✅ [BACKEND_MSG_SVC] Chat found:', { chatId, participantsCount: chat.participants.length });
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         console.error('❌ [BACKEND_MSG_SVC] Access denied - user not participant:', { chatId, userId, participants: chat.participants });
         throw new Error('Access denied to this chat');
       }
       console.log('✅ [BACKEND_MSG_SVC] User is participant');
       
-      // Get user's deletion timestamp if chat was deleted
-      const userSettings = chat.getUserSettings(userId);
+      // Get user's deletion timestamp if chat was deleted (from lean object)
+      const userSettings = chat.userSettings?.find(setting => {
+        const settingUserId = setting.userId?.toString() || String(setting.userId);
+        return settingUserId === userIdStr;
+      });
       const deletedAt = userSettings?.deletedAt || null;
       
       console.log('🔵 [BACKEND_MSG_SVC] Fetching messages from database...', { chatId, page, limit, deletedAt });
@@ -535,22 +565,34 @@ class MessageService {
         throw new Error('Chat ID and User ID are required');
       }
       
-      // Validate chat access
-      const chat = await Chat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await Chat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this chat');
       }
       
-      const readCount = await Message.markChatAsRead(chatId, userId);
-      
-      // Reset unread count for this user in the chat
-      chat.resetUnreadCount(userId);
-      await chat.save();
+      // Mark messages as read and reset unread count atomically
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      const [readCount] = await Promise.all([
+        Message.markChatAsRead(chatId, userId),
+        Chat.updateOne(
+          { _id: chatId, 'userSettings.userId': userIdObj },
+          {
+            $set: {
+              'userSettings.$.unreadCount': 0,
+              'userSettings.$.lastReadAt': new Date()
+            }
+          }
+        )
+      ]);
       
       return {
         chatId,
@@ -578,13 +620,16 @@ class MessageService {
         throw new Error('Message ID, User ID, and content are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await Message.findById(messageId)
+        .select('senderId createdAt isDeleted')
+        .lean();
       if (!message) {
         throw new Error('Message not found');
       }
       
       // Check if user is the sender
-      if (message.senderId.toString() !== userId.toString()) {
+      const userIdStr = userId.toString();
+      if (message.senderId.toString() !== userIdStr) {
         throw new Error('You can only edit your own messages');
       }
       
@@ -599,27 +644,31 @@ class MessageService {
         throw new Error('Cannot edit deleted message');
       }
       
-      await message.editMessage(newContent.trim());
+      // Fetch full message document for editing (need mongoose document for instance method)
+      const messageDoc = await Message.findById(messageId);
+      await messageDoc.editMessage(newContent.trim());
       
       // Emit message update to chat participants
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`chat:${message.chatId}`).emit('message_update', {
-            messageId: message._id,
-            chatId: message.chatId,
-            content: message.content,
-            editedAt: message.editedAt
+          realtime.to(`chat:${messageDoc.chatId}`).emit('message_update', {
+            messageId: messageDoc._id,
+            chatId: messageDoc.chatId,
+            content: messageDoc.content,
+            editedAt: messageDoc.editedAt
           });
           
           // Also emit to all participants' global rooms for chat list updates
-          const chat = await Chat.findById(message.chatId);
+          const chat = await Chat.findById(messageDoc.chatId)
+            .select('participants')
+            .lean();
           chat.participants.forEach(participantId => {
             realtime.to(`user:${participantId}`).emit('message_update', {
-              messageId: message._id,
-              chatId: message.chatId,
-              content: message.content,
-              editedAt: message.editedAt
+              messageId: messageDoc._id,
+              chatId: messageDoc.chatId,
+              content: messageDoc.content,
+              editedAt: messageDoc.editedAt
             });
           });
         }
@@ -629,9 +678,9 @@ class MessageService {
       }
       
       return {
-        messageId: message._id,
-        content: message.content,
-        editedAt: message.editedAt
+        messageId: messageDoc._id,
+        content: messageDoc.content,
+        editedAt: messageDoc.editedAt
       };
       
     } catch (error) {
@@ -655,30 +704,31 @@ class MessageService {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await Message.findById(messageId)
+        .select('senderId chatId deletedBy createdAt');
       if (!message) {
         throw new Error('Message not found');
       }
       
       // Check ownership for "Delete for Everyone"
-      if (deleteForEveryone && message.senderId.toString() !== userId.toString()) {
+      const userIdStr = userId.toString();
+      if (deleteForEveryone && message.senderId.toString() !== userIdStr) {
         throw new Error('You can only delete your own messages for everyone');
       }
       
-      // Check if message is already deleted by this user
-      const alreadyDeleted = message.deletedBy.some(
-        deletion => deletion.userId.toString() === userId.toString()
-      );
-      
-      if (alreadyDeleted) {
+      // Check if message is already deleted by this user using Set for O(1) lookup
+      const deletedBySet = new Set((message.deletedBy || []).map(d => d.userId.toString()));
+      if (deletedBySet.has(userIdStr)) {
         throw new Error('Message already deleted by this user');
       }
       
       // Delete message (method handles time restrictions and validation)
       await message.deleteForUser(userId, deleteForEveryone);
       
-      // Get chat for real-time updates
-      const chat = await Chat.findById(message.chatId);
+      // Get chat for real-time updates (lean for read-only access)
+      const chat = await Chat.findById(message.chatId)
+        .select('participants')
+        .lean();
       
       // Emit real-time deletion event
       const realtime = enhancedRealtimeService;
@@ -734,15 +784,19 @@ class MessageService {
         throw new Error('Message ID, User ID, and emoji are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await Message.findById(messageId)
+        .select('chatId isDeleted');
       if (!message) {
         throw new Error('Message not found');
       }
       
-      // Check if user is participant in the chat
-      const chat = await Chat.findById(message.chatId);
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      // Check if user is participant in the chat with lean query and Set lookup
+      const chat = await Chat.findById(message.chatId)
+        .select('participants')
+        .lean();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this message');
       }
       
@@ -751,19 +805,21 @@ class MessageService {
         throw new Error('Cannot react to deleted message');
       }
       
-      await message.addReaction(userId, emoji);
+      // Fetch full message for instance method
+      const messageDoc = await Message.findById(messageId);
+      await messageDoc.addReaction(userId, emoji);
       
       // Emit reaction to chat participants
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
           const reactionData = {
-            messageId: message._id,
-            chatId: message.chatId,
-            reactions: message.reactions
+            messageId: messageDoc._id,
+            chatId: messageDoc.chatId,
+            reactions: messageDoc.reactions
           };
           
-          realtime.to(`chat:${message.chatId}`).emit('message_reaction', reactionData);
+          realtime.to(`chat:${messageDoc.chatId}`).emit('message_reaction', reactionData);
           
           // Also emit to all participants' global rooms for chat list updates
           chat.participants.forEach(participantId => {
@@ -776,8 +832,8 @@ class MessageService {
       }
       
       return {
-        messageId: message._id,
-        reactions: message.reactions
+        messageId: messageDoc._id,
+        reactions: messageDoc.reactions
       };
       
     } catch (error) {
@@ -799,36 +855,42 @@ class MessageService {
         throw new Error('Message ID and User ID are required');
       }
       
-      const message = await Message.findById(messageId);
+      const message = await Message.findById(messageId)
+        .select('chatId');
       if (!message) {
         throw new Error('Message not found');
       }
       
-      // Check if user is participant in the chat
-      const chat = await Chat.findById(message.chatId);
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      // Check if user is participant in the chat with lean query and Set lookup
+      const chat = await Chat.findById(message.chatId)
+        .select('participants')
+        .lean();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this message');
       }
       
-      await message.removeReaction(userId);
+      // Fetch full message for instance method
+      const messageDoc = await Message.findById(messageId);
+      await messageDoc.removeReaction(userId);
       
       // Emit reaction update to chat participants
       try {
         const realtime = enhancedRealtimeService;
         if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`chat:${message.chatId}`).emit('message_reaction', {
-            messageId: message._id,
-            chatId: message.chatId,
-            reactions: message.reactions
+          realtime.to(`chat:${messageDoc.chatId}`).emit('message_reaction', {
+            messageId: messageDoc._id,
+            chatId: messageDoc.chatId,
+            reactions: messageDoc.reactions
           });
           
           // Also emit to all participants' global rooms for chat list updates
           chat.participants.forEach(participantId => {
             realtime.to(`user:${participantId}`).emit('message_reaction', {
-              messageId: message._id,
-              chatId: message.chatId,
-              reactions: message.reactions
+              messageId: messageDoc._id,
+              chatId: messageDoc.chatId,
+              reactions: messageDoc.reactions
             });
           });
         }
@@ -838,8 +900,8 @@ class MessageService {
       }
       
       return {
-        messageId: message._id,
-        reactions: message.reactions
+        messageId: messageDoc._id,
+        reactions: messageDoc.reactions
       };
       
     } catch (error) {
@@ -862,23 +924,35 @@ class MessageService {
         throw new Error('Message ID, Target Chat ID, and User ID are required');
       }
       
-      // Find the original message
+      // Find the original message first, then fetch both chats in parallel
       const originalMessage = await Message.findById(messageId)
-        .populate('senderId', 'username fullName profilePictureUrl');
+        .populate('senderId', 'username fullName profilePictureUrl')
+        .select('chatId content media senderId')
+        .lean();
       
       if (!originalMessage) {
         throw new Error('Original message not found');
       }
       
-      // Check if user has access to the original message
-      const originalChat = await Chat.findById(originalMessage.chatId);
-      if (!originalChat || !originalChat.participants.includes(userId)) {
+      // Fetch both chats in parallel with lean queries
+      const [originalChat, targetChat] = await Promise.all([
+        Chat.findById(originalMessage.chatId)
+          .select('participants')
+          .lean(),
+        Chat.findById(targetChatId)
+          .select('participants lastMessage lastMessageAt')
+          .lean()
+      ]);
+      
+      // Check access using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const originalParticipantSet = new Set(originalChat.participants.map(p => p.toString()));
+      const targetParticipantSet = new Set(targetChat.participants.map(p => p.toString()));
+      
+      if (!originalParticipantSet.has(userIdStr)) {
         throw new Error('Access denied to original message');
       }
-      
-      // Check if user has access to target chat
-      const targetChat = await Chat.findById(targetChatId);
-      if (!targetChat || !targetChat.participants.includes(userId)) {
+      if (!targetParticipantSet.has(userIdStr)) {
         throw new Error('Access denied to target chat');
       }
       
@@ -895,18 +969,25 @@ class MessageService {
       
       await forwardedMessage.save();
       
-      // Update target chat's last message
-      targetChat.lastMessage = forwardedMessage._id;
-      targetChat.lastMessageAt = new Date();
-      
-      // Increment unread count for all participants except the sender
-      targetChat.participants.forEach(participantId => {
-        if (participantId.toString() !== userId.toString()) {
-          targetChat.incrementUnreadCount(participantId);
+      // Update target chat's last message and increment unread count atomically
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      await Chat.updateOne(
+        { _id: targetChatId },
+        {
+          $set: {
+            lastMessage: forwardedMessage._id,
+            lastMessageAt: new Date()
+          },
+          $inc: {
+            'userSettings.$[elem].unreadCount': 1
+          }
+        },
+        {
+          arrayFilters: [
+            { 'elem.userId': { $ne: userIdObj } }
+          ]
         }
-      });
-      
-      await targetChat.save();
+      );
       
       // Emit real-time message to target chat participants
       const realtime = enhancedRealtimeService;
@@ -957,14 +1038,17 @@ class MessageService {
         throw new Error('Invalid pagination parameters');
       }
       
-      // Validate chat access
-      const chat = await Chat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await Chat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this chat');
       }
       
@@ -1006,14 +1090,17 @@ class MessageService {
         throw new Error('Invalid pagination parameters');
       }
       
-      // Validate chat access
-      const chat = await Chat.findById(chatId);
+      // Validate chat access with lean query and Set lookup
+      const chat = await Chat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Chat not found');
       }
       
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this chat');
       }
       
@@ -1059,15 +1146,19 @@ class MessageService {
         throw new Error('Message not found');
       }
       
-      // Check if user is participant in the chat
-      const chat = await Chat.findById(message.chatId);
-      const isParticipant = chat.participants.some(p => p.toString() === userId.toString());
-      if (!isParticipant) {
+      // Check if user is participant in the chat with lean query and Set lookup
+      const chat = await Chat.findById(message.chatId)
+        .select('participants')
+        .lean();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = userId.toString();
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this message');
       }
       
-      // Check if message is deleted by this user
-      if (message.deletedBy.includes(userId)) {
+      // Check if message is deleted by this user using Set for O(1) lookup
+      const deletedBySet = new Set((message.deletedBy || []).map(d => d.userId?.toString() || d.toString()));
+      if (deletedBySet.has(userIdStr)) {
         throw new Error('Message not found');
       }
       
@@ -1099,12 +1190,10 @@ class MessageService {
         throw new Error('Message is not a one-view message');
       }
       
-      // Check if already viewed by this user
-      const alreadyViewed = message.viewedBy.some(
-        view => view.userId.toString() === userId.toString()
-      );
-      
-      if (alreadyViewed) {
+      // Check if already viewed by this user using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const viewedBySet = new Set((message.viewedBy || []).map(v => v.userId?.toString() || v.toString()));
+      if (viewedBySet.has(userIdStr)) {
         console.log('✅ [BACKEND_MSG_SVC] Message already viewed by user');
         return message;
       }

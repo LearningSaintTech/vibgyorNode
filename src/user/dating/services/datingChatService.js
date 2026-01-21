@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const DatingChat = require('../models/datingChatModel');
 const DatingMessage = require('../models/datingMessageModel');
 const DatingMatch = require('../models/datingMatchModel');
@@ -48,35 +49,89 @@ class DatingChatService {
       
       const chats = await DatingChat.getUserDatingChats(userId, page, limit);
       
-      // Enhance chats with additional data
-      const enhancedChats = await Promise.all(
-        chats.map(async (chat) => {
-          const userSettings = chat.userSettings?.find(setting => 
-            setting.userId.toString() === userId.toString()
-          );
-          
-          // Get other participant info
-          const otherParticipant = chat.participants.find(p => 
-            p._id.toString() !== userId.toString()
-          );
-          
-          // Get unread count
-          const unreadCount = await DatingMessage.getUnreadCount(chat._id, userId);
-          
-          return {
-            ...chat,
-            unreadCount: unreadCount,
-            userSettings: userSettings || {
-              isArchived: false,
-              isPinned: false,
-              isMuted: false,
-              unreadCount: 0,
-              lastReadAt: null
+      // Batch unread count queries to avoid N+1 problem
+      const chatIds = chats.map(chat => chat._id);
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      
+      const unreadCounts = await DatingMessage.aggregate([
+        {
+          $match: {
+            chatId: { $in: chatIds },
+            senderId: { $ne: userIdObj },
+            isDeleted: false
+          }
+        },
+        {
+          $addFields: {
+            readByUser: {
+              $anyElementTrue: {
+                $map: {
+                  input: { $ifNull: ['$readBy', []] },
+                  as: 'read',
+                  in: { $eq: ['$$read.userId', userIdObj] }
+                }
+              }
             },
-            otherParticipant
-          };
-        })
+            deletedByUser: {
+              $anyElementTrue: {
+                $map: {
+                  input: { $ifNull: ['$deletedBy', []] },
+                  as: 'deletion',
+                  in: { $eq: ['$$deletion.userId', userIdObj] }
+                }
+              }
+            }
+          }
+        },
+        {
+          $match: {
+            readByUser: false,
+            deletedByUser: false
+          }
+        },
+        {
+          $group: {
+            _id: '$chatId',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      
+      // Create Map for O(1) lookup
+      const unreadCountMap = new Map(
+        unreadCounts.map(item => [item._id.toString(), item.count || 0])
       );
+      
+      const userIdStr = userId.toString();
+      // Enhance chats with additional data
+      const enhancedChats = chats.map((chat) => {
+        const userSettings = chat.userSettings?.find(setting => {
+          const settingUserId = setting.userId?.toString() || String(setting.userId);
+          return settingUserId === userIdStr;
+        });
+        
+        // Get other participant info using Set for better performance (though array is small)
+        const otherParticipant = chat.participants.find(p => {
+          const pId = p._id?.toString() || p?.toString();
+          return pId && pId !== userIdStr;
+        });
+        
+        // Get unread count from Map
+        const unreadCount = unreadCountMap.get(chat._id.toString()) || 0;
+        
+        return {
+          ...chat,
+          unreadCount: unreadCount,
+          userSettings: userSettings || {
+            isArchived: false,
+            isPinned: false,
+            isMuted: false,
+            unreadCount: 0,
+            lastReadAt: null
+          },
+          otherParticipant
+        };
+      });
       
       // Sort chats: pinned first, then by last message time
       enhancedChats.sort((a, b) => {
@@ -117,27 +172,29 @@ class DatingChatService {
         throw new Error('Dating chat not found');
       }
       
-      // Check if user is participant
-      const isParticipant = chat.participants.some(p => 
-        p._id.toString() === userId.toString()
-      );
-      
-      if (!isParticipant) {
+      // Check if user is participant using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const participantSet = new Set(chat.participants.map(p => 
+        (p._id?.toString() || p?.toString())
+      ));
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
       // Get unread count
       const unreadCount = await DatingMessage.getUnreadCount(chatId, userId);
       
-      // Get user settings
-      const userSettings = chat.userSettings?.find(setting => 
-        setting.userId.toString() === userId.toString()
-      );
+      // Get user settings (userIdStr already declared above)
+      const userSettings = chat.userSettings?.find(setting => {
+        const settingUserId = setting.userId?.toString() || String(setting.userId);
+        return settingUserId === userIdStr;
+      });
       
       // Get other participant
-      const otherParticipant = chat.participants.find(p => 
-        p._id.toString() !== userId.toString()
-      );
+      const otherParticipant = chat.participants.find(p => {
+        const pId = p._id?.toString() || p?.toString();
+        return pId && pId !== userIdStr;
+      });
       
       return {
         ...chat,
@@ -172,39 +229,48 @@ class DatingChatService {
       
       const { isArchived, isPinned, isMuted } = settings;
       
-      const chat = await DatingChat.findById(chatId);
+      const chat = await DatingChat.findById(chatId)
+        .select('participants')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      // Check if user is participant
-      const isParticipant = chat.participants.some(p => 
-        p.toString() === userId.toString()
-      );
-      
-      if (!isParticipant) {
+      // Check if user is participant using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
       // Prepare updates with timestamps
       const updates = {};
+      const updateObj = {};
       if (typeof isArchived === 'boolean') {
         updates.isArchived = isArchived;
-        updates.archivedAt = isArchived ? new Date() : null;
+        updateObj['userSettings.$.isArchived'] = isArchived;
+        updateObj['userSettings.$.archivedAt'] = isArchived ? new Date() : null;
       }
       if (typeof isPinned === 'boolean') {
         updates.isPinned = isPinned;
-        updates.pinnedAt = isPinned ? new Date() : null;
+        updateObj['userSettings.$.isPinned'] = isPinned;
+        updateObj['userSettings.$.pinnedAt'] = isPinned ? new Date() : null;
       }
       if (typeof isMuted === 'boolean') {
         updates.isMuted = isMuted;
-        updates.mutedAt = isMuted ? new Date() : null;
+        updateObj['userSettings.$.isMuted'] = isMuted;
+        updateObj['userSettings.$.mutedAt'] = isMuted ? new Date() : null;
       }
       
-      await chat.updateUserSettings(userId, updates);
+      // Update user settings atomically
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      await DatingChat.updateOne(
+        { _id: chatId, 'userSettings.userId': userIdObj },
+        { $set: updateObj }
+      );
       
       return {
-        chatId: chat._id,
+        chatId: chatId,
         settings: updates
       };
     } catch (error) {
@@ -242,34 +308,43 @@ class DatingChatService {
         throw new Error('Chat ID and User ID are required');
       }
       
-      const chat = await DatingChat.findById(chatId);
+      const chat = await DatingChat.findById(chatId)
+        .select('_id participants')
+        .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
-      // Check if user is participant
-      const isParticipant = chat.participants.some(p => 
-        p.toString() === userId.toString()
-      );
-      
-      if (!isParticipant) {
+      // Check if user is participant using Set for O(1) lookup
+      const userIdStr = userId.toString();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
-      // Archive chat for user and set deletion timestamp
+      // Archive chat for user and set deletion timestamp atomically
       // This hides the chat from user's list, but keeps it in database
       // When other user sends message, chat will reappear but only show new messages
       const deletionTimestamp = new Date();
-      await chat.updateUserSettings(userId, {
-        isArchived: true,
-        archivedAt: deletionTimestamp,
-        deletedAt: deletionTimestamp
-      });
+      const updateResult = await DatingChat.updateOne(
+        { _id: chatId, 'userSettings.userId': userId },
+        {
+          $set: {
+            'userSettings.$.isArchived': true,
+            'userSettings.$.archivedAt': deletionTimestamp,
+            'userSettings.$.deletedAt': deletionTimestamp
+          }
+        }
+      );
+      
+      if (updateResult.matchedCount === 0) {
+        throw new Error('User settings not found in chat');
+      }
       
       console.log(`🔵 [DATING_CHAT_SERVICE] Chat ${chatId} archived and marked as deleted for user ${userId} at ${deletionTimestamp}`);
       
       return {
-        chatId: chat._id,
+        chatId: chatId,
         message: 'Dating chat deleted successfully',
         deletedAt: deletionTimestamp
       };
@@ -346,37 +421,89 @@ class DatingChatService {
       // Apply pagination
       const paginatedChats = filteredChats.slice(skip, skip + limit);
       
-      // Enhance chats with additional data
-      const enhancedChats = await Promise.all(
-        paginatedChats.map(async (chat) => {
-          const userSettings = chat.userSettings?.find(setting => {
-            const settingUserId = setting.userId?.toString() || setting.userId;
-            return settingUserId === userId.toString();
-          });
-          
-          // Get other participant info
-          const otherParticipant = chat.participants?.find(p => {
-            const pId = p._id?.toString() || p?.toString();
-            return pId && pId !== userId.toString();
-          });
-          
-          // Get unread count
-          const unreadCount = await DatingMessage.getUnreadCount(chat._id, userId);
-          
-          return {
-            ...chat,
-            unreadCount: unreadCount,
-            userSettings: userSettings || {
-              isArchived: false,
-              isPinned: false,
-              isMuted: false,
-              unreadCount: 0,
-              lastReadAt: null
+      // Batch unread count queries to avoid N+1 problem
+      const paginatedChatIds = paginatedChats.map(chat => chat._id);
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      
+      const unreadCounts = await DatingMessage.aggregate([
+        {
+          $match: {
+            chatId: { $in: paginatedChatIds },
+            senderId: { $ne: userIdObj },
+            isDeleted: false
+          }
+        },
+        {
+          $addFields: {
+            readByUser: {
+              $anyElementTrue: {
+                $map: {
+                  input: { $ifNull: ['$readBy', []] },
+                  as: 'read',
+                  in: { $eq: ['$$read.userId', userIdObj] }
+                }
+              }
             },
-            otherParticipant
-          };
-        })
+            deletedByUser: {
+              $anyElementTrue: {
+                $map: {
+                  input: { $ifNull: ['$deletedBy', []] },
+                  as: 'deletion',
+                  in: { $eq: ['$$deletion.userId', userIdObj] }
+                }
+              }
+            }
+          }
+        },
+        {
+          $match: {
+            readByUser: false,
+            deletedByUser: false
+          }
+        },
+        {
+          $group: {
+            _id: '$chatId',
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+      
+      // Create Map for O(1) lookup
+      const unreadCountMap = new Map(
+        unreadCounts.map(item => [item._id.toString(), item.count || 0])
       );
+      
+      const userIdStr = userId.toString();
+      // Enhance chats with additional data
+      const enhancedChats = paginatedChats.map((chat) => {
+        const userSettings = chat.userSettings?.find(setting => {
+          const settingUserId = setting.userId?.toString() || setting.userId;
+          return settingUserId === userIdStr;
+        });
+        
+        // Get other participant info
+        const otherParticipant = chat.participants?.find(p => {
+          const pId = p._id?.toString() || p?.toString();
+          return pId && pId !== userIdStr;
+        });
+        
+        // Get unread count from Map
+        const unreadCount = unreadCountMap.get(chat._id.toString()) || 0;
+          
+        return {
+          ...chat,
+          unreadCount: unreadCount,
+          userSettings: userSettings || {
+            isArchived: false,
+            isPinned: false,
+            isMuted: false,
+            unreadCount: 0,
+            lastReadAt: null
+          },
+          otherParticipant
+        };
+      });
       
       // Sort chats
       enhancedChats.sort((a, b) => {
@@ -414,7 +541,15 @@ class DatingChatService {
         throw new Error('User ID is required');
       }
       
-      const [totalChats, archivedChats, pinnedChats, totalUnreadMessages] = await Promise.all([
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      
+      // Get chat IDs first, then use them for unread message count
+      const userChatIds = await DatingChat.find({ participants: userId, isActive: true })
+        .select('_id')
+        .lean()
+        .then(chats => chats.map(chat => chat._id));
+      
+      const [totalChats, archivedChats, pinnedChats, totalUnreadMessagesResult] = await Promise.all([
         DatingChat.countDocuments({
           participants: userId,
           isActive: true
@@ -429,14 +564,47 @@ class DatingChatService {
           'userSettings.userId': userId,
           'userSettings.isPinned': true
         }),
-        DatingMessage.countDocuments({
-          chatId: { $in: await DatingChat.find({ participants: userId }).distinct('_id') },
-          senderId: { $ne: userId },
-          'readBy.userId': { $ne: userId },
-          isDeleted: false,
-          'deletedBy.userId': { $ne: userId }
-        })
+        DatingMessage.aggregate([
+          {
+            $match: {
+              chatId: { $in: userChatIds },
+              senderId: { $ne: userIdObj },
+              isDeleted: false
+            }
+          },
+          {
+            $addFields: {
+              readByUser: {
+                $anyElementTrue: {
+                  $map: {
+                    input: { $ifNull: ['$readBy', []] },
+                    as: 'read',
+                    in: { $eq: ['$$read.userId', userIdObj] }
+                  }
+                }
+              },
+              deletedByUser: {
+                $anyElementTrue: {
+                  $map: {
+                    input: { $ifNull: ['$deletedBy', []] },
+                    as: 'deletion',
+                    in: { $eq: ['$$deletion.userId', userIdObj] }
+                  }
+                }
+              }
+            }
+          },
+          {
+            $match: {
+              readByUser: false,
+              deletedByUser: false
+            }
+          },
+          { $count: 'total' }
+        ])
       ]);
+      
+      const totalUnreadMessages = totalUnreadMessagesResult[0]?.total || 0;
       
       return {
         totalChats,
@@ -459,18 +627,33 @@ class DatingChatService {
    */
   static async joinChat(chatId, userId) {
     try {
-      // Validate chat access
-      const chat = await DatingChat.findById(chatId);
-      if (!chat || !chat.participants.includes(userId)) {
+      // Validate chat access with lean query and Set lookup
+      const chat = await DatingChat.findById(chatId)
+        .select('participants')
+        .lean();
+      if (!chat) {
         throw new Error('Access denied to this dating chat');
       }
       
-      // Mark messages as read
-      await DatingMessage.markChatAsRead(chatId, userId);
+      const userIdStr = userId.toString();
+      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      if (!participantSet.has(userIdStr)) {
+        throw new Error('Access denied to this dating chat');
+      }
       
-      // Reset unread count
-      chat.resetUnreadCount(userId);
-      await chat.save();
+      // Mark messages as read and reset unread count atomically
+      await Promise.all([
+        DatingMessage.markChatAsRead(chatId, userId),
+        DatingChat.updateOne(
+          { _id: chatId, 'userSettings.userId': userId },
+          {
+            $set: {
+              'userSettings.$.unreadCount': 0,
+              'userSettings.$.lastReadAt': new Date()
+            }
+          }
+        )
+      ]);
       
       return {
         chatId,

@@ -6,6 +6,7 @@ const { uploadToS3, deleteFromS3 } = require('../../../services/s3Service');
 const contentModeration = require('../userModel/contentModerationModel');
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 const notificationService = require('../../../notification/services/notificationService');
+const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 
 // Create a new story
 async function createStory(req, res) {
@@ -169,6 +170,30 @@ async function createStory(req, res) {
           invalidateUserCache(followerId.toString(), 'feed:stories:*');
         });
         console.log('[STORY] Cache invalidated for all followers');
+        
+        // Emit real-time event to all followers about new story
+        try {
+          const storyData = {
+            storyId: story._id.toString(),
+            author: {
+              _id: story.author._id || userId,
+              username: story.author.username,
+              fullName: story.author.fullName,
+              profilePictureUrl: story.author.profilePictureUrl
+            },
+            createdAt: story.createdAt,
+            timestamp: new Date()
+          };
+          
+          // Emit to each follower
+          author.followers.forEach(followerId => {
+            enhancedRealtimeService.emitToUser(followerId.toString(), 'story:created', storyData);
+          });
+          console.log('[STORY] ✅ Real-time events emitted: story:created to', author.followers.length, 'followers');
+        } catch (realtimeError) {
+          console.error('[STORY] Error emitting real-time story:created events:', realtimeError);
+          // Don't fail story creation if real-time event fails
+        }
       }
     } catch (cacheError) {
       console.error('[STORY] Error invalidating follower caches:', cacheError);
@@ -682,6 +707,30 @@ async function deleteStory(req, res) {
     // Hard delete from database
     await Story.findByIdAndDelete(storyId);
 
+    // Emit real-time event for story deletion
+    try {
+      enhancedRealtimeService.emitToStory(storyId, 'story:deleted', {
+        storyId: storyId,
+        timestamp: new Date()
+      });
+      
+      // Also notify followers about story deletion
+      const author = await User.findById(authorId).select('followers').lean();
+      if (author && author.followers && author.followers.length > 0) {
+        author.followers.forEach(followerId => {
+          enhancedRealtimeService.emitToUser(followerId.toString(), 'story:deleted', {
+            storyId: storyId,
+            authorId: authorId,
+            timestamp: new Date()
+          });
+        });
+        console.log('[STORY] ✅ Real-time events emitted: story:deleted to', author.followers.length, 'followers');
+      }
+    } catch (realtimeError) {
+      console.error('[STORY] Error emitting real-time delete event:', realtimeError);
+      // Don't fail deletion if real-time event fails
+    }
+
     // OPTIMIZED: Invalidate feed cache when story is deleted
     invalidateUserCache(userId, 'feed:stories:*');
     
@@ -756,6 +805,33 @@ async function replyToStory(req, res) {
 
     // OPTIMIZED: Invalidate feed cache when story is replied to
     invalidateUserCache(userId, 'feed:stories:*');
+
+    // Emit real-time event for story reply
+    try {
+      const currentUser = await User.findById(userId).select('username fullName profilePictureUrl');
+      const latestReply = updatedStory.replies[updatedStory.replies.length - 1];
+      
+      enhancedRealtimeService.emitToStory(storyId, 'story:replied', {
+        storyId: storyId,
+        reply: {
+          _id: latestReply._id,
+          user: {
+            _id: currentUser._id,
+            username: currentUser.username,
+            fullName: currentUser.fullName,
+            profilePictureUrl: currentUser.profilePictureUrl
+          },
+          content: latestReply.content,
+          createdAt: latestReply.createdAt
+        },
+        repliesCount: updatedStory.analytics.repliesCount,
+        timestamp: new Date()
+      });
+      console.log('[STORY] ✅ Real-time event emitted: story:replied');
+    } catch (realtimeError) {
+      console.error('[STORY] Error emitting real-time reply event:', realtimeError);
+      // Don't fail reply action if real-time event fails
+    }
 
     console.log('[STORY] Reply added successfully');
     return ApiResponse.success(res, {
@@ -1083,6 +1159,29 @@ async function toggleLikeStory(req, res) {
     
     // OPTIMIZED: Invalidate feed cache when story is liked/unliked
     invalidateUserCache(userId, 'feed:stories:*');
+
+    // Emit real-time event for story like/unlike
+    try {
+      const currentUser = await User.findById(userId).select('username fullName profilePictureUrl');
+      const eventName = isLiked ? 'story:liked' : 'story:unliked';
+      enhancedRealtimeService.emitToStory(storyId, eventName, {
+        storyId: storyId,
+        userId: userId,
+        user: {
+          _id: currentUser._id,
+          username: currentUser.username,
+          fullName: currentUser.fullName,
+          profilePictureUrl: currentUser.profilePictureUrl
+        },
+        isLiked: isLiked,
+        likesCount: story.analytics.likesCount,
+        timestamp: new Date()
+      });
+      console.log(`[STORY] ✅ Real-time event emitted: ${eventName}`);
+    } catch (realtimeError) {
+      console.error('[STORY] Error emitting real-time like event:', realtimeError);
+      // Don't fail like action if real-time event fails
+    }
 
     console.log('[STORY] Story like toggled successfully:', {
       storyId: story._id,

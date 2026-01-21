@@ -34,18 +34,19 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] createOrGetChat error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] createOrGetChat error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('not found') || error.message.includes('Access denied')) {
+      if (errorMsg.includes('not found') || errorMsg.includes('Access denied')) {
         statusCode = 404;
-      } else if (error.message.includes('required') || error.message.includes('Invalid')) {
+      } else if (errorMsg.includes('required') || errorMsg.includes('Invalid')) {
         statusCode = 400;
-      } else if (error.message.includes('permission') || error.message.includes('inactive')) {
+      } else if (errorMsg.includes('permission') || errorMsg.includes('inactive')) {
         statusCode = 403;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -109,14 +110,15 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] getUserChats error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] getUserChats error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('required') || error.message.includes('Invalid')) {
+      if (errorMsg.includes('required') || errorMsg.includes('Invalid')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -139,16 +141,17 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] getChatDetails error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] getChatDetails error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('not found') || error.message.includes('Access denied')) {
+      if (errorMsg.includes('not found') || errorMsg.includes('Access denied')) {
         statusCode = 404;
-      } else if (error.message.includes('required')) {
+      } else if (errorMsg.includes('required')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -181,16 +184,17 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] updateChatSettings error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] updateChatSettings error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('not found') || error.message.includes('Access denied')) {
+      if (errorMsg.includes('not found') || errorMsg.includes('Access denied')) {
         statusCode = 404;
-      } else if (error.message.includes('required')) {
+      } else if (errorMsg.includes('required')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -213,16 +217,17 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] deleteChat error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] deleteChat error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('not found') || error.message.includes('Access denied')) {
+      if (errorMsg.includes('not found') || errorMsg.includes('Access denied')) {
         statusCode = 404;
-      } else if (error.message.includes('required')) {
+      } else if (errorMsg.includes('required')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -249,14 +254,15 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] searchChats error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] searchChats error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('required') || error.message.includes('Invalid')) {
+      if (errorMsg.includes('required') || errorMsg.includes('Invalid')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -278,14 +284,15 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] getChatStats error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] getChatStats error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('required')) {
+      if (errorMsg.includes('required')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -308,16 +315,17 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] joinChat error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] joinChat error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('Access denied')) {
+      if (errorMsg.includes('Access denied')) {
         statusCode = 403;
-      } else if (error.message.includes('required')) {
+      } else if (errorMsg.includes('required')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
   
@@ -340,14 +348,15 @@ class DatingChatController {
       ));
       
     } catch (error) {
-      console.error('[DatingChatController] leaveChat error:', error);
+      const errorMsg = error?.message || String(error);
+      console.error('[DatingChatController] leaveChat error:', errorMsg);
       
       let statusCode = 500;
-      if (error.message.includes('required')) {
+      if (errorMsg.includes('required')) {
         statusCode = 400;
       }
       
-      res.status(statusCode).json(createErrorResponse(error.message));
+      res.status(statusCode).json(createErrorResponse(errorMsg));
     }
   }
 }
