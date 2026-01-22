@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authorize, Roles } = require('../../../middleware/authMiddleware');
-const { sendPhoneOtp, verifyPhoneOtp, resendPhoneOtp, sendEmailOtp, verifyEmailOtp, resendEmailOtp, getMe, getProfile, getUserProfile, updateProfile, getProfileStep, getEmailVerificationStatus, refreshToken, getPrivacySettings, updatePrivacySettings } = require('../controller/userAuthController');
+const { sendPhoneOtp, verifyPhoneOtp, resendPhoneOtp, sendEmailOtp, verifyEmailOtp, resendEmailOtp, getMe, getProfile, getUserProfile, updateProfile, getProfileStep, getEmailVerificationStatus, refreshToken, getPrivacySettings, updatePrivacySettings, logout } = require('../controller/userAuthController');
 
 // Phone OTP auth
 router.post('/send-otp', sendPhoneOtp);
@@ -34,6 +34,9 @@ router.get('/email/status', authorize([Roles.USER]), getEmailVerificationStatus)
 // Privacy Settings
 router.get('/privacy-settings', authorize([Roles.USER]), getPrivacySettings);
 router.put('/privacy-settings', authorize([Roles.USER]), updatePrivacySettings);
+
+// Logout - Clear FCM tokens and cache
+router.post('/logout', authorize([Roles.USER]), logout);
 
 router.post('/update-access-token',refreshToken)
 

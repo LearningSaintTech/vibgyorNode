@@ -1230,6 +1230,132 @@ async function updatePrivacySettings(req, res) {
 	}
 }
 
+// Logout user - Clear FCM tokens and all cache
+async function logout(req, res) {
+	try {
+		console.log('[USER][AUTH] 🚪 ========== LOGOUT API CALLED ==========');
+		console.log('[USER][AUTH] 📥 Request received:', {
+			method: req.method,
+			path: req.path,
+			body: req.body,
+			hasUser: !!req.user,
+			userFromReq: req.user ? {
+				userId: req.user?.userId,
+				id: req.user?.id,
+				role: req.user?.role
+			} : null
+		});
+
+		const userId = req.user?.userId || req.user?.id;
+		
+		if (!userId) {
+			console.error('[USER][AUTH] ❌ Logout error: User ID not found in request');
+			console.error('[USER][AUTH] Request user object:', req.user);
+			return ApiResponse.unauthorized(res, 'User not authenticated');
+		}
+
+		console.log('[USER][AUTH] ✅ User ID extracted:', userId);
+		console.log('[USER][AUTH] 🔍 Looking up user in database...');
+
+		// Find user
+		const user = await User.findById(userId);
+		if (!user) {
+			console.error('[USER][AUTH] ❌ Logout error: User not found in database:', userId);
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		console.log('[USER][AUTH] ✅ User found:', {
+			userId: user._id,
+			username: user.username,
+			phoneNumber: user.phoneNumber,
+			currentDeviceTokensCount: user.deviceTokens?.length || 0
+		});
+
+		// 1. Clear FCM device token for this specific device only
+		try {
+			const { deviceId } = req.body;
+			
+			console.log('[USER][AUTH] 📱 Processing FCM token removal:', {
+				deviceId: deviceId || 'NOT PROVIDED',
+				currentTokensCount: user.deviceTokens?.length || 0,
+				deviceTokens: user.deviceTokens?.map(dt => ({
+					deviceId: dt.deviceId,
+					platform: dt.platform,
+					isActive: dt.isActive
+				})) || []
+			});
+			
+			if (deviceId) {
+				const beforeCount = user.deviceTokens?.length || 0;
+				console.log('[USER][AUTH] 🔍 Before removal - Device tokens:', beforeCount);
+				
+				// Remove only the token for this specific deviceId
+				user.deviceTokens = user.deviceTokens.filter(
+					dt => dt.deviceId !== deviceId
+				);
+				
+				const afterCount = user.deviceTokens?.length || 0;
+				const removedCount = beforeCount - afterCount;
+				
+				console.log('[USER][AUTH] 🔍 After removal - Device tokens:', afterCount);
+				console.log('[USER][AUTH] 💾 Saving user document...');
+				
+				await user.save();
+				
+				console.log('[USER][AUTH] ✅ User document saved successfully');
+				
+				if (removedCount > 0) {
+					console.log('[USER][AUTH] ✅ Cleared FCM token for deviceId:', deviceId, `(${removedCount} token(s) removed)`);
+					console.log('[USER][AUTH] 📊 Remaining device tokens:', afterCount);
+				} else {
+					console.log('[USER][AUTH] ⚠️ No FCM token found for deviceId:', deviceId);
+					console.log('[USER][AUTH] 📋 Available deviceIds:', user.deviceTokens?.map(dt => dt.deviceId) || []);
+				}
+			} else {
+				console.log('[USER][AUTH] ⚠️ No deviceId provided in request body, skipping FCM token removal');
+				console.log('[USER][AUTH] 📋 Request body:', JSON.stringify(req.body, null, 2));
+			}
+		} catch (tokenError) {
+			console.error('[USER][AUTH] ❌ Error clearing FCM token:', {
+				message: tokenError?.message,
+				stack: tokenError?.stack,
+				error: tokenError
+			});
+			// Continue with logout even if token clearing fails
+		}
+
+		// 2. Note: Cache is NOT cleared on logout to preserve cached data for other devices
+		// Cache is user-specific (not device-specific), so clearing it would affect all devices
+		// If you need to clear cache, it should be done separately or on account deletion
+		console.log('[USER][AUTH] ℹ️ Cache preserved for other devices (not cleared on logout)');
+
+		// 3. Optionally invalidate refresh tokens (optional - uncomment if needed)
+		// try {
+		// 	await RefreshToken.deleteMany({ userId: userId });
+		// 	console.log('[USER][AUTH] ✅ Invalidated refresh tokens');
+		// } catch (tokenError) {
+		// 	console.error('[USER][AUTH] ⚠️ Error invalidating refresh tokens:', tokenError);
+		// }
+
+		console.log('[USER][AUTH] ✅ ========== LOGOUT SUCCESSFUL ==========');
+		console.log('[USER][AUTH] 📤 Sending success response for user:', userId);
+		
+		return ApiResponse.success(res, {
+			userId: userId,
+			message: 'Logged out successfully. FCM token cleared for this device. Cache preserved for other devices.'
+		}, 'Logout successful');
+	} catch (e) {
+		console.error('[USER][AUTH] ❌ ========== LOGOUT ERROR ==========');
+		console.error('[USER][AUTH] ❌ Logout error details:', {
+			message: e?.message,
+			stack: e?.stack,
+			name: e?.name,
+			error: e
+		});
+		return ApiResponse.serverError(res, 'Failed to logout');
+	}
+}
+
 module.exports = {
 	sendPhoneOtp,
 	verifyPhoneOtp,
@@ -1245,7 +1371,8 @@ module.exports = {
 	getEmailVerificationStatus,
 	refreshToken,
 	getPrivacySettings,
-	updatePrivacySettings
+	updatePrivacySettings,
+	logout
 };
 
 
