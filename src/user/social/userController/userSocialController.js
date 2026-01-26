@@ -133,33 +133,59 @@ async function sendFollowRequest(req, res) {
 					User.findById(userId).select('following followers')
 				]);
 
-				// Emit to both users
+				const eventDataForFollower = {
+					userId: currentUserId, // Their own profile (for ProfileScreen)
+					targetUserId: userId, // The person they followed (for OtherUserProfileScreen)
+					followerId: currentUserId,
+					status: 'following',
+					followerCount: updatedCurrentUser.followers.length,
+					followingCount: updatedCurrentUser.following.length, // Their following count increased
+					targetFollowerCount: updatedTargetUser.followers.length, // Target user's followers count
+					targetFollowingCount: updatedTargetUser.following.length,
+					timestamp: new Date()
+				};
+
+				const eventDataForFollowed = {
+					userId: userId, // Their own profile (for ProfileScreen)
+					targetUserId: currentUserId, // The person who followed them (for OtherUserProfileScreen)
+					followerId: currentUserId,
+					status: 'following',
+					followerCount: updatedTargetUser.followers.length, // Their followers count increased
+					followingCount: updatedTargetUser.following.length,
+					targetFollowerCount: updatedCurrentUser.followers.length,
+					targetFollowingCount: updatedCurrentUser.following.length, // Target user's following count
+					timestamp: new Date()
+				};
+
+				// Emit to current user (follower) - update their following count
 				enhancedRealtimeService.emitToUser(
 					currentUserId,
 					'follow_status:updated',
-					{
-						userId: userId,
-						followerId: currentUserId,
-						status: 'following',
-						followerCount: updatedTargetUser.followers.length,
-						followingCount: updatedCurrentUser.following.length,
-						timestamp: new Date()
-					}
+					eventDataForFollower
 				);
 
+				// Emit to target user (being followed) - update their followers count
 				enhancedRealtimeService.emitToUser(
 					userId,
 					'follow_status:updated',
-					{
-						userId: userId,
-						followerId: currentUserId,
-						status: 'following',
-						followerCount: updatedTargetUser.followers.length,
-						followingCount: updatedCurrentUser.following.length,
-						timestamp: new Date()
-					}
+					eventDataForFollowed
 				);
-				console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_status:updated to both users');
+
+				// Also emit to profile room so anyone viewing the target user's profile gets the update
+				enhancedRealtimeService.emitToProfile(
+					userId,
+					'follow_status:updated',
+					eventDataForFollowed
+				);
+
+				// Also emit to profile room so anyone viewing the current user's profile gets the update
+				enhancedRealtimeService.emitToProfile(
+					currentUserId,
+					'follow_status:updated',
+					eventDataForFollower
+				);
+
+				console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_status:updated to both users and profile rooms');
 			} catch (realtimeError) {
 				console.error('[USER][SOCIAL] Error emitting real-time follow status update:', realtimeError);
 				// Don't fail the request if real-time event fails
@@ -547,31 +573,56 @@ async function unfollowUser(req, res) {
 				console.log('[USER][SOCIAL] ✅ Real-time event emitted: follow_request:cancelled');
 			}
 
+			const eventDataForUnfollowed = {
+				userId: userId, // Their own profile (for ProfileScreen)
+				targetUserId: currentUserId, // The person who unfollowed them (for OtherUserProfileScreen)
+				followerId: currentUserId,
+				status: 'not_following',
+				followerCount: updatedTargetUser.followers.length, // Their followers count decreased
+				followingCount: updatedTargetUser.following.length,
+				targetFollowerCount: updatedCurrentUser.followers.length,
+				targetFollowingCount: updatedCurrentUser.following.length, // Target user's following count
+				timestamp: new Date()
+			};
+
+			const eventDataForUnfollower = {
+				userId: currentUserId, // Their own profile (for ProfileScreen)
+				targetUserId: userId, // The person they unfollowed (for OtherUserProfileScreen)
+				followerId: currentUserId,
+				status: 'not_following',
+				followerCount: updatedCurrentUser.followers.length,
+				followingCount: updatedCurrentUser.following.length, // Their following count decreased
+				targetFollowerCount: updatedTargetUser.followers.length, // Target user's followers count
+				targetFollowingCount: updatedTargetUser.following.length,
+				timestamp: new Date()
+			};
+
 			// Emit follow status update to both users
+			// Emit to target user (being unfollowed) - update their followers count
 			enhancedRealtimeService.emitToUser(
 				userId,
 				'follow_status:updated',
-				{
-					userId: userId,
-					followerId: currentUserId,
-					status: 'not_following',
-					followerCount: updatedTargetUser.followers.length,
-					followingCount: updatedCurrentUser.following.length,
-					timestamp: new Date()
-				}
+				eventDataForUnfollowed
 			);
 
+			// Emit to current user (unfollower) - update their following count
 			enhancedRealtimeService.emitToUser(
 				currentUserId,
 				'follow_status:updated',
-				{
-					userId: userId,
-					followerId: currentUserId,
-					status: 'not_following',
-					followerCount: updatedTargetUser.followers.length,
-					followingCount: updatedCurrentUser.following.length,
-					timestamp: new Date()
-				}
+				eventDataForUnfollower
+			);
+
+			// Also emit to profile rooms so anyone viewing either profile gets the update
+			enhancedRealtimeService.emitToProfile(
+				userId,
+				'follow_status:updated',
+				eventDataForUnfollowed
+			);
+
+			enhancedRealtimeService.emitToProfile(
+				currentUserId,
+				'follow_status:updated',
+				eventDataForUnfollower
 			);
 			console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_status:updated to both users');
 		} catch (realtimeError) {
@@ -683,31 +734,56 @@ async function removeFollower(req, res) {
 				}
 			);
 
+			const eventDataForRemovedFollower = {
+				userId: userId, // Their own profile (for ProfileScreen)
+				targetUserId: currentUserId, // The person who removed them (for OtherUserProfileScreen)
+				followerId: userId,
+				status: 'not_following',
+				followerCount: followerUser.followers?.length || 0,
+				followingCount: followerUser.following.length, // Their following count decreased
+				targetFollowerCount: updatedCurrentUser.followers.length, // Target user's followers count
+				targetFollowingCount: updatedCurrentUser.following?.length || 0,
+				timestamp: new Date()
+			};
+
+			const eventDataForRemover = {
+				userId: currentUserId, // Their own profile (for ProfileScreen)
+				targetUserId: userId, // The person they removed (for OtherUserProfileScreen)
+				followerId: userId,
+				status: 'not_following',
+				followerCount: updatedCurrentUser.followers.length, // Their followers count decreased
+				followingCount: updatedCurrentUser.following?.length || 0,
+				targetFollowerCount: followerUser.followers?.length || 0,
+				targetFollowingCount: followerUser.following.length, // Target user's following count
+				timestamp: new Date()
+			};
+
 			// Also emit follow status update
+			// Emit to removed follower - update their following count
 			enhancedRealtimeService.emitToUser(
 				userId,
 				'follow_status:updated',
-				{
-					userId: currentUserId,
-					followerId: userId,
-					status: 'not_following',
-					followerCount: updatedCurrentUser.followers.length,
-					followingCount: followerUser.following.length,
-					timestamp: new Date()
-				}
+				eventDataForRemovedFollower
 			);
 
+			// Emit to current user (who removed the follower) - update their followers count
 			enhancedRealtimeService.emitToUser(
 				currentUserId,
 				'follow_status:updated',
-				{
-					userId: currentUserId,
-					followerId: userId,
-					status: 'not_following',
-					followerCount: updatedCurrentUser.followers.length,
-					followingCount: followerUser.following.length,
-					timestamp: new Date()
-				}
+				eventDataForRemover
+			);
+
+			// Also emit to profile rooms so anyone viewing either profile gets the update
+			enhancedRealtimeService.emitToProfile(
+				userId,
+				'follow_status:updated',
+				eventDataForRemovedFollower
+			);
+
+			enhancedRealtimeService.emitToProfile(
+				currentUserId,
+				'follow_status:updated',
+				eventDataForRemover
 			);
 			console.log('[USER][SOCIAL] ✅ Real-time events emitted: follower:removed and follow_status:updated');
 		} catch (realtimeError) {
@@ -1682,32 +1758,58 @@ async function acceptFollowRequest(req, res) {
 				}
 			);
 
+			const eventDataForRequester = {
+				userId: followRequest.requester._id.toString(), // Their own profile (for ProfileScreen)
+				targetUserId: recipient._id.toString(), // The person they followed (for OtherUserProfileScreen)
+				followerId: followRequest.requester._id.toString(),
+				status: 'following',
+				followerCount: updatedRequester.followers.length,
+				followingCount: updatedRequester.following.length, // Their following count increased
+				targetFollowerCount: updatedRecipient.followers.length, // Target user's followers count
+				targetFollowingCount: updatedRecipient.following.length,
+				timestamp: new Date()
+			};
+
+			const eventDataForRecipient = {
+				userId: recipient._id.toString(), // Their own profile (for ProfileScreen)
+				targetUserId: followRequest.requester._id.toString(), // The person who followed them (for OtherUserProfileScreen)
+				followerId: followRequest.requester._id.toString(),
+				status: 'following',
+				followerCount: updatedRecipient.followers.length, // Their followers count increased
+				followingCount: updatedRecipient.following.length,
+				targetFollowerCount: updatedRequester.followers.length,
+				targetFollowingCount: updatedRequester.following.length, // Target user's following count
+				timestamp: new Date()
+			};
+
 			// Emit follow status update to both users
+			// Emit to requester (follower) - update their following count
 			enhancedRealtimeService.emitToUser(
 				followRequest.requester._id.toString(),
 				'follow_status:updated',
-				{
-					userId: recipient._id.toString(),
-					followerId: followRequest.requester._id.toString(),
-					status: 'following',
-					followerCount: updatedRecipient.followers.length,
-					followingCount: updatedRequester.following.length,
-					timestamp: new Date()
-				}
+				eventDataForRequester
 			);
 
+			// Emit to recipient (being followed) - update their followers count
 			enhancedRealtimeService.emitToUser(
 				recipient._id.toString(),
 				'follow_status:updated',
-				{
-					userId: recipient._id.toString(),
-					followerId: followRequest.requester._id.toString(),
-					status: 'following',
-					followerCount: updatedRecipient.followers.length,
-					followingCount: updatedRequester.following.length,
-					timestamp: new Date()
-				}
+				eventDataForRecipient
 			);
+
+			// Also emit to profile rooms so anyone viewing either profile gets the update
+			enhancedRealtimeService.emitToProfile(
+				recipient._id.toString(),
+				'follow_status:updated',
+				eventDataForRecipient
+			);
+
+			enhancedRealtimeService.emitToProfile(
+				followRequest.requester._id.toString(),
+				'follow_status:updated',
+				eventDataForRequester
+			);
+
 			console.log('[USER][SOCIAL] ✅ Real-time events emitted: follow_request:accepted and follow_status:updated');
 		} catch (realtimeError) {
 			console.error('[USER][SOCIAL] Error emitting real-time events:', realtimeError);
