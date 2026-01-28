@@ -162,6 +162,9 @@ class EnhancedRealtimeService {
       // Chat events
       this.setupChatEvents(socket);
       
+      // Profile room events
+      this.setupProfileEvents(socket);
+      
       // Call events
       this.setupCallEvents(socket);
       
@@ -743,6 +746,120 @@ class EnhancedRealtimeService {
       } catch (error) {
         console.error('Error handling new dating message:', error);
         socket.emit('error', { message: 'Failed to send dating message' });
+      }
+    });
+  }
+
+  /**
+   * Setup profile-related event handlers
+   */
+  setupProfileEvents(socket) {
+    // Join profile room (when viewing a user's profile)
+    socket.on('join_profile', (userId) => {
+      try {
+        console.log('[REALTIME_SERVICE] 👤 Join profile room request:', {
+          userId: socket.userId,
+          username: socket.user?.username,
+          profileUserId: userId,
+          socketId: socket.id
+        });
+        
+        const room = `profile:${userId}`;
+        socket.join(room);
+        
+        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+        console.log('[REALTIME_SERVICE] ✅ User joined profile room:', {
+          userId: socket.userId,
+          profileUserId: userId,
+          room,
+          clientCount
+        });
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] ❌ Error joining profile room:', error);
+      }
+    });
+
+    // Leave profile room (when leaving a user's profile)
+    socket.on('leave_profile', (userId) => {
+      try {
+        console.log('[REALTIME_SERVICE] 👤 Leave profile room request:', {
+          userId: socket.userId,
+          username: socket.user?.username,
+          profileUserId: userId,
+          socketId: socket.id
+        });
+        
+        const room = `profile:${userId}`;
+        socket.leave(room);
+        
+        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+        console.log('[REALTIME_SERVICE] ✅ User left profile room:', {
+          userId: socket.userId,
+          profileUserId: userId,
+          room,
+          remainingClients: clientCount
+        });
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] ❌ Error leaving profile room:', error);
+      }
+    });
+  }
+
+  /**
+   * Setup profile-related event handlers
+   */
+  setupProfileEvents(socket) {
+    // Join profile room (when viewing a user's profile)
+    socket.on('join_profile', (userId) => {
+      try {
+        console.log('[REALTIME_SERVICE] 👤 Join profile room request:', {
+          userId: socket.userId,
+          username: socket.user?.username,
+          profileUserId: userId,
+          socketId: socket.id
+        });
+        
+        const room = `profile:${userId}`;
+        socket.join(room);
+        
+        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+        console.log('[REALTIME_SERVICE] ✅ User joined profile room:', {
+          userId: socket.userId,
+          profileUserId: userId,
+          room,
+          clientCount
+        });
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] ❌ Error joining profile room:', error);
+      }
+    });
+
+    // Leave profile room (when leaving a user's profile)
+    socket.on('leave_profile', (userId) => {
+      try {
+        console.log('[REALTIME_SERVICE] 👤 Leave profile room request:', {
+          userId: socket.userId,
+          username: socket.user?.username,
+          profileUserId: userId,
+          socketId: socket.id
+        });
+        
+        const room = `profile:${userId}`;
+        socket.leave(room);
+        
+        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
+        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
+        console.log('[REALTIME_SERVICE] ✅ User left profile room:', {
+          userId: socket.userId,
+          profileUserId: userId,
+          room,
+          remainingClients: clientCount
+        });
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] ❌ Error leaving profile room:', error);
       }
     });
   }
@@ -1395,6 +1512,20 @@ class EnhancedRealtimeService {
       console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to story room ${room} (${clientCount} client(s))`);
     } else {
       console.error('[REALTIME_SERVICE] ❌ Cannot emit to story - Socket.IO not initialized');
+    }
+  }
+
+  /**
+   * Emit event to all users viewing a specific profile (room-based)
+   */
+  emitToProfile(userId, event, data) {
+    if (this.io) {
+      const room = `profile:${userId}`;
+      const clientCount = this.io.sockets.adapter.rooms.get(room)?.size || 0;
+      this.io.to(room).emit(event, data);
+      console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to profile room ${room} (${clientCount} client(s))`);
+    } else {
+      console.error('[REALTIME_SERVICE] ❌ Cannot emit to profile - Socket.IO not initialized');
     }
   }
 
