@@ -27,6 +27,7 @@ const adminUserStatisticsRoutes = require('./admin/adminRoutes/userStatisticsRou
 const subAdminRoutes = require('./subAdmin/subAdminRoutes/subAdminAuthRoutes');
 const subAdminUserManagementRoutes = require('./subAdmin/subAdminRoutes/userManagementRoutes');
 const subdminVerifiedUserRoutes = require('./subAdmin/subAdminRoutes/subAdminVerifiedUserRoute');
+const subAdminUserStatisticsRoutes = require('./subAdmin/subAdminRoutes/userStaticRoutes');
 
 
 const userAuthRoutes = require('./user/auth/routes/userAuthRoutes');
@@ -107,6 +108,7 @@ app.use('/admin', adminUserStatisticsRoutes);
 app.use('/subadmin', subAdminRoutes);
 app.use('/subadmin', subAdminUserManagementRoutes);
 app.use('/subadmin', subdminVerifiedUserRoutes);
+app.use('/subadmin', subAdminUserStatisticsRoutes);
 
 app.use('/admin', adminAssociateRoutes);
 

@@ -12,16 +12,16 @@ const UserSchema = new mongoose.Schema(
 		dob: { type: Date, default: null },
 		bio: { type: String, default: '' },
 		gender: { type: String, default: '' },
-	pronouns: { type: String, default: '' },
-	    likes: [{ type: String }],
-	interests: [{ type: String }],
-	preferences: {
-		hereFor: { type: String, default: '' },
-		wantToMeet: { type: String, default: '' },
-		primaryLanguage: { type: String, default: '' },
-		secondaryLanguage: { type: String, default: '' }
-	},
-	idProofUrl: { type: String, default: '' },
+		pronouns: { type: String, default: '' },
+		likes: [{ type: String }],
+		interests: [{ type: String }],
+		preferences: {
+			hereFor: { type: String, default: '' },
+			wantToMeet: { type: String, default: '' },
+			primaryLanguage: { type: String, default: '' },
+			secondaryLanguage: { type: String, default: '' }
+		},
+		idProofUrl: { type: String, default: '' },
 		profilePictureUrl: { type: String, default: '' },
 		location: {
 			lat: { type: Number, default: null },
@@ -31,18 +31,19 @@ const UserSchema = new mongoose.Schema(
 		},
 		role: { type: String, default: 'user' },
 		isProfileCompleted: { type: Boolean, default: false },
-	profileCompletionStep: { 
-		type: String, 
-		enum: ['basic_info', 'gender', 'pronouns', 'likes_interests', 'preferences', 'location', 'completed'], 
-		default: 'basic_info' 
-	},
+		profileCompletionStep: {
+			type: String,
+			enum: ['basic_info', 'gender', 'pronouns', 'likes_interests', 'preferences', 'location', 'completed'],
+			default: 'basic_info'
+		},
 		isActive: { type: Boolean, default: true },
 		// Verification Badge System
-		verificationStatus: { 
-			type: String, 
-			enum: ['none', 'pending', 'approved', 'rejected'], 
-			default: 'none' 
+		verificationStatus: {
+			type: String,
+			enum: ['none', 'pending', 'approved', 'rejected'],
+			default: 'none'
 		},
+
 		verificationDocument: {
 			documentType: { type: String, default: '' }, // 'id_proof', 'passport', 'driving_license', 'aadhaar', etc.
 			documentUrl: { type: String, default: '' }, // Primary/first document URL (for backward compatibility)
@@ -61,15 +62,15 @@ const UserSchema = new mongoose.Schema(
 		blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 		blockedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 		savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post', index: true }],
-	privacySettings: {
-		isPrivate: { type: Boolean, default: false },
-		allowFollowRequests: { type: Boolean, default: true },
-		showOnlineStatus: { type: Boolean, default: true },
-		allowMessages: { type: String, enum: ['everyone', 'followers', 'none'], default: 'followers' },
-		allowCommenting: { type: Boolean, default: true },
-		allowTagging: { type: Boolean, default: true },
-		allowStoriesSharing: { type: Boolean, default: true }
-	},
+		privacySettings: {
+			isPrivate: { type: Boolean, default: false },
+			allowFollowRequests: { type: Boolean, default: true },
+			showOnlineStatus: { type: Boolean, default: true },
+			allowMessages: { type: String, enum: ['everyone', 'followers', 'none'], default: 'followers' },
+			allowCommenting: { type: Boolean, default: true },
+			allowTagging: { type: Boolean, default: true },
+			allowStoriesSharing: { type: Boolean, default: true }
+		},
 		// Dating Profile Features
 		dating: {
 			photos: [{
@@ -171,7 +172,7 @@ UserSchema.methods.maskedPhone = function maskedPhone() {
 };
 
 // Pre-save validation for dating profile
-UserSchema.pre('save', function(next) {
+UserSchema.pre('save', function (next) {
 	// Validate dating photos and videos limits
 	if (this.dating) {
 		if (this.dating.photos && this.dating.photos.length > 5) {
@@ -191,7 +192,7 @@ UserSchema.methods.getNextProfileStep = function getNextProfileStep() {
 	const steps = ['basic_info', 'gender', 'pronouns', 'likes_interests', 'preferences', 'location', 'completed'];
 	const currentStepIndex = steps.indexOf(this.profileCompletionStep);
 	console.log("4444444444444444444444444444444", currentStepIndex);
-	
+
 	// Check if current step is completed
 	if (this.isStepCompleted(this.profileCompletionStep)) {
 		// Move to next step
@@ -236,7 +237,7 @@ UserSchema.methods.updateProfileStep = function updateProfileStep() {
 	console.log("8888888888888888888888888888888");
 	const nextStep = this.getNextProfileStep();
 	this.profileCompletionStep = nextStep;
-	
+
 	// If all steps are completed, mark profile as completed
 	if (nextStep === 'completed') {
 		this.isProfileCompleted = true;
@@ -254,7 +255,7 @@ UserSchema.methods.addDeviceToken = async function addDeviceToken(token, platfor
 		deviceInfo,
 		currentTokensCount: this.deviceTokens?.length || 0
 	});
-	
+
 	// Remove existing token if present
 	const beforeFilter = this.deviceTokens?.length || 0;
 	this.deviceTokens = this.deviceTokens.filter(
@@ -262,7 +263,7 @@ UserSchema.methods.addDeviceToken = async function addDeviceToken(token, platfor
 	);
 	const afterFilter = this.deviceTokens?.length || 0;
 	console.log('[USER MODEL] 🔍 Filtered existing tokens:', { beforeFilter, afterFilter, removed: beforeFilter - afterFilter });
-	
+
 	// Add new token
 	const newToken = {
 		token,
@@ -274,11 +275,11 @@ UserSchema.methods.addDeviceToken = async function addDeviceToken(token, platfor
 		lastUsedAt: new Date(),
 		createdAt: new Date()
 	};
-	
+
 	this.deviceTokens.push(newToken);
 	console.log('[USER MODEL] ➕ Added new token to array. Total tokens now:', this.deviceTokens.length);
 	console.log('[USER MODEL] 💾 Calling save()...');
-	
+
 	try {
 		const savedUser = await this.save();
 		console.log('[USER MODEL] ✅ Save successful!');
@@ -307,11 +308,11 @@ UserSchema.methods.removeDeviceToken = async function removeDeviceToken(token) {
 
 UserSchema.methods.getActiveDeviceTokens = function getActiveDeviceTokens(platform = null) {
 	let tokens = this.deviceTokens.filter(dt => dt.isActive);
-	
+
 	if (platform) {
 		tokens = tokens.filter(dt => dt.platform === platform);
 	}
-	
+
 	return tokens.map(dt => ({
 		token: dt.token,
 		platform: dt.platform
@@ -328,15 +329,15 @@ UserSchema.methods.addDatingPhoto = async function addDatingPhoto(photoData) {
 			lastUpdatedAt: null
 		};
 	}
-	
+
 	// Validate max 5 photos
 	if (this.dating.photos.length >= 5) {
 		throw new Error('Maximum 5 photos allowed for dating profile');
 	}
-	
+
 	// Add order if not provided
 	const order = photoData.order !== undefined ? photoData.order : this.dating.photos.length;
-	
+
 	this.dating.photos.push({
 		url: photoData.url || '',
 		thumbnailUrl: photoData.thumbnailUrl || photoData.url || '',
@@ -345,7 +346,7 @@ UserSchema.methods.addDatingPhoto = async function addDatingPhoto(photoData) {
 		order: order,
 		uploadedAt: new Date()
 	});
-	
+
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
 };
@@ -354,7 +355,7 @@ UserSchema.methods.removeDatingPhoto = async function removeDatingPhoto(photoInd
 	if (!this.dating || !this.dating.photos || photoIndex < 0 || photoIndex >= this.dating.photos.length) {
 		throw new Error('Invalid photo index');
 	}
-	
+
 	this.dating.photos.splice(photoIndex, 1);
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
@@ -364,7 +365,7 @@ UserSchema.methods.updateDatingPhotoOrder = async function updateDatingPhotoOrde
 	if (!this.dating || !this.dating.photos || photoIndex < 0 || photoIndex >= this.dating.photos.length) {
 		throw new Error('Invalid photo index');
 	}
-	
+
 	this.dating.photos[photoIndex].order = newOrder;
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
@@ -379,15 +380,15 @@ UserSchema.methods.addDatingVideo = async function addDatingVideo(videoData) {
 			lastUpdatedAt: null
 		};
 	}
-	
+
 	// Validate max 5 videos
 	if (this.dating.videos.length >= 5) {
 		throw new Error('Maximum 5 videos allowed for dating profile');
 	}
-	
+
 	// Add order if not provided
 	const order = videoData.order !== undefined ? videoData.order : this.dating.videos.length;
-	
+
 	this.dating.videos.push({
 		url: videoData.url || '',
 		thumbnailUrl: videoData.thumbnailUrl || '',
@@ -395,7 +396,7 @@ UserSchema.methods.addDatingVideo = async function addDatingVideo(videoData) {
 		order: order,
 		uploadedAt: new Date()
 	});
-	
+
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
 };
@@ -404,7 +405,7 @@ UserSchema.methods.removeDatingVideo = async function removeDatingVideo(videoInd
 	if (!this.dating || !this.dating.videos || videoIndex < 0 || videoIndex >= this.dating.videos.length) {
 		throw new Error('Invalid video index');
 	}
-	
+
 	this.dating.videos.splice(videoIndex, 1);
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
@@ -414,7 +415,7 @@ UserSchema.methods.updateDatingVideoOrder = async function updateDatingVideoOrde
 	if (!this.dating || !this.dating.videos || videoIndex < 0 || videoIndex >= this.dating.videos.length) {
 		throw new Error('Invalid video index');
 	}
-	
+
 	this.dating.videos[videoIndex].order = newOrder;
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
@@ -429,7 +430,7 @@ UserSchema.methods.toggleDatingProfile = async function toggleDatingProfile(isAc
 			lastUpdatedAt: null
 		};
 	}
-	
+
 	this.dating.isDatingProfileActive = isActive !== undefined ? isActive : !this.dating.isDatingProfileActive;
 	this.dating.lastUpdatedAt = new Date();
 	return this.save();
@@ -444,11 +445,11 @@ UserSchema.methods.getDatingProfile = function getDatingProfile() {
 			lastUpdatedAt: null
 		};
 	}
-	
+
 	// Sort photos and videos by order
 	const sortedPhotos = [...this.dating.photos].sort((a, b) => a.order - b.order);
 	const sortedVideos = [...this.dating.videos].sort((a, b) => a.order - b.order);
-	
+
 	return {
 		photos: sortedPhotos,
 		videos: sortedVideos,

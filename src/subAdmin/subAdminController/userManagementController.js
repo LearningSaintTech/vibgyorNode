@@ -8,7 +8,7 @@ async function getAllUsers(req, res) {
 		// eslint-disable-next-line no-console
 		console.log('[SUBADMIN][USER_MGMT] getAllUsers request');
 		const { page = 1, limit = 10, status, search } = req.query || {};
-		
+
 		const filter = {};
 		if (status && ['active', 'inactive'].includes(status)) {
 			filter.isActive = status === 'active';
@@ -57,7 +57,7 @@ async function toggleUserStatus(req, res) {
 		console.log('[SUBADMIN][USER_MGMT] toggleUserStatus request');
 		const { userId } = req.params || {};
 		const { isActive } = req.body || {};
-		
+
 		if (typeof isActive !== 'boolean') {
 			return ApiResponse.badRequest(res, 'isActive must be a boolean value');
 		}
@@ -91,11 +91,11 @@ async function getUserDetails(req, res) {
 		// eslint-disable-next-line no-console
 		console.log('[SUBADMIN][USER_MGMT] getUserDetails request');
 		const { userId } = req.params || {};
-		
+
 		const user = await User.findById(userId)
 			.select('-otpCode -emailOtpCode -otpExpiresAt -emailOtpExpiresAt')
 			.lean();
-		
+
 		if (!user) {
 			return ApiResponse.notFound(res, 'User not found');
 		}
@@ -115,7 +115,7 @@ async function getUserStats(req, res) {
 	try {
 		// eslint-disable-next-line no-console
 		console.log('[SUBADMIN][USER_MGMT] getUserStats request');
-		
+
 		const totalUsers = await User.countDocuments();
 		const activeUsers = await User.countDocuments({ isActive: true });
 		const inactiveUsers = await User.countDocuments({ isActive: false });
@@ -151,10 +151,10 @@ async function getPendingVerifications(req, res) {
 		// eslint-disable-next-line no-console
 		console.log('[SUBADMIN][USER_MGMT] getPendingVerifications request');
 		const { page = 1, limit = 10 } = req.query || {};
-		
+
 		const filter = { verificationStatus: 'pending' };
 		const skip = (parseInt(page) - 1) * parseInt(limit);
-		
+
 		const pendingVerifications = await User.find(filter)
 			.select('-otpCode -emailOtpCode -otpExpiresAt -emailOtpExpiresAt')
 			.sort({ 'verificationDocument.uploadedAt': -1 })
@@ -186,17 +186,19 @@ async function getPendingVerifications(req, res) {
 async function approveUserVerification(req, res) {
 	try {
 		// eslint-disable-next-line no-console
-		console.log('[SUBADMIN][USER_MGMT] approveUserVerification request');
-		const { userId } = req.params || {};
+		console.log('[SUBADMIN][USER_MGMT] approveUserVerification request', req.params);
+		const userId = req.params.userId || {};
+		console.log("userrrz", userId)
 		const reviewerId = req.user?.userId;
 		const reviewerRole = 'subadmin';
-		
-		const user = await User.findById(userId);
+
+		const user = await User.findOne({ _id: userId });
+		console.log("userrr", user)
 		if (!user) {
 			return ApiResponse.notFound(res, 'User not found');
 		}
 
-		if (user.verificationStatus !== 'pending') {
+		if (user.verificationStatus !== 'pending' && user.verificationStatus !== 'none') {
 			return ApiResponse.badRequest(res, 'User verification is not pending');
 		}
 
@@ -234,7 +236,7 @@ async function rejectUserVerification(req, res) {
 		const { rejectionReason } = req.body || {};
 		const reviewerId = req.user?.userId;
 		const reviewerRole = 'subadmin';
-		
+
 		if (!rejectionReason || rejectionReason.trim() === '') {
 			return ApiResponse.badRequest(res, 'Rejection reason is required');
 		}
@@ -279,13 +281,13 @@ async function getPendingReports(req, res) {
 	try {
 		console.log('[SUBADMIN][USER_MGMT] getPendingReports request');
 		const { page = 1, limit = 10, reportType, priority } = req.query || {};
-		
+
 		const filter = { status: 'pending' };
 		if (reportType) filter.reportType = reportType;
 		if (priority) filter.priority = priority;
-		
+
 		const skip = (parseInt(page) - 1) * parseInt(limit);
-		
+
 		const pendingReports = await Report.find(filter)
 			.populate('reporter', 'username fullName email phoneNumber')
 			.populate('reportedUser', 'username fullName email phoneNumber')
@@ -317,13 +319,13 @@ async function getReportDetails(req, res) {
 	try {
 		console.log('[SUBADMIN][USER_MGMT] getReportDetails request');
 		const { reportId } = req.params || {};
-		
+
 		const report = await Report.findById(reportId)
 			.populate('reporter', 'username fullName email phoneNumber')
 			.populate('reportedUser', 'username fullName email phoneNumber')
 			.populate('reviewedBy', 'name email')
 			.lean();
-		
+
 		if (!report) {
 			return ApiResponse.notFound(res, 'Report not found');
 		}
@@ -344,7 +346,7 @@ async function updateReportStatus(req, res) {
 		const { status, actionTaken, reviewNotes, priority } = req.body || {};
 		const reviewerId = req.user?.userId;
 		const reviewerRole = 'subadmin';
-		
+
 		if (!status || !['under_review', 'resolved', 'dismissed'].includes(status)) {
 			return ApiResponse.badRequest(res, 'Valid status is required');
 		}
@@ -390,7 +392,7 @@ async function updateReportStatus(req, res) {
 async function getReportStats(req, res) {
 	try {
 		console.log('[SUBADMIN][USER_MGMT] getReportStats request');
-		
+
 		const stats = await Report.getStats();
 		const totalReports = await Report.countDocuments();
 		const recentReports = await Report.countDocuments({
