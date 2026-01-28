@@ -4,6 +4,7 @@ const router = express.Router();
 // Controller
 const { getUsers, updateUserStatus } = require("../adminController/adminuserSearchController");
 
+
 // 🔐 Admin auth middleware
 const { authorize, Roles } = require('../../middleware/authMiddleware');
 
@@ -31,13 +32,13 @@ const { authorize, Roles } = require('../../middleware/authMiddleware');
  */
 router.get(
    "/users",
-   authorize([Roles.ADMIN]),
+   authorize([Roles.ADMIN, Roles.SUBADMIN]),
    getUsers
 );
 // 🔐 Admin can activate / deactivate user
 router.patch(
    '/users/:userId/status',
-   authorize([Roles.ADMIN]),
+   authorize([Roles.ADMIN, Roles.SUBADMIN]),
    updateUserStatus
 );
 

@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authorize, Roles } = require('../../middleware/authMiddleware');
-const { getAllUsers } = require('../subAdminController/subAdminVerifiedUserController');
+const { getVerificationStats } = require('../subAdminController/userStaticsController');
 
 router.get(
-   '/users',
+   '/dashboard/user-verification-stats',
    authorize([Roles.SUBADMIN]),
-   getAllUsers
+   getVerificationStats
 );
 
 module.exports = router;

@@ -82,12 +82,12 @@ async function getWeeklyUserStatistics(req, res) {
 
 		const now = new Date();
 		const currentDay = now.getDay(); // 0 = Sunday, 6 = Saturday
-		
+
 		// Get start of week (Sunday)
 		const startOfWeek = new Date(now);
 		startOfWeek.setDate(now.getDate() - currentDay);
 		startOfWeek.setHours(0, 0, 0, 0);
-		
+
 		// Get end of week (Saturday)
 		const endOfWeek = new Date(startOfWeek);
 		endOfWeek.setDate(startOfWeek.getDate() + 6);
@@ -126,7 +126,7 @@ async function getWeeklyUserStatistics(req, res) {
 			const date = new Date(startOfWeek);
 			date.setDate(startOfWeek.getDate() + i);
 			const key = formatDate(date);
-			
+
 			// Find stats for this day
 			const dayStat = dailyStats.find(stat => {
 				const statDate = new Date(stat._id.year, stat._id.month - 1, stat._id.day);
@@ -189,11 +189,11 @@ async function getMonthlyUserStatistics(req, res) {
 		console.log('[ADMIN][USER_STATS] getMonthlyUserStatistics request');
 
 		const now = new Date();
-		
+
 		// Get start of month
 		const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 		startOfMonth.setHours(0, 0, 0, 0);
-		
+
 		// Get end of month
 		const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 		endOfMonth.setHours(23, 59, 59, 999);
@@ -236,7 +236,7 @@ async function getMonthlyUserStatistics(req, res) {
 		// Generate data for all days of the month
 		const monthData = [];
 		const daysInMonth = endOfMonth.getDate();
-		
+
 		for (let i = 1; i <= daysInMonth; i++) {
 			const date = new Date(now.getFullYear(), now.getMonth(), i);
 			const key = formatDate(date);
@@ -298,11 +298,11 @@ async function getSixMonthsUserStatistics(req, res) {
 		console.log('[ADMIN][USER_STATS] getSixMonthsUserStatistics request');
 
 		const now = new Date();
-		
+
 		// Get start date (6 months ago)
 		const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1); // Last 6 months including current
 		startDate.setHours(0, 0, 0, 0);
-		
+
 		// Get end date (end of current month)
 		const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 		endDate.setHours(23, 59, 59, 999);
@@ -407,11 +407,11 @@ async function getYearlyUserStatistics(req, res) {
 		console.log('[ADMIN][USER_STATS] getYearlyUserStatistics request');
 
 		const now = new Date();
-		
+
 		// Get start of year
 		const startOfYear = new Date(now.getFullYear(), 0, 1);
 		startOfYear.setHours(0, 0, 0, 0);
-		
+
 		// Get end of year
 		const endOfYear = new Date(now.getFullYear(), 11, 31);
 		endOfYear.setHours(23, 59, 59, 999);
