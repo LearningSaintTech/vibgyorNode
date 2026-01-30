@@ -1,3 +1,4 @@
+
 const { getNotificationType: getSocialType, isValidType: isValidSocialType } = require('../types/socialTypes');
 const { getNotificationType: getDatingType, isValidType: isValidDatingType } = require('../types/datingTypes');
 
@@ -18,7 +19,7 @@ class NotificationRegistry {
   initialize() {
     // Register social notification types
     this.registerContext('social', getSocialType, isValidSocialType);
-    
+
     // Register dating notification types
     this.registerContext('dating', getDatingType, isValidDatingType);
   }
@@ -65,7 +66,7 @@ class NotificationRegistry {
     if (!contextRegistry) {
       return null;
     }
-    
+
     return contextRegistry.getType(type);
   }
 
@@ -80,7 +81,7 @@ class NotificationRegistry {
     if (!contextRegistry) {
       return false;
     }
-    
+
     return contextRegistry.isValid(type);
   }
 
@@ -93,31 +94,31 @@ class NotificationRegistry {
    */
   validate(context, type, data) {
     const errors = [];
-    
+
     // Check if context is valid
     if (!this.registry.has(context)) {
       errors.push(`Invalid context: ${context}`);
       return { valid: false, errors };
     }
-    
+
     // Check if type is valid
     if (!this.isValidType(context, type)) {
       errors.push(`Invalid type: ${type} for context: ${context}`);
       return { valid: false, errors };
     }
-    
+
     // Get type configuration
     const typeConfig = this.getType(context, type);
     if (!typeConfig) {
       errors.push(`Type configuration not found: ${type}`);
       return { valid: false, errors };
     }
-    
+
     // Validate required fields
     if (!data.recipientId) {
       errors.push('recipientId is required');
     }
-    
+
     return {
       valid: errors.length === 0,
       errors,
@@ -136,7 +137,7 @@ class NotificationRegistry {
     if (!typeConfig) {
       return null;
     }
-    
+
     return {
       context: typeConfig.context,
       type: typeConfig.type,
