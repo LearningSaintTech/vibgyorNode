@@ -1,0 +1,126 @@
+{
+	"info": {
+		"_postman_id": "catalog-api-vibgyor",
+		"name": "User Catalog API",
+		"description": "Create/Update catalog with lists and optional file uploads (SVG icons for interests/likes). Auth: ADMIN or SUBADMIN.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3000"
+		},
+		{
+			"key": "accessToken",
+			"value": "YOUR_JWT_ACCESS_TOKEN"
+		}
+	],
+	"item": [
+		{
+			"name": "Get Catalog",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": "{{baseUrl}}/user/catalog",
+				"description": "Fetch current catalog (no auth required)."
+			}
+		},
+		{
+			"name": "Update Catalog (with files)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{accessToken}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "interestList",
+							"value": "[{\"name\":\"Video Games\"},{\"name\":\"Drinking\"},{\"name\":\"Photography\"}]",
+							"type": "text",
+							"description": "JSON array of objects with 'name'. Optional 'id'."
+						},
+						{
+							"key": "likeList",
+							"value": "[{\"name\":\"music\"},{\"name\":\"travel\"},{\"name\":\"gaming\"}]",
+							"type": "text",
+							"description": "JSON array of objects with 'name'."
+						},
+						{
+							"key": "genderList",
+							"value": "[\"male\",\"female\",\"non-binary\",\"transgender\",\"agender\",\"prefer-not-to-say\"]",
+							"type": "text",
+							"description": "JSON array of strings."
+						},
+						{
+							"key": "pronounList",
+							"value": "[\"he/him\",\"she/her\",\"they/them\"]",
+							"type": "text",
+							"description": "JSON array of strings."
+						},
+						{
+							"key": "hereForList",
+							"value": "[\"friendship\",\"dating\",\"networking\",\"fun\"]",
+							"type": "text",
+							"description": "JSON array of strings."
+						},
+						{
+							"key": "languageList",
+							"value": "[\"English\",\"Hindi\",\"Spanish\"]",
+							"type": "text",
+							"description": "JSON array of strings."
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": [],
+							"description": "Optional. SVG/icons: filename must match item name (e.g. Photography.svg for interest 'Photography'). Max 20 files."
+						}
+					]
+				},
+				"url": "{{baseUrl}}/user/catalog",
+				"description": "Update entire catalog. Use form-data. interestList/likeList must be valid JSON arrays. Upload SVGs with key 'files'; filename (without extension) is matched to item name."
+			}
+		},
+		{
+			"name": "Create Catalog",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{accessToken}}",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "interestList",
+							"value": "[{\"name\":\"Video Games\"},{\"name\":\"Photography\"}]",
+							"type": "text"
+						},
+						{
+							"key": "likeList",
+							"value": "[{\"name\":\"music\"},{\"name\":\"gaming\"}]",
+							"type": "text"
+						},
+						{
+							"key": "files",
+							"type": "file",
+							"src": []
+						}
+					]
+				},
+				"url": "{{baseUrl}}/user/catalog",
+				"description": "Create catalog (fails if one already exists). Same body as Update."
+			}
+		}
+	]
+}

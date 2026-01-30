@@ -1,6 +1,7 @@
 const UserCatalog = require('../model/userCatalogModel');
 const ApiResponse = require('../../../utils/apiResponse');
 const { uploadToS3 } = require('../../../services/s3Service');
+const fs = require('fs').promises;
 const multer = require('multer');
 const { uploadMultiple } = require('../../../middleware/uploadMiddleware');
 
@@ -80,57 +81,92 @@ function parseBodyField(fieldValue) {
 	return fieldValue;
 }
 
+// Ensure list fields (interestList, likeList) are always arrays for DB/file processing
+function ensureListArray(value) {
+	if (Array.isArray(value)) return value;
+	if (!value) return [];
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		if (trimmed.startsWith('[')) {
+			try {
+				const parsed = JSON.parse(value);
+				return Array.isArray(parsed) ? parsed : [];
+			} catch (e) {
+				console.warn('[USER][CATALOG] JSON parse failed for list field:', e.message);
+				return [];
+			}
+		}
+	}
+	return [];
+}
+
+// Get file buffer (multer memoryStorage sets .buffer; diskStorage sets .path)
+async function getFileBuffer(file) {
+	if (file.buffer && Buffer.isBuffer(file.buffer)) return file.buffer;
+	if (file.path) {
+		try {
+			return await fs.readFile(file.path);
+		} catch (err) {
+			console.error('[USER][CATALOG] Failed to read file from path:', file.path, err.message);
+			return null;
+		}
+	}
+	console.warn('[USER][CATALOG] File has no buffer or path:', file.originalname);
+	return null;
+}
+
 // Helper function to process uploaded files and map them to items
 async function processFileUploads(files, items, itemType = 'interest') {
 	if (!files || files.length === 0) return items;
-	
+	const itemsArray = normalizeInterestItems(Array.isArray(items) ? items : ensureListArray(items));
+	if (itemsArray.length === 0) return itemsArray;
+
 	// Create a map of filename to file object (assuming filename format: "itemName.svg")
 	const fileMap = {};
 	files.forEach(file => {
-		const filename = file.originalname.replace(/\.[^/.]+$/, ''); // Remove extension
-		fileMap[filename.toLowerCase()] = file;
+		const baseName = (file.originalname || '').replace(/\.[^/.]+$/, ''); // Remove extension
+		if (baseName) fileMap[baseName.toLowerCase().trim()] = file;
 	});
-	
+
 	// Process items and add SVG URLs from uploaded files
 	const processedItems = await Promise.all(
-		normalizeInterestItems(items).map(async (item) => {
-			const itemName = item.name || item;
-			const matchingFile = fileMap[itemName.toLowerCase()];
-			
+		itemsArray.map(async (item) => {
+			const itemName = (item && item.name) || item;
+			const key = String(itemName || '').toLowerCase().trim();
+			const matchingFile = fileMap[key];
+
 			if (matchingFile && (matchingFile.mimetype === 'image/svg+xml' || matchingFile.mimetype === 'image/svg')) {
-				try {
-					// Upload to S3
-					const uploadResult = await uploadToS3({
-						buffer: matchingFile.buffer,
-						contentType: matchingFile.mimetype,
-						userId: 'catalog', // Use 'catalog' as userId for catalog-related uploads
-						category: 'catalog',
-						type: 'svgs',
-						filename: matchingFile.originalname,
-						metadata: {
-							itemName: itemName,
-							itemType: itemType,
-							uploadedAt: new Date().toISOString()
-						}
-					});
-					
-					return {
-						name: itemName,
-						svgUrl: uploadResult.url,
-						svgKey: uploadResult.key
-					};
-				} catch (error) {
-					console.error(`[USER][CATALOG] Failed to upload SVG for ${itemName}:`, error.message);
-					// Return item without SVG URL if upload fails
-					return { name: itemName };
+				const buffer = await getFileBuffer(matchingFile);
+				if (buffer) {
+					try {
+						const uploadResult = await uploadToS3({
+							buffer,
+							contentType: matchingFile.mimetype,
+							userId: 'catalog',
+							category: 'catalog',
+							type: 'svgs',
+							filename: matchingFile.originalname,
+							metadata: {
+								itemName: itemName,
+								itemType: itemType,
+								uploadedAt: new Date().toISOString()
+							}
+						});
+						return {
+							name: itemName,
+							svgUrl: uploadResult.url,
+							svgKey: uploadResult.key
+						};
+					} catch (error) {
+						console.error(`[USER][CATALOG] Failed to upload SVG for ${itemName}:`, error.message);
+					}
 				}
 			}
-			
-			// If no matching file or already has svgUrl, return as is
-			return typeof item === 'object' ? item : { name: itemName };
+
+			return typeof item === 'object' && item !== null ? { ...item, name: itemName } : { name: itemName };
 		})
 	);
-	
+
 	return processedItems;
 }
 
@@ -200,12 +236,14 @@ async function createCatalog(req, res) {
 		// Parse body data (can be JSON or form-data)
 		const genderList = parseBodyField(req.body?.genderList);
 		const pronounList = parseBodyField(req.body?.pronounList);
-		const likeList = parseBodyField(req.body?.likeList);
-		const interestList = parseBodyField(req.body?.interestList);
+		const likeListRaw = parseBodyField(req.body?.likeList);
+		const interestListRaw = parseBodyField(req.body?.interestList);
 		const hereForList = parseBodyField(req.body?.hereForList);
 		const languageList = parseBodyField(req.body?.languageList);
+		const likeList = ensureListArray(likeListRaw);
+		const interestList = ensureListArray(interestListRaw);
 		
-		console.log('[USER][CATALOG] Extracted data:', { genderList, pronounList, likeList, interestList, hereForList, languageList });
+		console.log('[USER][CATALOG] Extracted data:', { genderList: !!genderList, pronounList: !!pronounList, likeListLength: likeList.length, interestListLength: interestList.length, hereForList: !!hereForList, languageList: !!languageList });
 		
 		// Check if catalog already exists
 		console.log('[USER][CATALOG] Checking for existing catalog...');
@@ -217,15 +255,15 @@ async function createCatalog(req, res) {
 		console.log('[USER][CATALOG] No existing catalog found, proceeding with creation');
 
 		// Process file uploads if files are present
-		let processedLikeList = likeList ? normalizeInterestItems(likeList) : DEFAULT_CATALOG.likeList;
-		let processedInterestList = interestList ? normalizeInterestItems(interestList) : DEFAULT_CATALOG.interestList;
+		let processedLikeList = likeList.length > 0 ? normalizeInterestItems(likeList) : DEFAULT_CATALOG.likeList;
+		let processedInterestList = interestList.length > 0 ? normalizeInterestItems(interestList) : DEFAULT_CATALOG.interestList;
 		
 		if (req.files && req.files.length > 0) {
 			console.log('[USER][CATALOG] Processing file uploads...');
-			if (likeList) {
+			if (likeList.length > 0) {
 				processedLikeList = await processFileUploads(req.files, likeList, 'like');
 			}
-			if (interestList) {
+			if (interestList.length > 0) {
 				processedInterestList = await processFileUploads(req.files, interestList, 'interest');
 			}
 		}
@@ -281,12 +319,14 @@ async function updateCatalog(req, res) {
 		// Parse body data (can be JSON or form-data)
 		const genderList = parseBodyField(req.body?.genderList);
 		const pronounList = parseBodyField(req.body?.pronounList);
-		const likeList = parseBodyField(req.body?.likeList);
-		const interestList = parseBodyField(req.body?.interestList);
+		const interestListRaw = parseBodyField(req.body?.interestList);
+		const likeListRaw = parseBodyField(req.body?.likeList);
 		const hereForList = parseBodyField(req.body?.hereForList);
 		const languageList = parseBodyField(req.body?.languageList);
+		const interestList = ensureListArray(interestListRaw);
+		const likeList = ensureListArray(likeListRaw);
 		
-		console.log('[USER][CATALOG] Extracted data:', { genderList, pronounList, likeList, interestList, hereForList, languageList });
+		console.log('[USER][CATALOG] Extracted data:', { genderList: !!genderList, pronounList: !!pronounList, likeListLength: likeList.length, interestListLength: interestList.length, hereForList: !!hereForList, languageList: !!languageList });
 		
 		console.log('[USER][CATALOG] Finding existing catalog...');
 		let catalog = await UserCatalog.findOne({});
@@ -295,15 +335,15 @@ async function updateCatalog(req, res) {
 			console.log('[USER][CATALOG] No existing catalog found, creating new one');
 			
 			// Process file uploads if files are present
-			let processedLikeList = likeList ? normalizeInterestItems(likeList) : DEFAULT_CATALOG.likeList;
-			let processedInterestList = interestList ? normalizeInterestItems(interestList) : DEFAULT_CATALOG.interestList;
+			let processedLikeList = likeList.length > 0 ? normalizeInterestItems(likeList) : DEFAULT_CATALOG.likeList;
+			let processedInterestList = interestList.length > 0 ? normalizeInterestItems(interestList) : DEFAULT_CATALOG.interestList;
 			
 			if (req.files && req.files.length > 0) {
 				console.log('[USER][CATALOG] Processing file uploads...');
-				if (likeList) {
+				if (likeList.length > 0) {
 					processedLikeList = await processFileUploads(req.files, likeList, 'like');
 				}
-				if (interestList) {
+				if (interestList.length > 0) {
 					processedInterestList = await processFileUploads(req.files, interestList, 'interest');
 				}
 			}
@@ -340,7 +380,7 @@ async function updateCatalog(req, res) {
 				console.log('[USER][CATALOG] Updating pronounList from', catalog.pronounList, 'to', pronounList);
 				catalog.pronounList = pronounList;
 			}
-			if (likeList) {
+			if (likeList.length > 0) {
 				console.log('[USER][CATALOG] Updating likeList...');
 				let processedLikeList = normalizeInterestItems(likeList);
 				if (req.files && req.files.length > 0) {
@@ -348,7 +388,7 @@ async function updateCatalog(req, res) {
 				}
 				catalog.likeList = processedLikeList;
 			}
-			if (interestList) {
+			if (interestList.length > 0) {
 				console.log('[USER][CATALOG] Updating interestList...');
 				let processedInterestList = normalizeInterestItems(interestList);
 				if (req.files && req.files.length > 0) {

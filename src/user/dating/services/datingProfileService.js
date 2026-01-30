@@ -371,22 +371,24 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		}
 	}
 
-	// Filter by age range
-	if (ageMin !== null || ageMax !== null) {
+	// Filter by age range (default ageMin to 18 when only ageMax set to avoid showing minors)
+	const effectiveAgeMin = ageMin !== null ? ageMin : (ageMax !== null ? 18 : null);
+	const effectiveAgeMax = ageMax;
+	if (effectiveAgeMin !== null || effectiveAgeMax !== null) {
 		const ageQuery = {};
-		if (ageMin !== null) {
+		if (effectiveAgeMin !== null) {
 			// Calculate max birth year for minimum age
 			const currentYear = new Date().getFullYear();
-			const maxBirthYear = currentYear - ageMin;
+			const maxBirthYear = currentYear - effectiveAgeMin;
 			ageQuery.$lte = new Date(`${maxBirthYear}-12-31`);
-			console.log(`[FILTER] Age Min: ${ageMin} → Max Birth Year: ${maxBirthYear} → DOB <= ${maxBirthYear}-12-31`);
+			console.log(`[FILTER] Age Min: ${effectiveAgeMin} → Max Birth Year: ${maxBirthYear} → DOB <= ${maxBirthYear}-12-31`);
 		}
-		if (ageMax !== null) {
+		if (effectiveAgeMax !== null) {
 			// Calculate min birth year for maximum age
 			const currentYear = new Date().getFullYear();
-			const minBirthYear = currentYear - ageMax;
+			const minBirthYear = currentYear - effectiveAgeMax;
 			ageQuery.$gte = new Date(`${minBirthYear}-01-01`);
-			console.log(`[FILTER] Age Max: ${ageMax} → Min Birth Year: ${minBirthYear} → DOB >= ${minBirthYear}-01-01`);
+			console.log(`[FILTER] Age Max: ${effectiveAgeMax} → Min Birth Year: ${minBirthYear} → DOB >= ${minBirthYear}-01-01`);
 		}
 		if (Object.keys(ageQuery).length > 0) {
 			query.$and.push({ dob: ageQuery });
@@ -396,15 +398,20 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		console.log('[FILTER] Age filter NOT applied (ageMin and ageMax are null)');
 	}
 
-	// Filter by languages
+	// Filter by languages (case-insensitive: DB may store 'english' or 'English')
 	if (languages && Array.isArray(languages) && languages.length > 0) {
-		query.$and.push({
-			$or: [
-				{ 'dating.preferences.languages': { $in: languages } },
-				{ 'preferences.primaryLanguage': { $in: languages } },
-				{ 'preferences.secondaryLanguage': { $in: languages } }
-			]
+		const langConditions = [];
+		languages.forEach(lang => {
+			if (!lang || !String(lang).trim()) return;
+			const regex = new RegExp(`^${String(lang).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+			langConditions.push({ 'dating.preferences.languages': regex });
+			langConditions.push({ 'preferences.primaryLanguage': regex });
+			langConditions.push({ 'preferences.secondaryLanguage': regex });
 		});
+		if (langConditions.length > 0) {
+			query.$and.push({ $or: langConditions });
+			console.log('[FILTER] Languages applied (case-insensitive):', languages);
+		}
 	}
 
 	// Filter by location (city, country) - Note: location doesn't have state field in schema
@@ -422,6 +429,7 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		
 		if (locationQuery.$or.length > 0) {
 			query.$and.push(locationQuery);
+			console.log('[FILTER] Location applied:', locationQuery.$or.length, 'conditions (city/country regex)');
 		}
 	}
 
@@ -448,35 +456,37 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		}
 	}
 
+	console.log('[FILTER] buildSearchQuery result (full query):', JSON.stringify(query, null, 2));
 	return query;
 }
 
 /**
- * Filter profiles by distance
+ * Filter profiles by distance.
+ * Profiles without coordinates are kept (matched by city/country only); distance shown as null later.
  */
 function filterByDistance(profiles, currentUser, maxDistance) {
 	if (!maxDistance || !currentUser.location?.lat || !currentUser.location?.lng) {
 		return profiles;
 	}
 
-		return profiles.filter(profile => {
-		// Check if profile has location coordinates
+	return profiles.filter(profile => {
 		let profileLat = null;
 		let profileLng = null;
-		
-		if (profile.location?.lat && profile.location?.lng) {
+
+		if (profile.location?.lat != null && profile.location?.lng != null) {
 			profileLat = profile.location.lat;
 			profileLng = profile.location.lng;
-		} else if (profile.dating?.preferences?.location?.coordinates?.lat && 
-			profile.dating?.preferences?.location?.coordinates?.lng) {
+		} else if (profile.dating?.preferences?.location?.coordinates?.lat != null &&
+			profile.dating?.preferences?.location?.coordinates?.lng != null) {
 			profileLat = profile.dating.preferences.location.coordinates.lat;
 			profileLng = profile.dating.preferences.location.coordinates.lng;
 		}
-		
-		if (!profileLat || !profileLng) {
-			return false; // No location data, exclude
+
+		// No coordinates: keep profile (they matched city/country); distance will be null in response
+		if (profileLat == null || profileLng == null) {
+			return true;
 		}
-		
+
 		const distance = calculateDistance(
 			currentUser.location.lat,
 			currentUser.location.lng,
@@ -508,12 +518,13 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			currentUser = await User.findById(currentUserId)
 				.select('_id blockedUsers blockedBy location dating preferences interests isActive gender')
 				.lean();
-			if (!currentUser) {
-				throw new Error('Current user not found');
-			}
+		if (!currentUser) {
+			throw new Error('Current user not found');
+		}
 			// Cache user data for 5 minutes (300 seconds)
 			cacheUserData(currentUserId, cacheKey, currentUser, 300);
 		}
+		console.log('[DATING][SERVICE] Current user loaded:', { userId: currentUserId, hasLocation: !!(currentUser.location?.lat && currentUser.location?.lng), locationCoordinates: !!currentUser.location?.coordinates });
 
 		// Get users that the current user has already interacted with (liked or disliked)
 		// Exception: Don't exclude when filter is 'liked_by_you' or 'liked_you' (we want to show those)
@@ -539,6 +550,7 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			excludedUserIds = [...new Set(
 				userInteractions.map(interaction => interaction.targetUser.toString())
 			)].map(id => new mongoose.Types.ObjectId(id));
+			console.log('[DATING][SERVICE] Interactions query (exclude already seen):', { excludedCount: excludedUserIds.length });
 		} else {
 			// Even if we're showing liked_by_you or liked_you, we still need to know which ones current user has liked
 			const currentUserLikedInteractions = await DatingInteraction.find({
@@ -564,17 +576,23 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 			const userIdWhoDislikedMe = interaction.user.toString();
 			dislikedByUserIdsMap.set(userIdWhoDislikedMe, true);
 		});
+		console.log('[DATING][SERVICE] Users who disliked me count:', dislikedByUserIdsMap.size);
 
 		// Build search query with excluded user IDs
 		const query = buildSearchQuery(currentUser, filters, excludedUserIds);
 		
 		const skip = (pagination.page - 1) * pagination.limit;
 
+		// Count how many documents match the query (before geo/pagination) for debugging
+		const queryMatchCount = await User.countDocuments(query);
+		console.log('[DATING][SERVICE] User.countDocuments(query) result:', queryMatchCount);
+
 		// OPTIMIZED: Use aggregation pipeline for efficient filtering (Phase 1 Optimization)
-		// This allows us to filter by interaction type at database level instead of in memory
+		// For filter 'all' with distanceMax: use find + filterByDistance so we don't require location.coordinates (GeoJSON)
 		let profiles;
-		const useAggregation = filters.filter === 'liked_you' || filters.filter === 'liked_by_you' || 
-		                      (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng);
+		const useAggregation = (filters.filter === 'liked_you' || filters.filter === 'liked_by_you') ||
+		                      (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng && filters.filter !== 'all');
+		console.log('[DATING][SERVICE] useAggregation:', useAggregation, { filter: filters.filter, distanceMax: filters.distanceMax, hasUserCoords: !!(currentUser.location?.lat && currentUser.location?.lng) });
 
 		if (useAggregation) {
 			const pipeline = [];
@@ -766,6 +784,7 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 				distancePipeline.push({ $limit: pagination.limit });
 
 				profiles = await User.aggregate(distancePipeline);
+				console.log('[DATING][SERVICE] After User.aggregate(distancePipeline) [$geoNear]:', profiles?.length ?? 0, 'profiles');
 			} else {
 				// No distance filter, use regular aggregation
 				// Project only needed fields
@@ -794,74 +813,46 @@ async function getAllDatingProfiles(currentUserId, filters = {}, pagination = { 
 				pipeline.push({ $limit: pagination.limit });
 
 				profiles = await User.aggregate(pipeline);
+				console.log('[DATING][SERVICE] After User.aggregate(pipeline):', profiles?.length ?? 0, 'profiles');
 			}
 		} else {
-			// OPTIMIZED: Use geospatial query if distance filter is provided (but no interaction filter)
+			// filter 'all' or no interaction filter: use find (optionally with in-memory distance filter)
 			if (filters.distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng) {
-				const userCoordinates = currentUser.location?.coordinates?.coordinates 
-					? currentUser.location.coordinates.coordinates 
-					: [currentUser.location.lng, currentUser.location.lat];
-				
-				profiles = await User.aggregate([
-					{
-						$geoNear: {
-							near: {
-								type: 'Point',
-								coordinates: userCoordinates
-							},
-							distanceField: 'distance',
-							maxDistance: filters.distanceMax * 1000,
-							query: query,
-							spherical: true,
-							key: 'location.coordinates'
-						}
-					},
-					{
-						$project: {
-							username: 1,
-							fullName: 1,
-							profilePictureUrl: 1,
-							dob: 1,
-							gender: 1,
-							pronouns: 1,
-							bio: 1,
-							interests: 1,
-							likes: 1,
-							preferences: 1,
-							location: 1,
-							dating: 1,
-							verificationStatus: 1,
-							createdAt: 1,
-							distance: 1
-						}
-					},
-					{
-						$sort: { distance: 1, createdAt: -1 }
-					},
-					{
-						$skip: skip
-					},
-					{
-						$limit: pagination.limit
-					}
-				]);
+				// Use find + filterByDistance so we work with location.lat/lng (no GeoJSON required)
+				const fetchLimit = Math.min(pagination.limit * 20, 500); // fetch extra for distance filter
+				const profilesBeforeDistance = await User.find(query)
+					.select('username fullName profilePictureUrl dob gender pronouns bio interests likes preferences location dating verificationStatus createdAt')
+					.sort({ createdAt: -1 })
+					.limit(fetchLimit)
+					.lean();
+				console.log('[DATING][SERVICE] After User.find(query) (before distance filter):', profilesBeforeDistance?.length ?? 0, 'profiles');
+				profiles = filterByDistance(profilesBeforeDistance, currentUser, filters.distanceMax);
+				console.log('[DATING][SERVICE] After filterByDistance:', profiles?.length ?? 0, 'profiles');
+				// Fallback: if no one within distanceMax, show matching profiles anyway (distance will show on card)
+				if (profiles.length === 0 && profilesBeforeDistance.length > 0) {
+					profiles = profilesBeforeDistance.slice(skip, skip + pagination.limit);
+					console.log('[DATING][SERVICE] Fallback: no profiles within', filters.distanceMax, 'km; showing', profiles.length, 'matches (distance shown on card)');
+				} else {
+					profiles = profiles.slice(skip, skip + pagination.limit);
+				}
+				console.log('[DATING][SERVICE] After slice(skip, skip+limit):', profiles?.length ?? 0, 'profiles');
 			} else {
-				// OPTIMIZED: Select only needed fields for list view
+				// No distance filter: simple find + pagination
 				profiles = await User.find(query)
 					.select('username fullName profilePictureUrl dob gender pronouns bio interests likes preferences location dating verificationStatus createdAt')
 					.sort({ createdAt: -1 })
 					.skip(skip)
 					.limit(pagination.limit)
 					.lean();
+				console.log('[DATING][SERVICE] After User.find(query).skip().limit():', profiles?.length ?? 0, 'profiles');
 			}
 		}
 
-		// OPTIMIZED: Distance filtering now done in database via $geoNear
-		// Only filter in memory if geospatial query wasn't used (fallback)
+		// Fallback: filter in memory if user has no coordinates but distanceMax was set
 		if (filters.distanceMax !== null && (!currentUser.location?.lat || !currentUser.location?.lng)) {
-			// Fallback: filter in memory if user has no coordinates
 			profiles = filterByDistance(profiles, currentUser, filters.distanceMax);
 			profiles = profiles.slice(0, pagination.limit);
+			console.log('[DATING][SERVICE] After fallback filterByDistance (no user coords):', profiles?.length ?? 0, 'profiles');
 		}
 
 		// Calculate age for each profile

@@ -236,6 +236,13 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
     // Add isSaved field (already added isLiked above)
     addIsSaved(postObj, savedPostIds);
 
+    // Ensure createdAt / postedAt and timeAgo are always present for frontend (timestamp below caption)
+    const postDateAlready = postObj.createdAt || postObj.publishedAt || postObj.created_at || postObj.postedAt;
+    postObj.createdAt = postDateAlready;
+    postObj.created_at = postDateAlready;
+    postObj.postedAt = postObj.postedAt || postDateAlready;
+    postObj.timeAgo = postDateAlready ? formatTimeAgo(postDateAlready) : '';
+
     return postObj;
   }
 
@@ -397,6 +404,13 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
 
   // Normalize location to ensure all fields are visible
   postObj.location = normalizeLocation(postObj.location);
+
+  // Ensure createdAt / postedAt and timeAgo are always present for frontend (timestamp below caption)
+  const postDate = postObj.createdAt || postObj.publishedAt || postObj.created_at || postObj.postedAt;
+  postObj.createdAt = postDate;
+  postObj.created_at = postDate;
+  postObj.postedAt = postObj.postedAt || postDate;
+  postObj.timeAgo = postDate ? formatTimeAgo(postDate) : '';
 
   return postObj;
 }
@@ -1419,7 +1433,6 @@ async function toggleLike(req, res) {
 
 // Helper function to format time ago
 function formatTimeAgo(date) {
-  console.log("33333333333", date)
   if (!date) return 'just now';
 
   const now = new Date();
@@ -2584,7 +2597,7 @@ module.exports = {
       if (!post) return ApiResponse.notFound(res, 'Post not found');
       if (post.status === 'deleted') return ApiResponse.badRequest(res, 'Cannot save a deleted post');
 
-      const user = await User.findById(userId).select('savedPosts');
+      const user = await User.findById(userId).select('savedPosts username fullName profilePictureUrl');
       if (!user) return ApiResponse.forbidden(res, 'User not found');
 
       const alreadySaved = user.savedPosts?.some(p => p.toString() === postId);
@@ -2594,6 +2607,41 @@ module.exports = {
 
       user.savedPosts = [...(user.savedPosts || []), postId];
       await user.save();
+
+      // Emit real-time event for save
+      try {
+        // Use emitToPost to emit to post room (clients viewing this post will receive it)
+        // Also emit globally so feed screens can update without joining rooms
+        enhancedRealtimeService.emitToPost(postId, 'post:saved', {
+          postId: postId,
+          userId: userId,
+          user: {
+            _id: user._id,
+            username: user.username,
+            fullName: user.fullName,
+            profilePictureUrl: user.profilePictureUrl
+          },
+          timestamp: new Date()
+        });
+        // Also emit globally for feed screens that don't join post rooms
+        if (enhancedRealtimeService.io) {
+          enhancedRealtimeService.io.emit('post:saved', {
+            postId: postId,
+            userId: userId,
+            user: {
+              _id: user._id,
+              username: user.username,
+              fullName: user.fullName,
+              profilePictureUrl: user.profilePictureUrl
+            },
+            timestamp: new Date()
+          });
+        }
+        console.log('[POST] ✅ Real-time event emitted: post:saved (to post room and globally)');
+      } catch (realtimeError) {
+        console.error('[POST] Error emitting real-time save event:', realtimeError);
+        // Don't fail the save action if real-time event fails
+      }
 
       return ApiResponse.success(res, { saved: true }, 'Post saved');
     } catch (error) {
@@ -2606,11 +2654,46 @@ module.exports = {
       const { postId } = req.params;
       const userId = req.user?.userId;
 
-      const user = await User.findById(userId).select('savedPosts');
+      const user = await User.findById(userId).select('savedPosts username fullName profilePictureUrl');
       if (!user) return ApiResponse.forbidden(res, 'User not found');
 
       user.savedPosts = (user.savedPosts || []).filter(p => p.toString() !== postId);
       await user.save();
+
+      // Emit real-time event for unsave
+      try {
+        // Use emitToPost to emit to post room (clients viewing this post will receive it)
+        // Also emit globally so feed screens can update without joining rooms
+        enhancedRealtimeService.emitToPost(postId, 'post:unsaved', {
+          postId: postId,
+          userId: userId,
+          user: {
+            _id: user._id,
+            username: user.username,
+            fullName: user.fullName,
+            profilePictureUrl: user.profilePictureUrl
+          },
+          timestamp: new Date()
+        });
+        // Also emit globally for feed screens that don't join post rooms
+        if (enhancedRealtimeService.io) {
+          enhancedRealtimeService.io.emit('post:unsaved', {
+            postId: postId,
+            userId: userId,
+            user: {
+              _id: user._id,
+              username: user.username,
+              fullName: user.fullName,
+              profilePictureUrl: user.profilePictureUrl
+            },
+            timestamp: new Date()
+          });
+        }
+        console.log('[POST] ✅ Real-time event emitted: post:unsaved (to post room and globally)');
+      } catch (realtimeError) {
+        console.error('[POST] Error emitting real-time unsave event:', realtimeError);
+        // Don't fail the unsave action if real-time event fails
+      }
 
       return ApiResponse.success(res, { saved: false }, 'Post unsaved');
     } catch (error) {

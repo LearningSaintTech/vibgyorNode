@@ -206,10 +206,21 @@ class DeliveryManager {
   async deliverInApp(notification, preferences) {
     try {
       // Emit real-time event via Socket.IO
-      if (enhancedRealtimeService && enhancedRealtimeService.io) {
-        const recipientId = notification.recipient.toString ? notification.recipient.toString() : notification.recipient;
-        
-        enhancedRealtimeService.io.to(`user:${recipientId}`).emit('notification', {
+      if (!enhancedRealtimeService || !enhancedRealtimeService.io) {
+        console.warn('[DELIVERY] Socket.IO not initialized, skipping in-app delivery');
+        return;
+      }
+
+      const recipientId = notification.recipient && (typeof notification.recipient.toString === 'function')
+        ? notification.recipient.toString()
+        : String(notification.recipient || '');
+      if (!recipientId) {
+        console.warn('[DELIVERY] In-app: missing recipient, skipping');
+        return;
+      }
+
+      const room = `user:${recipientId}`;
+      enhancedRealtimeService.io.to(room).emit('notification', {
           id: notification._id,
           context: notification.context,
           type: notification.type,
@@ -221,12 +232,10 @@ class DeliveryManager {
           createdAt: notification.createdAt
         });
 
-        // Update delivery status (don't save - will be saved at end)
-        notification.deliveryChannels.inApp.delivered = true;
-        notification.deliveryChannels.inApp.deliveredAt = new Date();
-      } else {
-        console.warn('[DELIVERY] Socket.IO not initialized, skipping in-app delivery');
-      }
+      // Update delivery status (don't save - will be saved at end)
+      notification.deliveryChannels.inApp.delivered = true;
+      notification.deliveryChannels.inApp.deliveredAt = new Date();
+      console.log(`[DELIVERY] ✅ In-app notification emitted to room ${room} (type: ${notification.type}, context: ${notification.context})`);
     } catch (error) {
       console.error('[DELIVERY] Error delivering in-app notification:', error);
       throw error;

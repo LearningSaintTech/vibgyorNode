@@ -578,9 +578,18 @@ class MessageService {
       if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this chat');
       }
-      
-      // Mark messages as read and reset unread count atomically
+
       const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
+      // Find message IDs that will be marked read (for realtime emission)
+      const messagesToMark = await Message.find({
+        chatId: chatId,
+        senderId: { $ne: userIdObj },
+        'readBy.userId': { $ne: userIdObj },
+        isDeleted: false
+      }).select('_id').limit(100).lean();
+
+      // Mark messages as read and reset unread count atomically
       const [readCount] = await Promise.all([
         Message.markChatAsRead(chatId, userId),
         Chat.updateOne(
@@ -593,7 +602,23 @@ class MessageService {
           }
         )
       ]);
-      
+
+      // Emit realtime read status so senders see "read" when API is used (e.g. from notification)
+      const realtime = enhancedRealtimeService;
+      if (realtime && realtime.io && messagesToMark.length > 0) {
+        const room = `chat:${chatId}`;
+        const timestamp = new Date();
+        messagesToMark.forEach((msg) => {
+          realtime.io.to(room).emit('message_status_update', {
+            messageId: msg._id,
+            chatId: chatId,
+            status: 'read',
+            timestamp
+          });
+        });
+        console.log('✅ [MESSAGE_SERVICE] Read status emitted for', messagesToMark.length, 'messages (API mark-read)');
+      }
+
       return {
         chatId,
         readCount,

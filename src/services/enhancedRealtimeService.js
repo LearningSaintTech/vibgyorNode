@@ -5,7 +5,6 @@ const Message = require('../user/social/userModel/messageModel');
 const Call = require('../user/social/userModel/callModel');
 const User = require('../user/auth/model/userAuthModel');
 const UserStatus = require('../user/social/userModel/userStatusModel');
-const Admin = require('../admin/adminModel/adminModel');
 
 /**
  * Enhanced Real-time Service with comprehensive WebRTC and chat features
@@ -14,7 +13,6 @@ class EnhancedRealtimeService {
   constructor() {
     this.io = null;
     this.connectedUsers = new Map(); // userId -> Set of socketIds (supports multiple connections per user)
-    this.connectedAdmins = new Map(); // adminId -> Set of socketIds (supports multiple connections per admin)
     this.userRooms = new Map(); // userId -> Set of room names
     this.activeCalls = new Map(); // callId -> call data
   }
@@ -73,112 +71,61 @@ class EnhancedRealtimeService {
         } catch (error) {
           // If token is expired, allow connection but emit token:expired event
           if (error.name === 'TokenExpiredError' || error.message?.includes('expired')) {
-            // Decode without verification to get userId/adminId
+            // Decode without verification to get userId
             const { decodeToken } = require('../utils/Jwt');
             decoded = decodeToken(token);
             
             if (decoded && decoded.userId) {
-              // Check if it's an admin or user
-              if (decoded.role === 'admin') {
-                const admin = await Admin.findById(decoded.userId).select('_id firstName lastName email role');
-                if (admin) {
-                  socket.adminId = admin._id.toString();
-                  socket.admin = admin;
-                  socket.role = 'admin';
-                  socket.tokenExpired = true;
-                  socket.adminInfo = {
-                    _id: admin._id,
-                    firstName: admin.firstName,
-                    lastName: admin.lastName,
-                    email: admin.email,
-                    role: admin.role
-                  };
-                  
-                  setTimeout(() => {
-                    socket.emit('token:expired', {
-                      message: 'Token expired. Please refresh your token.',
-                      timestamp: new Date()
-                    });
-                  }, 100);
-                  
-                  return next();
-                }
-              } else {
-                const user = await User.findById(decoded.userId).select('_id username fullName isActive');
-                if (user && user.isActive !== false) {
-                  socket.userId = user._id.toString();
-                  socket.user = user;
-                  socket.role = 'user';
-                  socket.tokenExpired = true;
-                  socket.userInfo = {
-                    _id: user._id,
-                    username: user.username,
-                    fullName: user.fullName,
-                    profilePictureUrl: user.profilePictureUrl
-                  };
-                  
-                  setTimeout(() => {
-                    socket.emit('token:expired', {
-                      message: 'Token expired. Please refresh your token.',
-                      timestamp: new Date()
-                    });
-                  }, 100);
-                  
-                  return next();
-                }
+              const user = await User.findById(decoded.userId).select('_id username fullName isActive');
+              if (user && user.isActive !== false) {
+                // Allow connection but mark token as expired
+                socket.userId = user._id.toString();
+                socket.user = user;
+                socket.tokenExpired = true;
+                socket.userInfo = {
+                  _id: user._id,
+                  username: user.username,
+                  fullName: user.fullName,
+                  profilePictureUrl: user.profilePictureUrl
+                };
+                
+                // Emit token expired event after connection
+                setTimeout(() => {
+                  socket.emit('token:expired', {
+                    message: 'Token expired. Please refresh your token.',
+                    timestamp: new Date()
+                  });
+                }, 100);
+                
+                return next();
               }
             }
           }
           throw error; // Re-throw if not expired or can't decode
         }
         
-        // Check if it's an admin or user based on role
-        if (decoded.role === 'admin') {
-          // Admin authentication
-          const admin = await Admin.findById(decoded.userId).select('_id firstName lastName email role');
-          
-          if (!admin) {
-            return next(new Error('Admin not found'));
-          }
-
-          socket.adminId = admin._id.toString();
-          socket.admin = admin;
-          socket.role = 'admin';
-          
-          // Store admin info in socket for easy access
-          socket.adminInfo = {
-            _id: admin._id,
-            firstName: admin.firstName,
-            lastName: admin.lastName,
-            email: admin.email,
-            role: admin.role
-          };
-        } else {
-          // User authentication (existing logic)
-          const user = await User.findById(decoded.userId).select('_id username fullName isActive');
-          
-          if (!user) {
-            return next(new Error('User not found'));
-          }
-          
-          // For testing: only reject if explicitly set to false
-          // In production, you should enforce isActive: true
-          if (user.isActive === false) {
-            return next(new Error('User account is deactivated'));
-          }
-
-          socket.userId = user._id.toString();
-          socket.user = user;
-          socket.role = decoded.role || 'user';
-          
-          // Store user info in socket for easy access
-          socket.userInfo = {
-            _id: user._id,
-            username: user.username,
-            fullName: user.fullName,
-            profilePictureUrl: user.profilePictureUrl
-          };
+        const user = await User.findById(decoded.userId).select('_id username fullName isActive');
+        
+        if (!user) {
+          return next(new Error('User not found'));
         }
+        
+        // For testing: only reject if explicitly set to false
+        // In production, you should enforce isActive: true
+        if (user.isActive === false) {
+          return next(new Error('User account is deactivated'));
+        }
+
+        socket.userId = user._id.toString();
+        socket.user = user;
+        
+        // Store user info in socket for easy access
+        socket.userInfo = {
+          _id: user._id,
+          username: user.username,
+          fullName: user.fullName,
+          profilePictureUrl: user.profilePictureUrl
+        };
         
         next();
       } catch (error) {
@@ -201,45 +148,36 @@ class EnhancedRealtimeService {
    */
   setupEventHandlers() {
     this.io.on('connection', (socket) => {
-      const isAdmin = socket.role === 'admin';
-      const identifier = isAdmin ? socket.adminId : socket.userId;
-      
-      console.log(`[REALTIME_SERVICE] 🔗 ${isAdmin ? 'Admin' : 'User'} ${identifier} connected with socket ${socket.id}`, {
-        [isAdmin ? 'adminId' : 'userId']: identifier,
-        role: socket.role,
+      console.log(`[REALTIME_SERVICE] 🔗 User ${socket.userId} connected with socket ${socket.id}`, {
+        userId: socket.userId,
         socketId: socket.id,
         connectedAt: socket.connectedAt,
         timestamp: new Date().toISOString(),
-        totalConnections: isAdmin ? this.connectedAdmins.size : this.connectedUsers.size
+        totalConnections: this.connectedUsers.size
       });
 
-      // Handle connection (user or admin)
-      if (isAdmin) {
-        this.handleAdminConnection(socket);
-        // Setup admin-specific events
-        this.setupAdminEvents(socket);
-      } else {
-        this.handleUserConnection(socket);
-        // Chat events (only for users)
-        this.setupChatEvents(socket);
-        
-        // Profile room events (only for users)
-        this.setupProfileEvents(socket);
-        
-        // Call events (only for users)
-        this.setupCallEvents(socket);
-        
-        // WebRTC signaling events (only for users)
-        this.setupWebRTCEvents(socket);
-        
-        // User presence events (only for users)
-        this.setupPresenceEvents(socket);
-      }
+      // Handle user connection
+      this.handleUserConnection(socket);
+
+      // Chat events
+      this.setupChatEvents(socket);
       
-      // Notification events (for both users and admins)
+      // Profile room events
+      this.setupProfileEvents(socket);
+      
+      // Call events
+      this.setupCallEvents(socket);
+      
+      // WebRTC signaling events
+      this.setupWebRTCEvents(socket);
+      
+      // User presence events
+      this.setupPresenceEvents(socket);
+      
+      // Notification events
       this.setupNotificationEvents(socket);
       
-      // Token refresh events (for both users and admins)
+      // Token refresh events
       this.setupTokenRefreshEvents(socket);
       
       // Error handling
@@ -298,46 +236,6 @@ class EnhancedRealtimeService {
     });
     
     console.log(`[CONNECTION] ✅ User ${userId} (${socket.user.username}) connected successfully (${userSockets.size} active connection(s))`);
-  }
-
-  /**
-   * Handle admin connection and setup
-   * Supports multiple connections per admin (multiple devices/tabs)
-   */
-  handleAdminConnection(socket) {
-    const adminId = socket.adminId;
-    
-    // Get or create Set of socket IDs for this admin
-    if (!this.connectedAdmins.has(adminId)) {
-      this.connectedAdmins.set(adminId, new Set());
-    }
-    
-    const adminSockets = this.connectedAdmins.get(adminId);
-    const isNewConnection = !adminSockets.has(socket.id);
-    
-    if (isNewConnection) {
-      adminSockets.add(socket.id);
-      console.log(`[CONNECTION] ➕ Admin ${adminId} added new connection (socket ${socket.id}). Total connections: ${adminSockets.size}`);
-    } else {
-      console.log(`[CONNECTION] 🔄 Admin ${adminId} reconnected with existing socket ${socket.id}`);
-    }
-    
-    // Join admin's personal room
-    socket.join(`admin:${adminId}`);
-    
-    // Join global admin room (all admins receive notifications)
-    socket.join('admin:all');
-    
-    // Emit connection success
-    socket.emit('connection_success', {
-      adminId: adminId,
-      socketId: socket.id,
-      role: 'admin',
-      totalConnections: adminSockets.size,
-      timestamp: new Date()
-    });
-    
-    console.log(`[CONNECTION] ✅ Admin ${adminId} (${socket.admin.firstName} ${socket.admin.lastName}) connected successfully (${adminSockets.size} active connection(s))`);
   }
 
   /**
@@ -910,63 +808,6 @@ class EnhancedRealtimeService {
   }
 
   /**
-   * Setup profile-related event handlers
-   */
-  setupProfileEvents(socket) {
-    // Join profile room (when viewing a user's profile)
-    socket.on('join_profile', (userId) => {
-      try {
-        console.log('[REALTIME_SERVICE] 👤 Join profile room request:', {
-          userId: socket.userId,
-          username: socket.user?.username,
-          profileUserId: userId,
-          socketId: socket.id
-        });
-        
-        const room = `profile:${userId}`;
-        socket.join(room);
-        
-        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
-        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
-        console.log('[REALTIME_SERVICE] ✅ User joined profile room:', {
-          userId: socket.userId,
-          profileUserId: userId,
-          room,
-          clientCount
-        });
-      } catch (error) {
-        console.error('[REALTIME_SERVICE] ❌ Error joining profile room:', error);
-      }
-    });
-
-    // Leave profile room (when leaving a user's profile)
-    socket.on('leave_profile', (userId) => {
-      try {
-        console.log('[REALTIME_SERVICE] 👤 Leave profile room request:', {
-          userId: socket.userId,
-          username: socket.user?.username,
-          profileUserId: userId,
-          socketId: socket.id
-        });
-        
-        const room = `profile:${userId}`;
-        socket.leave(room);
-        
-        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
-        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
-        console.log('[REALTIME_SERVICE] ✅ User left profile room:', {
-          userId: socket.userId,
-          profileUserId: userId,
-          room,
-          remainingClients: clientCount
-        });
-      } catch (error) {
-        console.error('[REALTIME_SERVICE] ❌ Error leaving profile room:', error);
-      }
-    });
-  }
-
-  /**
    * Setup call-related event handlers
    */
   setupCallEvents(socket) {
@@ -1238,15 +1079,15 @@ class EnhancedRealtimeService {
    * Setup notification event handlers
    */
   setupNotificationEvents(socket) {
-    // Listen for notification read events (for both users and admins)
+    // Listen for notification read events
     socket.on('notification:read', async (data) => {
       try {
         const { notificationId } = data;
-        const identifier = socket.role === 'admin' ? socket.adminId : socket.userId;
+        const userId = socket.userId;
         
         // Update notification status via notification service
         const notificationService = require('../notification/services/notificationService');
-        await notificationService.markAsRead(notificationId, identifier);
+        await notificationService.markAsRead(notificationId, userId);
         
         // Emit confirmation
         socket.emit('notification:read_confirmed', {
@@ -1259,25 +1100,23 @@ class EnhancedRealtimeService {
       }
     });
 
-    // Listen for notification preferences updates (users only)
-    if (socket.role !== 'admin') {
-      socket.on('notification:preferences_updated', (data) => {
-        // Broadcast to user's other connections
-        socket.broadcast.to(`user:${socket.userId}`).emit('notification:preferences_changed', data);
-      });
-    }
+    // Listen for notification preferences updates
+    socket.on('notification:preferences_updated', (data) => {
+      // Broadcast to user's other connections
+      socket.broadcast.to(`user:${socket.userId}`).emit('notification:preferences_changed', data);
+    });
 
-    // Listen for notification click/tap events (for both users and admins)
+    // Listen for notification click/tap events
     socket.on('notification:clicked', async (data) => {
       try {
         const { notificationId } = data;
-        const identifier = socket.role === 'admin' ? socket.adminId : socket.userId;
+        const userId = socket.userId;
         
         // Record click analytics
         const Notification = require('../notification/models/notificationModel');
         const notification = await Notification.findOne({
           _id: notificationId,
-          recipient: identifier
+          recipient: userId
         });
         
         if (notification) {
@@ -1285,54 +1124,6 @@ class EnhancedRealtimeService {
         }
       } catch (error) {
         console.error('[REALTIME] Error recording notification click:', error);
-      }
-    });
-  }
-
-  /**
-   * Setup admin-specific event handlers
-   */
-  setupAdminEvents(socket) {
-    // Admin can subscribe to specific notification types
-    socket.on('admin:subscribe', (data) => {
-      try {
-        const { notificationTypes = [] } = data;
-        
-        // Join specific notification type rooms
-        notificationTypes.forEach(type => {
-          const room = `admin:notifications:${type}`;
-          socket.join(room);
-          console.log(`[ADMIN] Admin ${socket.adminId} subscribed to ${type} notifications`);
-        });
-        
-        socket.emit('admin:subscribed', {
-          notificationTypes,
-          timestamp: new Date()
-        });
-      } catch (error) {
-        console.error('[ADMIN] Error subscribing to notifications:', error);
-        socket.emit('error', { message: 'Failed to subscribe to notifications' });
-      }
-    });
-
-    // Admin can unsubscribe from notification types
-    socket.on('admin:unsubscribe', (data) => {
-      try {
-        const { notificationTypes = [] } = data;
-        
-        notificationTypes.forEach(type => {
-          const room = `admin:notifications:${type}`;
-          socket.leave(room);
-          console.log(`[ADMIN] Admin ${socket.adminId} unsubscribed from ${type} notifications`);
-        });
-        
-        socket.emit('admin:unsubscribed', {
-          notificationTypes,
-          timestamp: new Date()
-        });
-      } catch (error) {
-        console.error('[ADMIN] Error unsubscribing from notifications:', error);
-        socket.emit('error', { message: 'Failed to unsubscribe from notifications' });
       }
     });
   }
@@ -1438,77 +1229,56 @@ class EnhancedRealtimeService {
 
   /**
    * Setup disconnection handling
-   * Handles multiple connections per user/admin properly
+   * Handles multiple connections per user properly
    */
   setupDisconnectionHandling(socket) {
     socket.on('disconnect', async (reason) => {
-      const isAdmin = socket.role === 'admin';
-      const identifier = isAdmin ? socket.adminId : socket.userId;
+      const userId = socket.userId;
       
-      console.log(`[CONNECTION] 🔌 ${isAdmin ? 'Admin' : 'User'} ${identifier} disconnected socket ${socket.id}: ${reason}`);
+      console.log(`[CONNECTION] 🔌 User ${userId} disconnected socket ${socket.id}: ${reason}`);
       
-      if (isAdmin) {
-        // Handle admin disconnection
-        const adminSockets = this.connectedAdmins.get(identifier);
-        if (!adminSockets) {
-          console.log(`[CONNECTION] ⚠️ Admin ${identifier} not found in connected admins`);
-          return;
-        }
+      // Get user's socket Set
+      const userSockets = this.connectedUsers.get(userId);
+      if (!userSockets) {
+        console.log(`[CONNECTION] ⚠️ User ${userId} not found in connected users`);
+        return;
+      }
+      
+      // Remove this specific socket
+      userSockets.delete(socket.id);
+      
+      // If user has no more connections, mark as offline
+      if (userSockets.size === 0) {
+        this.connectedUsers.delete(userId);
+        await this.updateUserStatus(userId, 'offline');
         
-        // Remove this specific socket
-        adminSockets.delete(socket.id);
-        
-        // If admin has no more connections, remove from map
-        if (adminSockets.size === 0) {
-          this.connectedAdmins.delete(identifier);
-          console.log(`[CONNECTION] ✅ Admin ${identifier} disconnected (all connections closed)`);
-        } else {
-          console.log(`[CONNECTION] ℹ️ Admin ${identifier} still has ${adminSockets.size} active connection(s)`);
-        }
-      } else {
-        // Handle user disconnection (existing logic)
-        const userSockets = this.connectedUsers.get(identifier);
-        if (!userSockets) {
-          console.log(`[CONNECTION] ⚠️ User ${identifier} not found in connected users`);
-          return;
-        }
-        
-        // Remove this specific socket
-        userSockets.delete(socket.id);
-        
-        // If user has no more connections, mark as offline
-        if (userSockets.size === 0) {
-          this.connectedUsers.delete(identifier);
-          await this.updateUserStatus(identifier, 'offline');
-          
-          // End any active calls for this user
-          for (const [callId, callData] of this.activeCalls.entries()) {
-            if (callData.participants.includes(identifier)) {
-              // End the call
-              this.io.to(`user:${callData.initiator}`).emit('call:ended', {
-                callId: callId,
-                reason: 'user_disconnected',
-                timestamp: new Date()
-              });
-              
-              // Remove from active calls
-              this.activeCalls.delete(callId);
-            }
+        // End any active calls for this user
+        for (const [callId, callData] of this.activeCalls.entries()) {
+          if (callData.participants.includes(userId)) {
+            // End the call
+            this.io.to(`user:${callData.initiator}`).emit('call:ended', {
+              callId: callId,
+              reason: 'user_disconnected',
+              timestamp: new Date()
+            });
+            
+            // Remove from active calls
+            this.activeCalls.delete(callId);
           }
-          
-          // Notify other users about offline status (only when all connections are gone)
-          this.io.emit('user_offline', {
-            userId: identifier,
-            username: socket.user?.username,
-            fullName: socket.user?.fullName,
-            profilePictureUrl: socket.user?.profilePictureUrl,
-            timestamp: new Date()
-          });
-          
-          console.log(`[CONNECTION] ✅ User ${identifier} offline status broadcasted (all connections closed)`);
-        } else {
-          console.log(`[CONNECTION] ℹ️ User ${identifier} still has ${userSockets.size} active connection(s)`);
         }
+        
+        // Notify other users about offline status (only when all connections are gone)
+        this.io.emit('user_offline', {
+          userId: userId,
+          username: socket.user?.username,
+          fullName: socket.user?.fullName,
+          profilePictureUrl: socket.user?.profilePictureUrl,
+          timestamp: new Date()
+        });
+        
+        console.log(`[CONNECTION] ✅ User ${userId} offline status broadcasted (all connections closed)`);
+      } else {
+        console.log(`[CONNECTION] ℹ️ User ${userId} still has ${userSockets.size} active connection(s)`);
       }
     });
   }
@@ -1560,13 +1330,12 @@ class EnhancedRealtimeService {
 
   /**
    * Cleanup stale connections
-   * Handles multiple connections per user/admin
+   * Handles multiple connections per user
    */
   async cleanupStaleConnections() {
     const now = new Date();
     const staleTimeout = 5 * 60 * 1000; // 5 minutes
 
-    // Cleanup stale user connections
     for (const [userId, socketIds] of this.connectedUsers.entries()) {
       const staleSockets = [];
       
@@ -1591,33 +1360,6 @@ class EnhancedRealtimeService {
         console.log(`[CLEANUP] 🧹 Cleaned up all connections for user ${userId}`);
       } else if (staleSockets.length > 0) {
         console.log(`[CLEANUP] 🧹 Cleaned up ${staleSockets.length} stale connection(s) for user ${userId} (${socketIds.size} remaining)`);
-      }
-    }
-
-    // Cleanup stale admin connections
-    for (const [adminId, socketIds] of this.connectedAdmins.entries()) {
-      const staleSockets = [];
-      
-      for (const socketId of socketIds) {
-        const socket = this.io.sockets.sockets.get(socketId);
-        if (!socket || (now - socket.lastActivity) > staleTimeout) {
-          staleSockets.push(socketId);
-          
-          if (socket) {
-            socket.disconnect(true);
-          }
-        }
-      }
-      
-      // Remove stale sockets
-      staleSockets.forEach(socketId => socketIds.delete(socketId));
-      
-      // If no more connections, remove admin
-      if (socketIds.size === 0) {
-        this.connectedAdmins.delete(adminId);
-        console.log(`[CLEANUP] 🧹 Cleaned up all connections for admin ${adminId}`);
-      } else if (staleSockets.length > 0) {
-        console.log(`[CLEANUP] 🧹 Cleaned up ${staleSockets.length} stale connection(s) for admin ${adminId} (${socketIds.size} remaining)`);
       }
     }
   }
@@ -1735,56 +1477,6 @@ class EnhancedRealtimeService {
    */
   broadcast(event, data) {
     this.io.emit(event, data);
-  }
-
-  /**
-   * Emit notification to all admins
-   * @param {string} event - Event name
-   * @param {Object} data - Notification data
-   */
-  emitToAllAdmins(event, data) {
-    if (this.io) {
-      const clientCount = this.io.sockets.adapter.rooms.get('admin:all')?.size || 0;
-      this.io.to('admin:all').emit(event, data);
-      console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to all admins (${clientCount} admin(s) connected)`);
-    } else {
-      console.error('[REALTIME_SERVICE] ❌ Cannot emit to admins - Socket.IO not initialized');
-    }
-  }
-
-  /**
-   * Emit notification to specific admin
-   * @param {string} adminId - Admin ID
-   * @param {string} event - Event name
-   * @param {Object} data - Notification data
-   */
-  emitToAdmin(adminId, event, data) {
-    if (this.io) {
-      const socketIds = this.connectedAdmins.get(adminId);
-      if (socketIds && socketIds.size > 0) {
-        this.io.to(`admin:${adminId}`).emit(event, data);
-        console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to admin ${adminId} (${socketIds.size} connection(s))`);
-      }
-    } else {
-      console.error('[REALTIME_SERVICE] ❌ Cannot emit to admin - Socket.IO not initialized');
-    }
-  }
-
-  /**
-   * Emit notification to admins subscribed to specific notification type
-   * @param {string} notificationType - Notification type (e.g., 'user_registered', 'content_reported', etc.)
-   * @param {string} event - Event name
-   * @param {Object} data - Notification data
-   */
-  emitToAdminSubscribers(notificationType, event, data) {
-    if (this.io) {
-      const room = `admin:notifications:${notificationType}`;
-      const clientCount = this.io.sockets.adapter.rooms.get(room)?.size || 0;
-      this.io.to(room).emit(event, data);
-      console.log(`[REALTIME_SERVICE] ✅ Event ${event} emitted to admins subscribed to ${notificationType} (${clientCount} admin(s))`);
-    } else {
-      console.error('[REALTIME_SERVICE] ❌ Cannot emit to admin subscribers - Socket.IO not initialized');
-    }
   }
 
   /**
