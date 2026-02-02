@@ -60,7 +60,7 @@ class EnhancedRealtimeService {
         }
 
         const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization?.replace('Bearer ', '');
-        
+
         if (!token) {
           return next(new Error('Authentication token required'));
         }
@@ -74,7 +74,7 @@ class EnhancedRealtimeService {
             // Decode without verification to get userId
             const { decodeToken } = require('../utils/Jwt');
             decoded = decodeToken(token);
-            
+
             if (decoded && decoded.userId) {
               const user = await User.findById(decoded.userId).select('_id username fullName isActive');
               if (user && user.isActive !== false) {
@@ -88,7 +88,7 @@ class EnhancedRealtimeService {
                   fullName: user.fullName,
                   profilePictureUrl: user.profilePictureUrl
                 };
-                
+
                 // Emit token expired event after connection
                 setTimeout(() => {
                   socket.emit('token:expired', {
@@ -96,20 +96,20 @@ class EnhancedRealtimeService {
                     timestamp: new Date()
                   });
                 }, 100);
-                
+
                 return next();
               }
             }
           }
           throw error; // Re-throw if not expired or can't decode
         }
-        
+
         const user = await User.findById(decoded.userId).select('_id username fullName isActive');
-        
+
         if (!user) {
           return next(new Error('User not found'));
         }
-        
+
         // For testing: only reject if explicitly set to false
         // In production, you should enforce isActive: true
         if (user.isActive === false) {
@@ -118,7 +118,7 @@ class EnhancedRealtimeService {
 
         socket.userId = user._id.toString();
         socket.user = user;
-        
+
         // Store user info in socket for easy access
         socket.userInfo = {
           _id: user._id,
@@ -126,7 +126,7 @@ class EnhancedRealtimeService {
           fullName: user.fullName,
           profilePictureUrl: user.profilePictureUrl
         };
-        
+
         next();
       } catch (error) {
         console.error('Socket authentication error:', error);
@@ -161,25 +161,25 @@ class EnhancedRealtimeService {
 
       // Chat events
       this.setupChatEvents(socket);
-      
+
       // Call events
       this.setupCallEvents(socket);
-      
+
       // WebRTC signaling events
       this.setupWebRTCEvents(socket);
-      
+
       // User presence events
       this.setupPresenceEvents(socket);
-      
+
       // Notification events
       this.setupNotificationEvents(socket);
-      
+
       // Token refresh events
       this.setupTokenRefreshEvents(socket);
-      
+
       // Error handling
       this.setupErrorHandling(socket);
-      
+
       // Disconnection handling
       this.setupDisconnectionHandling(socket);
     });
@@ -191,29 +191,29 @@ class EnhancedRealtimeService {
    */
   handleUserConnection(socket) {
     const userId = socket.userId;
-    
+
     // Get or create Set of socket IDs for this user
     if (!this.connectedUsers.has(userId)) {
       this.connectedUsers.set(userId, new Set());
     }
-    
+
     const userSockets = this.connectedUsers.get(userId);
     const isNewConnection = !userSockets.has(socket.id);
-    
+
     if (isNewConnection) {
       userSockets.add(socket.id);
       console.log(`[CONNECTION] ➕ User ${userId} added new connection (socket ${socket.id}). Total connections: ${userSockets.size}`);
     } else {
       console.log(`[CONNECTION] 🔄 User ${userId} reconnected with existing socket ${socket.id}`);
     }
-    
+
     // Join user's personal room
     socket.join(`user:${userId}`);
-    
+
     // Update user online status (only if this is the first connection)
     if (isNewConnection && userSockets.size === 1) {
       this.updateUserStatus(userId, 'online');
-      
+
       // Notify other users about online status (only once, not for each connection)
       socket.broadcast.emit('user_online', {
         userId: userId,
@@ -223,7 +223,7 @@ class EnhancedRealtimeService {
         timestamp: new Date()
       });
     }
-    
+
     // Emit connection success
     socket.emit('connection_success', {
       userId: userId,
@@ -231,7 +231,7 @@ class EnhancedRealtimeService {
       totalConnections: userSockets.size,
       timestamp: new Date()
     });
-    
+
     console.log(`[CONNECTION] ✅ User ${userId} (${socket.user.username}) connected successfully (${userSockets.size} active connection(s))`);
   }
 
@@ -247,9 +247,9 @@ class EnhancedRealtimeService {
           username: socket.user?.username,
           chatId: chatId
         });
-        
+
         const userId = socket.userId;
-        
+
         // Validate chat access
         const chat = await Chat.findById(chatId);
         if (!chat || !chat.participants.includes(userId)) {
@@ -261,14 +261,14 @@ class EnhancedRealtimeService {
         // Join chat room
         socket.join(`chat:${chatId}`);
         console.log('[REALTIME_SERVICE] ✅ User joined chat room:', { userId, chatId, room: `chat:${chatId}` });
-        
+
         // Mark messages as read
         await Message.markChatAsRead(chatId, userId);
-        
+
         // Reset unread count
         chat.resetUnreadCount(userId);
         await chat.save();
-        
+
         // Notify other participants
         socket.to(`chat:${chatId}`).emit('user_joined_chat', {
           userId: userId,
@@ -287,7 +287,7 @@ class EnhancedRealtimeService {
     // Leave chat room
     socket.on('leave_chat', (chatId) => {
       socket.leave(`chat:${chatId}`);
-      
+
       socket.to(`chat:${chatId}`).emit('user_left_chat', {
         userId: socket.userId,
         username: socket.user.username,
@@ -304,7 +304,7 @@ class EnhancedRealtimeService {
         chatId: data.chatId,
         data: data
       });
-      
+
       const { chatId } = data;
       socket.to(`chat:${chatId}`).emit('user_typing', {
         userId: socket.userId,
@@ -313,7 +313,7 @@ class EnhancedRealtimeService {
         isTyping: true,
         timestamp: new Date()
       });
-      
+
       console.log('[REALTIME_SERVICE] ✅ Typing start broadcasted to chat:', chatId);
     });
 
@@ -324,7 +324,7 @@ class EnhancedRealtimeService {
         chatId: data.chatId,
         data: data
       });
-      
+
       const { chatId } = data;
       socket.to(`chat:${chatId}`).emit('user_typing', {
         userId: socket.userId,
@@ -333,7 +333,7 @@ class EnhancedRealtimeService {
         isTyping: false,
         timestamp: new Date()
       });
-      
+
       console.log('[REALTIME_SERVICE] ✅ Typing stop broadcasted to chat:', chatId);
     });
 
@@ -341,7 +341,7 @@ class EnhancedRealtimeService {
     socket.on('new_message', async (data) => {
       try {
         const { chatId, content, type, replyTo, forwardedFrom } = data;
-        
+
         // Validate chat access
         const chat = await Chat.findById(chatId);
         if (!chat || !chat.participants.includes(socket.userId)) {
@@ -389,7 +389,7 @@ class EnhancedRealtimeService {
         chat.participants.forEach(participantId => {
           if (participantId.toString() !== socket.userId) {
             chat.incrementUnreadCount(participantId);
-            
+
             // Notify user about new message
             this.io.to(`user:${participantId}`).emit('new_message_notification', {
               chatId: chatId,
@@ -417,7 +417,7 @@ class EnhancedRealtimeService {
     socket.on('call:initiate', async (data) => {
       try {
         const { chatId, type, targetUserId } = data;
-        
+
         // Validate chat access
         const chat = await Chat.findById(chatId);
         if (!chat || !chat.participants.includes(socket.userId)) {
@@ -488,7 +488,7 @@ class EnhancedRealtimeService {
     socket.on('call:accept', async (data) => {
       try {
         const { callId } = data;
-        
+
         const callData = this.activeCalls.get(callId);
         if (!callData) {
           socket.emit('call:error', { message: 'Call not found' });
@@ -497,7 +497,7 @@ class EnhancedRealtimeService {
 
         // Update call status
         callData.status = 'connected';
-        
+
         // Update database
         const call = await Call.findOne({ callId });
         if (call) {
@@ -529,7 +529,7 @@ class EnhancedRealtimeService {
     socket.on('call:reject', async (data) => {
       try {
         const { callId, reason } = data;
-        
+
         const callData = this.activeCalls.get(callId);
         if (!callData) {
           socket.emit('call:error', { message: 'Call not found' });
@@ -538,7 +538,7 @@ class EnhancedRealtimeService {
 
         // Update call status
         callData.status = 'rejected';
-        
+
         // Update database
         const call = await Call.findOne({ callId });
         if (call) {
@@ -569,7 +569,7 @@ class EnhancedRealtimeService {
     socket.on('call:end', async (data) => {
       try {
         const { callId, reason } = data;
-        
+
         const callData = this.activeCalls.get(callId);
         if (!callData) {
           socket.emit('call:error', { message: 'Call not found' });
@@ -578,7 +578,7 @@ class EnhancedRealtimeService {
 
         // Update call status
         callData.status = 'ended';
-        
+
         // Update database
         const call = await Call.findOne({ callId });
         if (call) {
@@ -686,11 +686,11 @@ class EnhancedRealtimeService {
       try {
         const { notificationId } = data;
         const userId = socket.userId;
-        
+
         // Update notification status via notification service
         const notificationService = require('../notification/services/notificationService');
         await notificationService.markAsRead(notificationId, userId);
-        
+
         // Emit confirmation
         socket.emit('notification:read_confirmed', {
           notificationId,
@@ -713,14 +713,14 @@ class EnhancedRealtimeService {
       try {
         const { notificationId } = data;
         const userId = socket.userId;
-        
+
         // Record click analytics
         const Notification = require('../notification/models/notificationModel');
         const notification = await Notification.findOne({
           _id: notificationId,
           recipient: userId
         });
-        
+
         if (notification) {
           await notification.recordClick();
         }
@@ -739,7 +739,7 @@ class EnhancedRealtimeService {
       try {
         const { status } = data;
         await this.updateUserStatus(socket.userId, status);
-        
+
         // Broadcast status update
         socket.broadcast.emit('user_status_update', {
           userId: socket.userId,
@@ -757,7 +757,7 @@ class EnhancedRealtimeService {
       socket.emit('pong');
       socket.lastActivity = new Date();
       console.log(`[HEARTBEAT] 💓 Ping received from user ${socket.userId}`);
-      
+
       // Update user activity
       this.updateUserActivity(socket.userId);
     });
@@ -771,18 +771,18 @@ class EnhancedRealtimeService {
     socket.on('token:refresh', async (data) => {
       try {
         const { refreshToken } = data;
-        
+
         if (!refreshToken) {
           socket.emit('token:refresh_error', { message: 'Refresh token required' });
           return;
         }
 
         const { verifyRefreshToken, signAccessToken } = require('../utils/Jwt');
-        
+
         // Verify refresh token
         const decoded = verifyRefreshToken(refreshToken);
         const user = await User.findById(decoded.userId).select('_id username fullName isActive');
-        
+
         if (!user || user.isActive === false) {
           socket.emit('token:refresh_error', { message: 'Invalid refresh token or user not found' });
           return;
@@ -790,23 +790,23 @@ class EnhancedRealtimeService {
 
         // Generate new access token
         const newAccessToken = signAccessToken({ userId: user._id.toString() });
-        
+
         // Update socket with new token info
         socket.tokenRefreshed = true;
         socket.tokenRefreshedAt = new Date();
-        
+
         // Emit new token to client
         socket.emit('token:refresh_success', {
           accessToken: newAccessToken,
           timestamp: new Date()
         });
-        
+
         console.log(`[TOKEN REFRESH] ✅ Token refreshed for user ${socket.userId}`);
       } catch (error) {
         console.error(`[TOKEN REFRESH] ❌ Error refreshing token for user ${socket.userId}:`, error);
-        socket.emit('token:refresh_error', { 
+        socket.emit('token:refresh_error', {
           message: 'Token refresh failed',
-          error: error.message 
+          error: error.message
         });
       }
     });
@@ -818,7 +818,7 @@ class EnhancedRealtimeService {
   setupErrorHandling(socket) {
     socket.on('error', (error) => {
       console.error(`Socket error for user ${socket.userId}:`, error);
-      
+
       // Check if error is due to token expiration
       if (error.message && error.message.includes('jwt expired')) {
         socket.emit('token:expired', {
@@ -836,24 +836,24 @@ class EnhancedRealtimeService {
   setupDisconnectionHandling(socket) {
     socket.on('disconnect', async (reason) => {
       const userId = socket.userId;
-      
+
       console.log(`[CONNECTION] 🔌 User ${userId} disconnected socket ${socket.id}: ${reason}`);
-      
+
       // Get user's socket Set
       const userSockets = this.connectedUsers.get(userId);
       if (!userSockets) {
         console.log(`[CONNECTION] ⚠️ User ${userId} not found in connected users`);
         return;
       }
-      
+
       // Remove this specific socket
       userSockets.delete(socket.id);
-      
+
       // If user has no more connections, mark as offline
       if (userSockets.size === 0) {
         this.connectedUsers.delete(userId);
         await this.updateUserStatus(userId, 'offline');
-        
+
         // End any active calls for this user
         for (const [callId, callData] of this.activeCalls.entries()) {
           if (callData.participants.includes(userId)) {
@@ -863,12 +863,12 @@ class EnhancedRealtimeService {
               reason: 'user_disconnected',
               timestamp: new Date()
             });
-            
+
             // Remove from active calls
             this.activeCalls.delete(callId);
           }
         }
-        
+
         // Notify other users about offline status (only when all connections are gone)
         this.io.emit('user_offline', {
           userId: userId,
@@ -877,7 +877,7 @@ class EnhancedRealtimeService {
           profilePictureUrl: socket.user?.profilePictureUrl,
           timestamp: new Date()
         });
-        
+
         console.log(`[CONNECTION] ✅ User ${userId} offline status broadcasted (all connections closed)`);
       } else {
         console.log(`[CONNECTION] ℹ️ User ${userId} still has ${userSockets.size} active connection(s)`);
@@ -892,7 +892,7 @@ class EnhancedRealtimeService {
     try {
       console.log(`[ONLINE_STATUS] Updating user ${userId} to ${status}`);
       const userStatus = await UserStatus.getOrCreateUserStatus(userId);
-      
+
       if (status === 'online') {
         await userStatus.setOnline();
         console.log(`[ONLINE_STATUS] ✅ User ${userId} is now ONLINE`);
@@ -900,7 +900,7 @@ class EnhancedRealtimeService {
         await userStatus.setOffline();
         console.log(`[ONLINE_STATUS] ❌ User ${userId} is now OFFLINE`);
       }
-      
+
       await userStatus.updateActivity();
       console.log(`[ONLINE_STATUS] Activity updated for user ${userId}`);
     } catch (error) {
@@ -940,21 +940,21 @@ class EnhancedRealtimeService {
 
     for (const [userId, socketIds] of this.connectedUsers.entries()) {
       const staleSockets = [];
-      
+
       for (const socketId of socketIds) {
         const socket = this.io.sockets.sockets.get(socketId);
         if (!socket || (now - socket.lastActivity) > staleTimeout) {
           staleSockets.push(socketId);
-          
+
           if (socket) {
             socket.disconnect(true);
           }
         }
       }
-      
+
       // Remove stale sockets
       staleSockets.forEach(socketId => socketIds.delete(socketId));
-      
+
       // If no more connections, remove user and mark offline
       if (socketIds.size === 0) {
         this.connectedUsers.delete(userId);
@@ -1065,10 +1065,10 @@ class EnhancedRealtimeService {
         senderId: messageData.senderId._id,
         content: messageData.content?.substring(0, 50) + '...'
       });
-      
+
       // Emit to all participants in the chat room
       this.io.to(`chat:${chatId}`).emit('message_received', messageData);
-      
+
       console.log(`[REALTIME_SERVICE] ✅ Message broadcasted to chat ${chatId}`);
     } else {
       console.error('[REALTIME_SERVICE] ❌ Cannot broadcast message - Socket.IO not initialized');
