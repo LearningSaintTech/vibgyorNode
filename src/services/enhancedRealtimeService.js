@@ -1504,14 +1504,14 @@ class EnhancedRealtimeService {
       messageId: messageData._id,
       senderId: messageData.senderId?._id || messageData.senderId,
       type: messageData.type,
-      contentPreview: messageData.content?.substring(0, 50),
+      content: messageData.content,
       timestamp: new Date().toISOString()
     });
     if (this.io) {
       console.log(`🔵 [REALTIME_SVC] Broadcasting new message to social chat ${chatId}:`, {
         messageId: messageData._id,
         senderId: messageData.senderId?._id || messageData.senderId,
-        content: messageData.content?.substring(0, 50) + '...',
+        content: messageData.content,
         room: `chat:${chatId}`
       });
       

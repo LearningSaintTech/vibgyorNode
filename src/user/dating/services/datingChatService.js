@@ -3,6 +3,7 @@ const DatingChat = require('../models/datingChatModel');
 const DatingMessage = require('../models/datingMessageModel');
 const DatingMatch = require('../models/datingMatchModel');
 const User = require('../../auth/model/userAuthModel');
+const { decryptContent } = require('../../../utils/cryptoUtil');
 
 /**
  * Dating Chat Service - Separate from social chats
@@ -118,9 +119,16 @@ class DatingChatService {
         
         // Get unread count from Map
         const unreadCount = unreadCountMap.get(chat._id.toString()) || 0;
+
+        // Decrypt lastMessage.content for list preview (stored encrypted at rest)
+        const lastMessage = chat.lastMessage;
+        const decryptedLastMessage = lastMessage && typeof lastMessage.content === 'string'
+          ? { ...lastMessage, content: decryptContent(lastMessage.content) }
+          : lastMessage;
         
         return {
           ...chat,
+          lastMessage: decryptedLastMessage,
           unreadCount: unreadCount,
           userSettings: userSettings || {
             isArchived: false,

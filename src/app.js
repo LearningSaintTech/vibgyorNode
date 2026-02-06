@@ -79,6 +79,8 @@ app.use(cors({
 app.use(compressionMiddleware); // Add compression
 app.use(express.json({ limit: '10mb' })); // Increase JSON limit for file uploads
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+const { encryptionMiddleware } = require('./middleware/encryptionMiddleware');
+app.use(encryptionMiddleware); // Decrypt X-Payload-Encrypted request body; encrypt response when requested
 app.use(responseTime); // Add response time logging
 
 // Rate limiting - COMMENTED OUT FOR TESTING

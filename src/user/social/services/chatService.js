@@ -4,6 +4,7 @@ const Message = require('../userModel/messageModel');
 const User = require('../../auth/model/userAuthModel');
 const MessageRequest = require('../userModel/messageRequestModel');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
+const { decryptContent } = require('../../../utils/cryptoUtil');
 
 /**
  * Enhanced Chat Service with comprehensive error handling and edge cases
@@ -180,8 +181,15 @@ class ChatService {
             return pId && pId !== userIdStr;
           });
           
+          // Decrypt lastMessage.content for list preview (stored encrypted at rest)
+          const lastMessage = chat.lastMessage;
+          const decryptedLastMessage = lastMessage && typeof lastMessage.content === 'string'
+            ? { ...lastMessage, content: decryptContent(lastMessage.content) }
+            : lastMessage;
+
           return {
             ...chat,
+            lastMessage: decryptedLastMessage,
             unreadCount: userSettings?.unreadCount || 0,
             userSettings: userSettings || {
               isArchived: false,

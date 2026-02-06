@@ -6,6 +6,19 @@ const User = require('../../auth/model/userAuthModel');
 const { uploadBuffer } = require('../../../services/s3Service');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 const notificationService = require('../../../notification/services/notificationService');
+const { encrypt, decryptContent } = require('../../../utils/cryptoUtil');
+
+function decryptMessage(msg) {
+  if (!msg) return msg;
+  if (msg.content != null && msg.content !== '') msg.content = decryptContent(msg.content);
+  return msg;
+}
+
+function decryptMessages(list) {
+  if (!Array.isArray(list)) return list;
+  list.forEach(decryptMessage);
+  return list;
+}
 
 /**
  * Dating Message Service - Separate from social messages
@@ -257,12 +270,13 @@ class DatingMessageService {
         oneViewExpiresAt = new Date(Date.now() + expirationHours * 60 * 60 * 1000);
       }
       
-      // Create message
+      // Create message (encrypt text content at rest)
+      const contentToSave = (type === 'text' || type === 'system') && content ? encrypt(content.trim()) : content.trim();
       const message = new DatingMessage({
         chatId,
         senderId,
         type,
-        content: content.trim(),
+        content: contentToSave,
         media: Object.keys(mediaData).length > 0 ? mediaData : undefined,
         location: locationData,
         musicMetadata: musicMetadata,
@@ -326,13 +340,14 @@ class DatingMessageService {
       
       // Emit real-time message to chat participants (dating-specific room)
       const realtime = enhancedRealtimeService;
+      const decryptedContent = decryptContent(message.content);
       if (realtime && realtime.emitDatingMessage) {
         realtime.emitDatingMessage(chatId, {
           _id: message._id,
           chatId: message.chatId,
           senderId: message.senderId,
           type: message.type,
-          content: message.content,
+          content: decryptedContent,
           media: message.media,
           replyTo: message.replyTo,
           forwardedFrom: message.forwardedFrom,
@@ -352,7 +367,7 @@ class DatingMessageService {
           chatId: message.chatId,
           senderId: message.senderId,
           type: message.type,
-          content: message.content,
+          content: decryptedContent,
           media: message.media,
           replyTo: message.replyTo,
           forwardedFrom: message.forwardedFrom,
@@ -367,7 +382,7 @@ class DatingMessageService {
         });
       }
       
-      const responseMessage = {
+      const responseMessage = decryptMessage({
         _id: message._id,
         messageId: message._id,
         chatId: message.chatId,
@@ -383,7 +398,7 @@ class DatingMessageService {
         forwardedFrom: message.forwardedFrom,
         createdAt: message.createdAt,
         status: message.status
-      };
+      });
       
       // Emit delivered status update to sender after a short delay
       setTimeout(() => {
@@ -438,7 +453,7 @@ class DatingMessageService {
       }
       
       const messages = await DatingMessage.getChatMessages(chatId, page, limit, userId);
-      
+      decryptMessages(messages);
       return {
         messages,
         pagination: {
@@ -544,8 +559,10 @@ class DatingMessageService {
       
       // Fetch full message document for editing (need mongoose document for instance method)
       const messageDoc = await DatingMessage.findById(messageId);
-      await messageDoc.editMessage(newContent.trim());
+      const contentToSave = encrypt(newContent.trim());
+      await messageDoc.editMessage(contentToSave === newContent.trim() ? newContent.trim() : contentToSave);
       
+      const decryptedContent = decryptContent(messageDoc.content);
       // Emit message update to chat participants
       try {
         const realtime = enhancedRealtimeService;
@@ -553,7 +570,7 @@ class DatingMessageService {
           realtime.to(`dating-chat:${messageDoc.chatId}`).emit('dating_message_update', {
             messageId: messageDoc._id,
             chatId: messageDoc.chatId,
-            content: messageDoc.content,
+            content: decryptedContent,
             editedAt: messageDoc.editedAt
           });
           
@@ -564,7 +581,7 @@ class DatingMessageService {
             realtime.to(`user:${participantId}`).emit('dating_message_update', {
               messageId: messageDoc._id,
               chatId: messageDoc.chatId,
-              content: messageDoc.content,
+              content: decryptedContent,
               editedAt: messageDoc.editedAt
             });
           });
@@ -575,7 +592,7 @@ class DatingMessageService {
       
       return {
         messageId: messageDoc._id,
-        content: messageDoc.content,
+        content: decryptedContent,
         editedAt: messageDoc.editedAt
       };
       
@@ -895,6 +912,7 @@ class DatingMessageService {
         }
       );
       
+      const decryptedContent = decryptContent(forwardedMessage.content);
       // Emit real-time message to target chat participants
       const realtime = enhancedRealtimeService;
       if (realtime && realtime.emitDatingMessage) {
@@ -903,7 +921,7 @@ class DatingMessageService {
           chatId: forwardedMessage.chatId,
           senderId: forwardedMessage.senderId,
           type: forwardedMessage.type,
-          content: forwardedMessage.content,
+          content: decryptedContent,
           media: forwardedMessage.media,
           forwardedFrom: forwardedMessage.forwardedFrom,
           createdAt: forwardedMessage.createdAt,
@@ -915,7 +933,7 @@ class DatingMessageService {
           chatId: forwardedMessage.chatId,
           senderId: forwardedMessage.senderId,
           type: forwardedMessage.type,
-          content: forwardedMessage.content,
+          content: decryptedContent,
           media: forwardedMessage.media,
           forwardedFrom: forwardedMessage.forwardedFrom,
           createdAt: forwardedMessage.createdAt,
@@ -926,7 +944,7 @@ class DatingMessageService {
       return {
         messageId: forwardedMessage._id,
         chatId: targetChatId,
-        content: forwardedMessage.content,
+        content: decryptedContent,
         forwardedFrom: originalMessage._id
       };
       
@@ -1077,6 +1095,9 @@ class DatingMessageService {
         throw new Error('Message not found');
       }
       
+      decryptMessage(message);
+      if (message.replyTo && message.replyTo.content != null) message.replyTo.content = decryptContent(message.replyTo.content);
+      if (message.forwardedFrom && message.forwardedFrom.content != null) message.forwardedFrom.content = decryptContent(message.forwardedFrom.content);
       return message;
       
     } catch (error) {
@@ -1108,6 +1129,7 @@ class DatingMessageService {
       const userIdStr = userId.toString();
       const viewedBySet = new Set((message.viewedBy || []).map(v => v.userId?.toString() || v.toString()));
       if (viewedBySet.has(userIdStr)) {
+        if (message.content != null) message.content = decryptContent(message.content);
         return message;
       }
       
@@ -1128,7 +1150,7 @@ class DatingMessageService {
         { path: 'senderId', select: 'username fullName profilePictureUrl' },
         { path: 'viewedBy.userId', select: 'username fullName' }
       ]);
-      
+      if (message.content != null) message.content = decryptContent(message.content);
       return message;
       
     } catch (error) {

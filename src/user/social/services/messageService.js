@@ -5,6 +5,20 @@ const User = require('../../auth/model/userAuthModel');
 const { uploadBuffer } = require('../../../services/s3Service');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
 const notificationService = require('../../../notification/services/notificationService');
+const { encrypt, decryptContent } = require('../../../utils/cryptoUtil');
+
+/** Decrypt message content for API/display (at-rest decryption). */
+function decryptMessage(msg) {
+  if (!msg) return msg;
+  if (msg.content != null && msg.content !== '') msg.content = decryptContent(msg.content);
+  return msg;
+}
+
+function decryptMessages(list) {
+  if (!Array.isArray(list)) return list;
+  list.forEach(decryptMessage);
+  return list;
+}
 
 /**
  * Enhanced Message Service with comprehensive error handling and edge cases
@@ -271,12 +285,15 @@ class MessageService {
         oneViewExpiresAt = new Date(Date.now() + expirationHours * 60 * 60 * 1000);
       }
       
-      // Create message
+      // Create message (encrypt text content at rest)
+      const plainContent = (type === 'text' || type === 'system') && content ? content.trim() : content?.trim() || '';
+      if (plainContent) console.log('[MESSAGE_SERVICE] Message before encryption:', plainContent);
+      const contentToSave = (type === 'text' || type === 'system') && content ? encrypt(content.trim()) : content.trim();
       const message = new Message({
         chatId,
         senderId,
         type,
-        content: content.trim(),
+        content: contentToSave,
         media: Object.keys(mediaData).length > 0 ? mediaData : undefined,
         location: locationData,
         musicMetadata: musicMetadata,
@@ -398,7 +415,7 @@ class MessageService {
           chatId: message.chatId,
           senderId: message.senderId,
           type: message.type,
-          content: message.content,
+          content: decryptContent(message.content),
           media: message.media,
           location: message.location,
           musicMetadata: message.musicMetadata,
@@ -436,7 +453,7 @@ class MessageService {
         }, 500);
       }
       
-      const responseMessage = {
+      const responseMessage = decryptMessage({
         _id: message._id,
         messageId: message._id, // Keep both for backward compatibility
         chatId: message.chatId,
@@ -448,7 +465,7 @@ class MessageService {
         forwardedFrom: message.forwardedFrom,
         createdAt: message.createdAt,
         status: message.status
-      };
+      });
       
       // Debug: Log voice message response
       if (type === 'voice') {
@@ -534,6 +551,7 @@ class MessageService {
         })));
       }
       
+      decryptMessages(messages);
       const result = {
         messages,
         pagination: {
@@ -671,8 +689,11 @@ class MessageService {
       
       // Fetch full message document for editing (need mongoose document for instance method)
       const messageDoc = await Message.findById(messageId);
-      await messageDoc.editMessage(newContent.trim());
+      console.log('[MESSAGE_SERVICE] Edit message before encryption:', newContent.trim());
+      const contentToSave = encrypt(newContent.trim());
+      await messageDoc.editMessage(contentToSave === newContent.trim() ? newContent.trim() : contentToSave);
       
+      const decryptedContent = decryptContent(messageDoc.content);
       // Emit message update to chat participants
       try {
         const realtime = enhancedRealtimeService;
@@ -680,7 +701,7 @@ class MessageService {
           realtime.to(`chat:${messageDoc.chatId}`).emit('message_update', {
             messageId: messageDoc._id,
             chatId: messageDoc.chatId,
-            content: messageDoc.content,
+            content: decryptedContent,
             editedAt: messageDoc.editedAt
           });
           
@@ -692,7 +713,7 @@ class MessageService {
             realtime.to(`user:${participantId}`).emit('message_update', {
               messageId: messageDoc._id,
               chatId: messageDoc.chatId,
-              content: messageDoc.content,
+              content: decryptedContent,
               editedAt: messageDoc.editedAt
             });
           });
@@ -704,7 +725,7 @@ class MessageService {
       
       return {
         messageId: messageDoc._id,
-        content: messageDoc.content,
+        content: decryptedContent,
         editedAt: messageDoc.editedAt
       };
       
@@ -1014,6 +1035,7 @@ class MessageService {
         }
       );
       
+      const decryptedContent = decryptContent(forwardedMessage.content);
       // Emit real-time message to target chat participants
       const realtime = enhancedRealtimeService;
       if (realtime && realtime.emitNewMessage) {
@@ -1022,7 +1044,7 @@ class MessageService {
           chatId: forwardedMessage.chatId,
           senderId: forwardedMessage.senderId,
           type: forwardedMessage.type,
-          content: forwardedMessage.content,
+          content: decryptedContent,
           media: forwardedMessage.media,
           forwardedFrom: forwardedMessage.forwardedFrom,
           createdAt: forwardedMessage.createdAt,
@@ -1033,7 +1055,7 @@ class MessageService {
       return {
         messageId: forwardedMessage._id,
         chatId: targetChatId,
-        content: forwardedMessage.content,
+        content: decryptedContent,
         forwardedFrom: originalMessage._id
       };
       
@@ -1078,7 +1100,7 @@ class MessageService {
       }
       
       const messages = await Message.searchMessages(chatId, query.trim(), userId, page, limit);
-      
+      decryptMessages(messages);
       return {
         messages,
         pagination: {
@@ -1130,7 +1152,7 @@ class MessageService {
       }
       
       const mediaMessages = await Message.getChatMedia(chatId, type, userId, page, limit);
-      
+      decryptMessages(mediaMessages);
       return {
         mediaMessages,
         pagination: {
@@ -1187,6 +1209,9 @@ class MessageService {
         throw new Error('Message not found');
       }
       
+      decryptMessage(message);
+      if (message.replyTo && message.replyTo.content != null) message.replyTo.content = decryptContent(message.replyTo.content);
+      if (message.forwardedFrom && message.forwardedFrom.content != null) message.forwardedFrom.content = decryptContent(message.forwardedFrom.content);
       return message;
       
     } catch (error) {
@@ -1241,7 +1266,7 @@ class MessageService {
         { path: 'senderId', select: 'username fullName profilePictureUrl' },
         { path: 'viewedBy.userId', select: 'username fullName' }
       ]);
-      
+      if (message.content != null) message.content = decryptContent(message.content);
       console.log('✅ [BACKEND_MSG_SVC] One-view message marked as viewed:', { messageId, userId });
       return message;
       

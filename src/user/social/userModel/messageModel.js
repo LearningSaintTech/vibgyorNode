@@ -24,7 +24,6 @@ const messageSchema = new Schema({
     required: function() {
       return this.type === 'text' || this.type === 'system';
     },
-    maxlength: 4096, // 4KB limit for text messages
     trim: true
   },
   
