@@ -1,0 +1,4108 @@
+{
+  "info": {
+    "_postman_id": "vibgyor-node-api-collection",
+    "name": "VibgyorNode API",
+    "description": "Complete API collection for VibgyorNode backend. Total: 282 APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "userToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Root & Health",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/"
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/info"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Auth (Unified)",
+      "item": [
+        {
+          "name": "Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"9999999999\"\n}"
+            },
+            "url": "{{baseUrl}}/admin-auth/send-otp"
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"9999999999\", \"otp\": \"123456\"\n}"
+            },
+            "url": "{{baseUrl}}/admin-auth/verify-otp"
+          }
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"9999999999\"\n}"
+            },
+            "url": "{{baseUrl}}/admin-auth/resend-otp"
+          }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin-auth/me"
+          }
+        },
+        {
+          "name": "2Factor Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin-auth/2factor-status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin (Legacy)",
+      "item": [
+        {
+          "name": "Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"9999999999\"}"
+            },
+            "url": "{{baseUrl}}/admin/send-otp"
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"9999999999\", \"otp\": \"123456\"}"
+            },
+            "url": "{{baseUrl}}/admin/verify-otp"
+          }
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"9999999999\"}"
+            },
+            "url": "{{baseUrl}}/admin/resend-otp"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/update-profile"
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/get-profile"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - User Management",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users"
+          }
+        },
+        {
+          "name": "Get User Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Toggle User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/status"
+          }
+        },
+        {
+          "name": "Get Pending Verifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/verifications/pending"
+          }
+        },
+        {
+          "name": "Approve Verification",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/verification/approve"
+          }
+        },
+        {
+          "name": "Reject Verification",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/users/{{userId}}/verification/reject"
+          }
+        },
+        {
+          "name": "Get Pending Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/reports/pending"
+          }
+        },
+        {
+          "name": "Get Report Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/reports/stats"
+          }
+        },
+        {
+          "name": "Get Report Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/reports/{{reportId}}"
+          }
+        },
+        {
+          "name": "Update Report Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/reports/{{reportId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - SubAdmin Management",
+      "item": [
+        {
+          "name": "Get All SubAdmins",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/subadmins"
+          }
+        },
+        {
+          "name": "Get Pending SubAdmins",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/subadmins/pending"
+          }
+        },
+        {
+          "name": "Get SubAdmin Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/subadmins/{{subAdminId}}"
+          }
+        },
+        {
+          "name": "Toggle SubAdmin Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/subadmins/{{subAdminId}}/status"
+          }
+        },
+        {
+          "name": "Manage SubAdmin Approval",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/subadmins/{{subAdminId}}/approval"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Content Moderation",
+      "item": [
+        {
+          "name": "Get Flagged Content",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/flagged"
+          }
+        },
+        {
+          "name": "Get Pending Reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/pending"
+          }
+        },
+        {
+          "name": "Get Queue Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/queue-stats"
+          }
+        },
+        {
+          "name": "Get Moderation Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/analytics"
+          }
+        },
+        {
+          "name": "Get Content Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/{{moderationId}}/details"
+          }
+        },
+        {
+          "name": "Review Content",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/{{moderationId}}/review"
+          }
+        },
+        {
+          "name": "Bulk Review",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/bulk-review"
+          }
+        },
+        {
+          "name": "Update Policies",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/content-moderation/policies"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Analytics",
+      "item": [
+        {
+          "name": "Platform Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/analytics/platform-overview?period=7d"
+          }
+        },
+        {
+          "name": "Content Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/analytics/content?period=7d"
+          }
+        },
+        {
+          "name": "Moderation Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/analytics/moderation?period=7d"
+          }
+        },
+        {
+          "name": "Engagement Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/analytics/engagement?period=7d"
+          }
+        },
+        {
+          "name": "Performance Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/analytics/performance?period=7d"
+          }
+        },
+        {
+          "name": "User Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/analytics/users/{{userId}}?period=30d"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - User Count & Statistics",
+      "item": [
+        {
+          "name": "Get User Counts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/counts"
+          }
+        },
+        {
+          "name": "Weekly Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/statistics/weekly"
+          }
+        },
+        {
+          "name": "Monthly Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/statistics/monthly"
+          }
+        },
+        {
+          "name": "6 Months Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/statistics/6months"
+          }
+        },
+        {
+          "name": "Yearly Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/statistics/yearly"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Associates",
+      "item": [
+        {
+          "name": "Get SubAdmins",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/gettsubadmins"
+          }
+        },
+        {
+          "name": "Create SubAdmin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/admin/createsubadmins"
+          }
+        }
+      ]
+    },
+    {
+      "name": "API Admin - User Search",
+      "item": [
+        {
+          "name": "Get Users (Search)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/admin/users?type=all&page=1&limit=10"
+          }
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/admin/users/{{userId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "SubAdmin - Auth",
+      "item": [
+        {
+          "name": "Send OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"8888888888\"}"
+            },
+            "url": "{{baseUrl}}/subadmin/auth/send-otp"
+          }
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"8888888888\", \"otp\": \"123456\"}"
+            },
+            "url": "{{baseUrl}}/subadmin/auth/verify-otp"
+          }
+        },
+        {
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"phone\": \"8888888888\"}"
+            },
+            "url": "{{baseUrl}}/subadmin/auth/resend-otp"
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/getprofile"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/profile"
+          }
+        }
+      ]
+    },
+    {
+      "name": "SubAdmin - User Management",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users"
+          }
+        },
+        {
+          "name": "Get User Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users/stats"
+          }
+        },
+        {
+          "name": "Get User Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Toggle User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users/{{userId}}/status"
+          }
+        },
+        {
+          "name": "Get Pending Verifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users/verifications/pending"
+          }
+        },
+        {
+          "name": "Approve Verification",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users/{{userId}}/verification/approve"
+          }
+        },
+        {
+          "name": "Reject Verification",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users/{{userId}}/verification/reject"
+          }
+        },
+        {
+          "name": "Get Pending Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/reports/pending"
+          }
+        },
+        {
+          "name": "Get Report Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/reports/stats"
+          }
+        },
+        {
+          "name": "Get Report Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/reports/{{reportId}}"
+          }
+        },
+        {
+          "name": "Update Report Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/reports/{{reportId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "SubAdmin - Verified Users & Stats",
+      "item": [
+        {
+          "name": "Get Verified Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/users"
+          }
+        },
+        {
+          "name": "Dashboard Verification Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/subadmin/dashboard/user-verification-stats"
+          }
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "item": [
+        {
+          "name": "Social",
+          "item": [
+            {
+              "name": "Auth",
+              "item": [
+                {
+                  "name": "Send Phone OTP",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"phone\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/auth/send-otp"
+                  }
+                },
+                {
+                  "name": "Verify Phone OTP",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"phone\": \"\", \"otp\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/auth/verify-otp"
+                  }
+                },
+                {
+                  "name": "Resend Phone OTP",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/resend-otp"
+                  }
+                },
+                {
+                  "name": "Send Email OTP",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/email/send-otp"
+                  }
+                },
+                {
+                  "name": "Verify Email OTP",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/email/verify-otp"
+                  }
+                },
+                {
+                  "name": "Resend Email OTP",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/email/resend-otp"
+                  }
+                },
+                {
+                  "name": "Get Me",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/me"
+                  }
+                },
+                {
+                  "name": "Get Profile",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/profile"
+                  }
+                },
+                {
+                  "name": "Get Profile Step",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/profile/step"
+                  }
+                },
+                {
+                  "name": "Get User Profile",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/profile/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Update Profile",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/profile"
+                  }
+                },
+                {
+                  "name": "Get Email Status",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/email/status"
+                  }
+                },
+                {
+                  "name": "Get Privacy Settings",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/privacy-settings"
+                  }
+                },
+                {
+                  "name": "Update Privacy Settings",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/privacy-settings"
+                  }
+                },
+                {
+                  "name": "Logout",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/logout"
+                  }
+                },
+                {
+                  "name": "Refresh Access Token",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/auth/update-access-token"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Catalog",
+              "item": [
+                {
+                  "name": "Get Catalog",
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{baseUrl}}/user/catalog"
+                  }
+                },
+                {
+                  "name": "Get List by Type",
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{baseUrl}}/user/catalog/{{listType}}"
+                  }
+                },
+                {
+                  "name": "Create Catalog",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/catalog"
+                  }
+                },
+                {
+                  "name": "Update Catalog",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/catalog"
+                  }
+                },
+                {
+                  "name": "Add to List",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/catalog/add"
+                  }
+                },
+                {
+                  "name": "Remove from List",
+                  "request": {
+                    "method": "PATCH",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/catalog/remove"
+                  }
+                },
+                {
+                  "name": "Delete Catalog",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/catalog"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Username",
+              "item": [
+                {
+                  "name": "Check Availability",
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{baseUrl}}/user/username/available?username=test"
+                  }
+                },
+                {
+                  "name": "Suggest Username",
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{baseUrl}}/user/username/suggest"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Follow & Block",
+              "item": [
+                {
+                  "name": "Send Follow Request",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow-request/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Accept Follow Request",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow-request/{{requestId}}/accept"
+                  }
+                },
+                {
+                  "name": "Reject Follow Request",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow-request/{{requestId}}/reject"
+                  }
+                },
+                {
+                  "name": "Cancel Follow Request",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow-request/{{requestId}}/cancel"
+                  }
+                },
+                {
+                  "name": "Get Pending Follow Requests",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow-requests/pending"
+                  }
+                },
+                {
+                  "name": "Get Sent Follow Requests",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow-requests/sent"
+                  }
+                },
+                {
+                  "name": "Unfollow User",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follow/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Remove Follower",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/follower/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Get Followers",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/followers"
+                  }
+                },
+                {
+                  "name": "Get Following",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/following"
+                  }
+                },
+                {
+                  "name": "Block User",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/block/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Unblock User",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/block/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Get Blocked Users",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/blocked"
+                  }
+                },
+                {
+                  "name": "Report User",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/report/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Get User Reports",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/reports"
+                  }
+                },
+                {
+                  "name": "Get Social Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/social/social-stats"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Message Requests",
+              "item": [
+                {
+                  "name": "Send Message Request",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Get Pending Requests",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/pending"
+                  }
+                },
+                {
+                  "name": "Get Sent Requests",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/sent"
+                  }
+                },
+                {
+                  "name": "Accept Request",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/{{requestId}}/accept"
+                  }
+                },
+                {
+                  "name": "Reject Request",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/{{requestId}}/reject"
+                  }
+                },
+                {
+                  "name": "Delete Request",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/{{requestId}}"
+                  }
+                },
+                {
+                  "name": "Get Request Details",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/{{requestId}}"
+                  }
+                },
+                {
+                  "name": "Get Request Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/stats"
+                  }
+                },
+                {
+                  "name": "Get Request Between Users",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/between/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Cleanup Rejected",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/cleanup/rejected"
+                  }
+                },
+                {
+                  "name": "Cleanup Old",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{adminToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/message-requests/cleanup/old"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Status",
+              "item": [
+                {
+                  "name": "Update Status",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status"
+                  }
+                },
+                {
+                  "name": "Get Online Users",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/online"
+                  }
+                },
+                {
+                  "name": "Get Recently Active",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/recent"
+                  }
+                },
+                {
+                  "name": "Get Statuses Batch",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/batch"
+                  }
+                },
+                {
+                  "name": "Update Privacy",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/privacy"
+                  }
+                },
+                {
+                  "name": "Get Status Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/stats"
+                  }
+                },
+                {
+                  "name": "Get User Status",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Set Offline",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/status/offline"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "File Upload",
+              "item": [
+                {
+                  "name": "Get Verification Status",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/verification-status"
+                  }
+                },
+                {
+                  "name": "Get Documents",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/documents"
+                  }
+                },
+                {
+                  "name": "Upload Profile Picture",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/profile-picture"
+                  }
+                },
+                {
+                  "name": "Upload ID Proof",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/id-proof"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Delete Account",
+              "item": [
+                {
+                  "name": "Delete Account",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/account"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Posts",
+              "item": [
+                {
+                  "name": "Create Post",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts"
+                  }
+                },
+                {
+                  "name": "Get Feed",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/feed"
+                  }
+                },
+                {
+                  "name": "Search Posts",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/search"
+                  }
+                },
+                {
+                  "name": "Get Suggestions",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/suggestions"
+                  }
+                },
+                {
+                  "name": "Get Trending",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/trending"
+                  }
+                },
+                {
+                  "name": "Get by Hashtag",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/hashtag/{{hashtag}}"
+                  }
+                },
+                {
+                  "name": "Get My Posts",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/me"
+                  }
+                },
+                {
+                  "name": "Get Saved",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/saved"
+                  }
+                },
+                {
+                  "name": "Get Archived",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/archived"
+                  }
+                },
+                {
+                  "name": "Get User Posts",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/user/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Like Post",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/like"
+                  }
+                },
+                {
+                  "name": "Get Post Likes",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/likes"
+                  }
+                },
+                {
+                  "name": "Add Comment",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"content\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/comment"
+                  }
+                },
+                {
+                  "name": "Get Comments",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/comments"
+                  }
+                },
+                {
+                  "name": "Like Comment",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/comments/{{commentId}}/like"
+                  }
+                },
+                {
+                  "name": "Edit Comment",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/comments/{{commentId}}"
+                  }
+                },
+                {
+                  "name": "Delete Comment",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/comments/{{commentId}}"
+                  }
+                },
+                {
+                  "name": "Share Post",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/share"
+                  }
+                },
+                {
+                  "name": "Save Post",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/save"
+                  }
+                },
+                {
+                  "name": "Unsave Post",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/save"
+                  }
+                },
+                {
+                  "name": "Archive Post",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/archive"
+                  }
+                },
+                {
+                  "name": "Unarchive Post",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/unarchive"
+                  }
+                },
+                {
+                  "name": "Get Post",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}"
+                  }
+                },
+                {
+                  "name": "Update Post",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}"
+                  }
+                },
+                {
+                  "name": "Delete Post",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}"
+                  }
+                },
+                {
+                  "name": "Get Post Analytics",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/analytics"
+                  }
+                },
+                {
+                  "name": "Report Post",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"reason\": \"spam\"}"
+                    },
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/report"
+                  }
+                },
+                {
+                  "name": "Update Location",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/location"
+                  }
+                },
+                {
+                  "name": "Add Mention",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/posts/{{postId}}/mentions"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Stories",
+              "item": [
+                {
+                  "name": "Create Story",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories"
+                  }
+                },
+                {
+                  "name": "Get Stories Feed",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/feed"
+                  }
+                },
+                {
+                  "name": "Get My Stories",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/my-stories"
+                  }
+                },
+                {
+                  "name": "Get User Stories",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/user/{{userId}}"
+                  }
+                },
+                {
+                  "name": "Get Story",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}"
+                  }
+                },
+                {
+                  "name": "Track View",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}/view"
+                  }
+                },
+                {
+                  "name": "Toggle Like",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}/like"
+                  }
+                },
+                {
+                  "name": "Get Story Views",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}/views"
+                  }
+                },
+                {
+                  "name": "Delete Story",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}"
+                  }
+                },
+                {
+                  "name": "Reply to Story",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}/replies"
+                  }
+                },
+                {
+                  "name": "Get by Hashtag",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/hashtag/{{hashtag}}"
+                  }
+                },
+                {
+                  "name": "Get Story Analytics",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}/analytics"
+                  }
+                },
+                {
+                  "name": "Report Story",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/stories/{{storyId}}/report"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Notifications (v1)",
+              "item": [
+                {
+                  "name": "Get Notifications",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notifications"
+                  }
+                },
+                {
+                  "name": "Get Unread Count",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notifications/unread-count"
+                  }
+                },
+                {
+                  "name": "Mark as Read",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notifications/{{id}}/read"
+                  }
+                },
+                {
+                  "name": "Mark All Read",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notifications/read-all"
+                  }
+                },
+                {
+                  "name": "Archive Notification",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notifications/{{id}}/archive"
+                  }
+                },
+                {
+                  "name": "Test",
+                  "request": {
+                    "method": "GET",
+                    "header": [],
+                    "url": "{{baseUrl}}/api/v1/notifications/test"
+                  }
+                },
+                {
+                  "name": "Save FCM Token",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"fcmToken\": \"\", \"platform\": \"android\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/notifications/save-fcm-token"
+                  }
+                },
+                {
+                  "name": "Remove FCM Token",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"fcmToken\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/notifications/remove-fcm-token"
+                  }
+                },
+                {
+                  "name": "Delete Notification",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notifications/{{id}}"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Notification Preferences",
+              "item": [
+                {
+                  "name": "Get Preferences",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notification-preferences"
+                  }
+                },
+                {
+                  "name": "Update Preferences",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notification-preferences"
+                  }
+                },
+                {
+                  "name": "Reset Preferences",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/notification-preferences/reset"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Chats (Enhanced)",
+              "item": [
+                {
+                  "name": "Create or Get Chat",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"otherUserId\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/user/chats"
+                  }
+                },
+                {
+                  "name": "Get Chats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats"
+                  }
+                },
+                {
+                  "name": "Search Chats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/search?q="
+                  }
+                },
+                {
+                  "name": "Get Chat Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/stats"
+                  }
+                },
+                {
+                  "name": "Get Chat Details",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/{{chatId}}"
+                  }
+                },
+                {
+                  "name": "Update Chat Settings",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/{{chatId}}/settings"
+                  }
+                },
+                {
+                  "name": "Delete Chat",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/{{chatId}}"
+                  }
+                },
+                {
+                  "name": "Join Chat",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/{{chatId}}/join"
+                  }
+                },
+                {
+                  "name": "Leave Chat",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/chats/{{chatId}}/leave"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Messages (Enhanced)",
+              "item": [
+                {
+                  "name": "Send Message",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"chatId\": \"\", \"type\": \"text\", \"content\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/user/messages"
+                  }
+                },
+                {
+                  "name": "Get Chat Messages",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/chat/{{chatId}}"
+                  }
+                },
+                {
+                  "name": "Mark Read",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/chat/{{chatId}}/read"
+                  }
+                },
+                {
+                  "name": "Get Chat Media",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/chat/{{chatId}}/media"
+                  }
+                },
+                {
+                  "name": "Search Messages",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/chat/{{chatId}}/search?q="
+                  }
+                },
+                {
+                  "name": "Mark One View",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}/view"
+                  }
+                },
+                {
+                  "name": "Get Message",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}"
+                  }
+                },
+                {
+                  "name": "Edit Message",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"content\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}"
+                  }
+                },
+                {
+                  "name": "Delete Message",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}"
+                  }
+                },
+                {
+                  "name": "Add Reaction",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"emoji\": \"👍\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}/reactions"
+                  }
+                },
+                {
+                  "name": "Remove Reaction",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}/reactions"
+                  }
+                },
+                {
+                  "name": "Forward Message",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"targetChatId\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/user/messages/{{messageId}}/forward"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Calls (Enhanced)",
+              "item": [
+                {
+                  "name": "Initiate Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"chatId\": \"\", \"type\": \"audio\"}"
+                    },
+                    "url": "{{baseUrl}}/api/v1/user/calls"
+                  }
+                },
+                {
+                  "name": "Get Call Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/stats"
+                  }
+                },
+                {
+                  "name": "Get Call Status",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/{{callId}}/status"
+                  }
+                },
+                {
+                  "name": "Accept Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/{{callId}}/accept"
+                  }
+                },
+                {
+                  "name": "Reject Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/{{callId}}/reject"
+                  }
+                },
+                {
+                  "name": "End Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/{{callId}}/end"
+                  }
+                },
+                {
+                  "name": "Update Call Settings",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/{{callId}}/settings"
+                  }
+                },
+                {
+                  "name": "Signaling",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/{{callId}}/signaling"
+                  }
+                },
+                {
+                  "name": "Get Call History",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/chat/{{chatId}}/history"
+                  }
+                },
+                {
+                  "name": "Get Active Call",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/chat/{{chatId}}/active"
+                  }
+                },
+                {
+                  "name": "Cleanup Calls",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/calls/chat/{{chatId}}/cleanup"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Search",
+              "item": [
+                {
+                  "name": "Search All",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/search?q="
+                  }
+                },
+                {
+                  "name": "Search People",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/search/people?q="
+                  }
+                },
+                {
+                  "name": "Search Posts",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/search/posts?q="
+                  }
+                },
+                {
+                  "name": "Search Hashtags",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/search/hashtags?q="
+                  }
+                },
+                {
+                  "name": "Search Location",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/api/v1/user/search/location?q="
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Dating",
+          "item": [
+            {
+              "name": "File Upload - Dating",
+              "item": [
+                {
+                  "name": "Upload Dating Photos",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/dating/photos"
+                  }
+                },
+                {
+                  "name": "Upload Dating Videos",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/dating/videos"
+                  }
+                },
+                {
+                  "name": "Update Dating Photo",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/dating/photos/{{photoIndex}}"
+                  }
+                },
+                {
+                  "name": "Update Dating Video",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/upload/dating/videos/{{videoIndex}}"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Dating Media",
+              "item": [
+                {
+                  "name": "Get Dating Profile",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profile"
+                  }
+                },
+                {
+                  "name": "Upload Dating Photos",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/photos"
+                  }
+                },
+                {
+                  "name": "Upload Dating Videos",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/videos"
+                  }
+                },
+                {
+                  "name": "Remove Dating Photo",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/photos/{{photoIndex}}"
+                  }
+                },
+                {
+                  "name": "Remove Dating Video",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/videos/{{videoIndex}}"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Dating Profile",
+              "item": [
+                {
+                  "name": "Get All Dating Profiles",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles"
+                  }
+                },
+                {
+                  "name": "Get Dating Preferences",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/preferences"
+                  }
+                },
+                {
+                  "name": "Update Dating Preferences",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/preferences"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Dating Interaction",
+              "item": [
+                {
+                  "name": "Like Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/like"
+                  }
+                },
+                {
+                  "name": "Dislike Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/dislike"
+                  }
+                },
+                {
+                  "name": "Get Profile Likes",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/likes"
+                  }
+                },
+                {
+                  "name": "Get Match Pictures",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/match-pictures"
+                  }
+                },
+                {
+                  "name": "Add Profile Comment",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/comments"
+                  }
+                },
+                {
+                  "name": "Get Profile Comments",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/comments"
+                  }
+                },
+                {
+                  "name": "Get Matches",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/matches"
+                  }
+                },
+                {
+                  "name": "Unmatch",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/matches/{{matchId}}"
+                  }
+                },
+                {
+                  "name": "Report Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/report"
+                  }
+                },
+                {
+                  "name": "Block Profile",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/block"
+                  }
+                },
+                {
+                  "name": "Unblock Profile",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/profiles/{{userId}}/block"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Dating Chats",
+              "item": [
+                {
+                  "name": "Create or Get Chat",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"matchId\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/dating/chats"
+                  }
+                },
+                {
+                  "name": "Get Chats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats"
+                  }
+                },
+                {
+                  "name": "Search Chats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/search?q="
+                  }
+                },
+                {
+                  "name": "Get Chat Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/stats"
+                  }
+                },
+                {
+                  "name": "Get Chat Details",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/{{chatId}}"
+                  }
+                },
+                {
+                  "name": "Update Chat Settings",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/{{chatId}}/settings"
+                  }
+                },
+                {
+                  "name": "Delete Chat",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/{{chatId}}"
+                  }
+                },
+                {
+                  "name": "Join Chat",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/{{chatId}}/join"
+                  }
+                },
+                {
+                  "name": "Leave Chat",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/chats/{{chatId}}/leave"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Dating Messages",
+              "item": [
+                {
+                  "name": "Get Conversations",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/conversations"
+                  }
+                },
+                {
+                  "name": "Send Message",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"matchId\": \"\", \"type\": \"text\", \"message\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/dating/messages"
+                  }
+                },
+                {
+                  "name": "Get Chat Messages",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/chat/{{chatId}}"
+                  }
+                },
+                {
+                  "name": "Mark Read",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/chat/{{chatId}}/read"
+                  }
+                },
+                {
+                  "name": "Get Chat Media",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/chat/{{chatId}}/media"
+                  }
+                },
+                {
+                  "name": "Search Messages",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/chat/{{chatId}}/search?q="
+                  }
+                },
+                {
+                  "name": "Mark One View",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}/view"
+                  }
+                },
+                {
+                  "name": "Get Message",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}"
+                  }
+                },
+                {
+                  "name": "Edit Message",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"content\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}"
+                  }
+                },
+                {
+                  "name": "Delete Message",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}"
+                  }
+                },
+                {
+                  "name": "Add Reaction",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"emoji\": \"👍\"}"
+                    },
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}/reactions"
+                  }
+                },
+                {
+                  "name": "Remove Reaction",
+                  "request": {
+                    "method": "DELETE",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}/reactions"
+                  }
+                },
+                {
+                  "name": "Forward Message",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"targetChatId\": \"\"}"
+                    },
+                    "url": "{{baseUrl}}/user/dating/messages/{{messageId}}/forward"
+                  }
+                },
+                {
+                  "name": "Get Messages by Match (Legacy)",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/messages/{{matchId}}"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Dating Calls",
+              "item": [
+                {
+                  "name": "Initiate Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "body": {
+                      "mode": "raw",
+                      "raw": "{\"chatId\": \"\", \"type\": \"audio\"}"
+                    },
+                    "url": "{{baseUrl}}/user/dating/calls"
+                  }
+                },
+                {
+                  "name": "Get Call Stats",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/stats"
+                  }
+                },
+                {
+                  "name": "Get Call Status",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/{{callId}}/status"
+                  }
+                },
+                {
+                  "name": "Accept Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/{{callId}}/accept"
+                  }
+                },
+                {
+                  "name": "Reject Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/{{callId}}/reject"
+                  }
+                },
+                {
+                  "name": "End Call",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/{{callId}}/end"
+                  }
+                },
+                {
+                  "name": "Update Call Settings",
+                  "request": {
+                    "method": "PUT",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/{{callId}}/settings"
+                  }
+                },
+                {
+                  "name": "Signaling",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      },
+                      {
+                        "key": "Content-Type",
+                        "value": "application/json"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/{{callId}}/signaling"
+                  }
+                },
+                {
+                  "name": "Get Call History",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/chat/{{chatId}}/history"
+                  }
+                },
+                {
+                  "name": "Get Active Call",
+                  "request": {
+                    "method": "GET",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/chat/{{chatId}}/active"
+                  }
+                },
+                {
+                  "name": "Cleanup Calls",
+                  "request": {
+                    "method": "POST",
+                    "header": [
+                      {
+                        "key": "Authorization",
+                        "value": "Bearer {{userToken}}"
+                      }
+                    ],
+                    "url": "{{baseUrl}}/user/dating/calls/chat/{{chatId}}/cleanup"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
