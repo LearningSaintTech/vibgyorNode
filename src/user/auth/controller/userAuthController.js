@@ -309,7 +309,7 @@ async function sendEmailOtp(req, res) {
 		// eslint-disable-next-line no-console
 		console.log('[USER][AUTH] sendEmailOtp');
 		const { email } = req.body || {};
-		if (!email) return ApiResponse.badRequest(res, 'email is required');
+		// if (!email) return ApiResponse.badRequest(res, 'email is required');
 		const user = await User.findById(req.user?.userId);
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 		const now = Date.now();
