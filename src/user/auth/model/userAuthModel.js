@@ -212,7 +212,8 @@ UserSchema.methods.isStepCompleted = function isStepCompleted(step) {
 	console.log("7777777777777777777777777777777", step);
 	switch (step) {
 		case 'basic_info':
-			return !!(this.fullName && this.username && this.email && this.dob && this.bio);
+			// Email / email OTP verification are optional; do not block profile steps on them
+			return !!(this.fullName && this.username && this.dob && this.bio);
 		case 'gender':
 			return !!(this.gender);
 		case 'pronouns':

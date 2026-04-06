@@ -308,8 +308,11 @@ async function sendEmailOtp(req, res) {
 	try {
 		// eslint-disable-next-line no-console
 		console.log('[USER][AUTH] sendEmailOtp');
-		const { email } = req.body || {};
-		// if (!email) return ApiResponse.badRequest(res, 'email is required');
+		const { email: rawEmail } = req.body || {};
+		const email = rawEmail != null ? String(rawEmail).trim() : '';
+		if (!email) {
+			return ApiResponse.badRequest(res, 'email is required');
+		}
 		const user = await User.findById(req.user?.userId);
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 		const now = Date.now();
