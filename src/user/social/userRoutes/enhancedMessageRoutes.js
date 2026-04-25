@@ -30,6 +30,7 @@ router.post('/',
         enum: ['text', 'audio', 'video', 'image', 'document', 'gif', 'location', 'voice', 'system', 'forwarded']
       },
       content: { type: 'string', optional: true, maxLength: 4096 },
+      clientMessageId: { type: 'string', optional: true, maxLength: 128 },
       replyTo: { type: 'string', optional: true, minLength: 24, maxLength: 24 },
       forwardedFrom: { type: 'string', optional: true, minLength: 24, maxLength: 24 },
       // One-view message fields

@@ -6,6 +6,109 @@ const User = require('../../auth/model/userAuthModel');
 const { decryptContent } = require('../../../utils/cryptoUtil');
 
 /**
+ * Normalize chat-list lastMessage for requesting user.
+ * - deletedForEveryone => shared placeholder
+ * - deletedForMe (deletedBy contains requester) => user-specific placeholder
+ * - otherwise decrypt content for preview
+ */
+const formatLastMessageForUser = (lastMessage, userIdStr) => {
+  if (!lastMessage) return lastMessage;
+
+  const deletedByList = Array.isArray(lastMessage.deletedBy) ? lastMessage.deletedBy : [];
+  const deletedForMe = deletedByList.some((d) => {
+    const deletedById = d?.userId?._id || d?.userId || d;
+    if (!deletedById || !userIdStr) return false;
+    return String(deletedById) === String(userIdStr);
+  });
+
+  if (lastMessage.deletedForEveryone) {
+    return {
+      ...lastMessage,
+      content: 'This message was deleted',
+      type: 'deleted',
+      isDeleted: true,
+      deletedForEveryone: true,
+      media: null,
+      location: null,
+      musicMetadata: null
+    };
+  }
+
+  if (deletedForMe) {
+    return {
+      ...lastMessage,
+      content: 'Deleted for me',
+      type: 'deleted',
+      isDeleted: true,
+      deletedForEveryone: false,
+      media: null,
+      location: null,
+      musicMetadata: null
+    };
+  }
+
+  if (typeof lastMessage.content === 'string') {
+    return {
+      ...lastMessage,
+      content: decryptContent(lastMessage.content)
+    };
+  }
+
+  return lastMessage;
+};
+
+const findUserSettingByUserId = (userSettings, userId) => {
+  if (!Array.isArray(userSettings) || !userId) return null;
+  const userIdStr = String(userId);
+  return (
+    userSettings.find((setting) => {
+      const raw = setting?.userId;
+      const normalized = raw?._id || raw;
+      return normalized != null && String(normalized) === userIdStr;
+    }) || null
+  );
+};
+
+const collectCandidateIds = (value) => {
+  const out = new Set();
+  if (value == null) return out;
+  if (typeof value === 'string' || typeof value === 'number') {
+    out.add(String(value));
+    return out;
+  }
+  if (typeof value === 'object') {
+    // Non-recursive extraction to avoid circular mongoose object graphs.
+    const directCandidates = [value, value._id, value.id, value.userId, value.$oid];
+    directCandidates.forEach((candidate) => {
+      if (candidate == null) return;
+      if (typeof candidate === 'string' || typeof candidate === 'number') {
+        out.add(String(candidate));
+        return;
+      }
+      if (typeof candidate === 'object' && candidate !== value) {
+        ['_id', 'id', '$oid'].forEach((k) => {
+          const nested = candidate[k];
+          if (nested != null && (typeof nested === 'string' || typeof nested === 'number')) {
+            out.add(String(nested));
+          }
+        });
+      }
+      if (typeof candidate.toString === 'function') {
+        const s = String(candidate.toString());
+        if (s && s !== '[object Object]') out.add(s);
+      }
+    });
+  }
+  return out;
+};
+
+const settingMatchesUserId = (setting, userId) => {
+  if (!setting || !userId) return false;
+  const target = String(userId);
+  return collectCandidateIds(setting.userId).has(target);
+};
+
+/**
  * Dating Chat Service - Separate from social chats
  */
 class DatingChatService {
@@ -38,7 +141,7 @@ class DatingChatService {
    * @param {number} limit - Items per page
    * @returns {Promise<Array>} Array of chats
    */
-  static async getUserDatingChats(userId, page = 1, limit = 20) {
+  static async getUserDatingChats(userId, page = 1, limit = 20, includeArchived = false) {
     try {
       if (!userId) {
         throw new Error('User ID is required');
@@ -48,7 +151,7 @@ class DatingChatService {
         throw new Error('Invalid pagination parameters');
       }
       
-      const chats = await DatingChat.getUserDatingChats(userId, page, limit);
+      const chats = await DatingChat.getUserDatingChats(userId, page, limit, includeArchived);
       
       // Batch unread count queries to avoid N+1 problem
       const chatIds = chats.map(chat => chat._id);
@@ -106,10 +209,7 @@ class DatingChatService {
       const userIdStr = userId.toString();
       // Enhance chats with additional data
       const enhancedChats = chats.map((chat) => {
-        const userSettings = chat.userSettings?.find(setting => {
-          const settingUserId = setting.userId?.toString() || String(setting.userId);
-          return settingUserId === userIdStr;
-        });
+        const userSettings = findUserSettingByUserId(chat.userSettings, userIdStr);
         
         // Get other participant info using Set for better performance (though array is small)
         const otherParticipant = chat.participants.find(p => {
@@ -120,15 +220,11 @@ class DatingChatService {
         // Get unread count from Map
         const unreadCount = unreadCountMap.get(chat._id.toString()) || 0;
 
-        // Decrypt lastMessage.content for list preview (stored encrypted at rest)
-        const lastMessage = chat.lastMessage;
-        const decryptedLastMessage = lastMessage && typeof lastMessage.content === 'string'
-          ? { ...lastMessage, content: decryptContent(lastMessage.content) }
-          : lastMessage;
+        const normalizedLastMessage = formatLastMessageForUser(chat.lastMessage, userIdStr);
         
         return {
           ...chat,
-          lastMessage: decryptedLastMessage,
+          lastMessage: normalizedLastMessage,
           unreadCount: unreadCount,
           userSettings: userSettings || {
             isArchived: false,
@@ -193,10 +289,7 @@ class DatingChatService {
       const unreadCount = await DatingMessage.getUnreadCount(chatId, userId);
       
       // Get user settings (userIdStr already declared above)
-      const userSettings = chat.userSettings?.find(setting => {
-        const settingUserId = setting.userId?.toString() || String(setting.userId);
-        return settingUserId === userIdStr;
-      });
+      const userSettings = findUserSettingByUserId(chat.userSettings, userIdStr);
       
       // Get other participant
       const otherParticipant = chat.participants.find(p => {
@@ -204,8 +297,11 @@ class DatingChatService {
         return pId && pId !== userIdStr;
       });
       
+      const normalizedLastMessage = formatLastMessageForUser(chat.lastMessage, userIdStr);
+
       return {
         ...chat,
+        lastMessage: normalizedLastMessage,
         unreadCount,
         userSettings: userSettings || {
           isArchived: false,
@@ -238,48 +334,120 @@ class DatingChatService {
       const { isArchived, isPinned, isMuted } = settings;
       
       const chat = await DatingChat.findById(chatId)
-        .select('participants')
-        .lean();
+        .select('participants userSettings');
       if (!chat) {
         throw new Error('Dating chat not found');
       }
       
       // Check if user is participant using Set for O(1) lookup
-      const userIdStr = userId.toString();
-      const participantSet = new Set(chat.participants.map(p => p.toString()));
+      const userIdStr = String(userId);
+      const participantSet = new Set((chat.participants || []).map((p) => String(p)));
       if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
       
-      // Prepare updates with timestamps
+      // Prepare updates with timestamps — use arrayFilters (more reliable than positional $ with query userId
+      // when subdocument id types or ordering differ).
       const updates = {};
-      const updateObj = {};
+      const $set = {};
       if (typeof isArchived === 'boolean') {
         updates.isArchived = isArchived;
-        updateObj['userSettings.$.isArchived'] = isArchived;
-        updateObj['userSettings.$.archivedAt'] = isArchived ? new Date() : null;
+        $set['userSettings.$[us].isArchived'] = isArchived;
+        $set['userSettings.$[us].archivedAt'] = isArchived ? new Date() : null;
       }
       if (typeof isPinned === 'boolean') {
         updates.isPinned = isPinned;
-        updateObj['userSettings.$.isPinned'] = isPinned;
-        updateObj['userSettings.$.pinnedAt'] = isPinned ? new Date() : null;
+        $set['userSettings.$[us].isPinned'] = isPinned;
+        $set['userSettings.$[us].pinnedAt'] = isPinned ? new Date() : null;
       }
       if (typeof isMuted === 'boolean') {
         updates.isMuted = isMuted;
-        updateObj['userSettings.$.isMuted'] = isMuted;
-        updateObj['userSettings.$.mutedAt'] = isMuted ? new Date() : null;
+        $set['userSettings.$[us].isMuted'] = isMuted;
+        $set['userSettings.$[us].mutedAt'] = isMuted ? new Date() : null;
       }
-      
-      // Update user settings atomically
-      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
-      await DatingChat.updateOne(
-        { _id: chatId, 'userSettings.userId': userIdObj },
-        { $set: updateObj }
-      );
+
+      if (Object.keys($set).length === 0) {
+        throw new Error('No valid settings to update');
+      }
+
+      let targetSetting = (chat.userSettings || []).find((setting) => settingMatchesUserId(setting, userIdStr));
+      if (!targetSetting) {
+        const userIdObj = mongoose.Types.ObjectId.isValid(userIdStr)
+          ? new mongoose.Types.ObjectId(userIdStr)
+          : userIdStr;
+        chat.userSettings = chat.userSettings || [];
+        chat.userSettings.push({
+          userId: userIdObj,
+          isArchived: false,
+          isPinned: false,
+          isMuted: false,
+          unreadCount: 0,
+          lastReadAt: null,
+          archivedAt: null,
+          pinnedAt: null,
+          mutedAt: null,
+          deletedAt: null,
+        });
+        targetSetting = chat.userSettings[chat.userSettings.length - 1];
+      }
+
+      if (typeof isArchived === 'boolean') {
+        targetSetting.isArchived = isArchived;
+        targetSetting.archivedAt = isArchived ? new Date() : null;
+      }
+      if (typeof isPinned === 'boolean') {
+        targetSetting.isPinned = isPinned;
+        targetSetting.pinnedAt = isPinned ? new Date() : null;
+      }
+      if (typeof isMuted === 'boolean') {
+        targetSetting.isMuted = isMuted;
+        targetSetting.mutedAt = isMuted ? new Date() : null;
+      }
+
+      await chat.save();
+
+      const updatedChat = await DatingChat.findById(chatId)
+        .select('_id userSettings')
+        .lean();
+      const persistedUserSettings = findUserSettingByUserId(updatedChat?.userSettings, userIdStr);
+
+      console.log('[DATING_CHAT_ARCHIVE_SERVICE] updateChatSettings persisted check', {
+        chatId: chatId != null ? String(chatId) : chatId,
+        userId: userId != null ? String(userId) : userId,
+        requestedSettings: updates,
+        matchedCount: 1,
+        modifiedCount: 1,
+        persistedUserSettings: persistedUserSettings
+          ? {
+              isArchived: persistedUserSettings.isArchived,
+              archivedAt: persistedUserSettings.archivedAt,
+              isPinned: persistedUserSettings.isPinned,
+              pinnedAt: persistedUserSettings.pinnedAt,
+              isMuted: persistedUserSettings.isMuted,
+              mutedAt: persistedUserSettings.mutedAt,
+              deletedAt: persistedUserSettings.deletedAt,
+            }
+          : null,
+      });
       
       return {
         chatId: chatId,
-        settings: updates
+        settings: updates,
+        writeResult: {
+          matchedCount: 1,
+          modifiedCount: 1
+        },
+        persistedUserSettings: persistedUserSettings
+          ? {
+              isArchived: persistedUserSettings.isArchived,
+              archivedAt: persistedUserSettings.archivedAt,
+              isPinned: persistedUserSettings.isPinned,
+              pinnedAt: persistedUserSettings.pinnedAt,
+              isMuted: persistedUserSettings.isMuted,
+              mutedAt: persistedUserSettings.mutedAt,
+              deletedAt: persistedUserSettings.deletedAt
+            }
+          : null
       };
     } catch (error) {
       console.error('[DatingChatService] updateChatSettings error:', error);
@@ -334,8 +502,9 @@ class DatingChatService {
       // This hides the chat from user's list, but keeps it in database
       // When other user sends message, chat will reappear but only show new messages
       const deletionTimestamp = new Date();
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
       const updateResult = await DatingChat.updateOne(
-        { _id: chatId, 'userSettings.userId': userId },
+        { _id: chatId, 'userSettings.userId': userIdObj },
         {
           $set: {
             'userSettings.$.isArchived': true,
@@ -353,7 +522,7 @@ class DatingChatService {
       
       return {
         chatId: chatId,
-        message: 'Dating chat deleted successfully',
+        message: 'Chat deleted successfully',
         deletedAt: deletionTimestamp
       };
       
@@ -397,10 +566,7 @@ class DatingChatService {
       // Filter chats where other participant matches search AND not archived
       const filteredChats = chats.filter(chat => {
         // Filter out archived chats for this user
-        const userSetting = chat.userSettings?.find(setting => {
-          const settingUserId = setting.userId?.toString() || setting.userId;
-          return settingUserId === userId.toString();
-        });
+        const userSetting = findUserSettingByUserId(chat.userSettings, userId);
         
         if (userSetting?.isArchived) {
           return false;
@@ -485,10 +651,7 @@ class DatingChatService {
       const userIdStr = userId.toString();
       // Enhance chats with additional data
       const enhancedChats = paginatedChats.map((chat) => {
-        const userSettings = chat.userSettings?.find(setting => {
-          const settingUserId = setting.userId?.toString() || setting.userId;
-          return settingUserId === userIdStr;
-        });
+        const userSettings = findUserSettingByUserId(chat.userSettings, userIdStr);
         
         // Get other participant info
         const otherParticipant = chat.participants?.find(p => {
@@ -499,8 +662,11 @@ class DatingChatService {
         // Get unread count from Map
         const unreadCount = unreadCountMap.get(chat._id.toString()) || 0;
           
+        const normalizedLastMessage = formatLastMessageForUser(chat.lastMessage, userIdStr);
+
         return {
           ...chat,
+          lastMessage: normalizedLastMessage,
           unreadCount: unreadCount,
           userSettings: userSettings || {
             isArchived: false,
@@ -649,11 +815,11 @@ class DatingChatService {
         throw new Error('Access denied to this dating chat');
       }
       
-      // Mark messages as read and reset unread count atomically
-      await Promise.all([
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+      const [readCount] = await Promise.all([
         DatingMessage.markChatAsRead(chatId, userId),
         DatingChat.updateOne(
-          { _id: chatId, 'userSettings.userId': userId },
+          { _id: chatId, 'userSettings.userId': userIdObj },
           {
             $set: {
               'userSettings.$.unreadCount': 0,
@@ -667,6 +833,7 @@ class DatingChatService {
         chatId,
         userId,
         joined: true,
+        readCount,
         unreadCount: 0
       };
       

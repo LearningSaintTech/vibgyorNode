@@ -1,4 +1,7 @@
 const mongoose = require('mongoose');
+
+const MESSAGE_VIDEO_MAX_MB = Math.max(1, parseInt(process.env.MESSAGE_VIDEO_MAX_MB || '120', 10));
+const MESSAGE_MEDIA_MAX_BYTES = MESSAGE_VIDEO_MAX_MB * 1024 * 1024;
 const { Schema } = mongoose;
 
 // Enhanced Message Schema with comprehensive validation
@@ -53,7 +56,7 @@ const messageSchema = new Schema({
     fileSize: {
       type: Number,
       min: 0,
-      max: 50 * 1024 * 1024 // 50MB max file size
+      max: MESSAGE_MEDIA_MAX_BYTES // configurable media max (default 120MB)
     },
     duration: {
       type: Number,
@@ -236,6 +239,12 @@ const messageSchema = new Schema({
     genre: String
   },
 
+  // Client-generated idempotency key (optional; REST + socket retries)
+  clientMessageId: {
+    type: String,
+    maxlength: 128
+  },
+
   // Message metadata
   createdAt: {
     type: Date,
@@ -263,6 +272,15 @@ messageSchema.index({ type: 1, createdAt: -1 });
 messageSchema.index({ isDeleted: 1, deletedBy: 1 });
 messageSchema.index({ 'readBy.userId': 1 });
 messageSchema.index({ content: 'text' }); // Text index for search
+messageSchema.index(
+  { chatId: 1, senderId: 1, clientMessageId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientMessageId: { $exists: true, $type: 'string' }
+    }
+  }
+);
 
 // Pre-save middleware
 messageSchema.pre('save', function(next) {
@@ -349,9 +367,13 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 		{
 			$match: userIdObj ? {
 				$or: [
-					{ isDeleted: false },
+					// Keep global placeholder when deleted for everyone.
 					{ deletedForEveryone: true },
-					{ userDeletedForMe: false }
+					// Keep non-globally-deleted messages in list; per-user delete-for-me
+					// is rendered as a user-specific placeholder in the transform stage.
+					{
+						isDeleted: false
+					}
 				]
 			} : {
 				$or: [
@@ -509,7 +531,7 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 
 	// Transform deleted messages to show placeholder
 	const transformedMessages = messages.map(msg => {
-		// If message is deleted for everyone, show placeholder
+		// If message is deleted for everyone, show shared placeholder.
 		if (msg.isDeleted && msg.deletedForEveryone) {
 			return {
 				...msg,
@@ -518,6 +540,19 @@ messageSchema.statics.getChatMessages = async function(chatId, page = 1, limit =
 				media: null, // Remove media for deleted messages
 				location: null, // Remove location for deleted messages
 				musicMetadata: null // Remove music metadata for deleted messages
+			};
+		}
+		// If current user deleted this message "for me", keep row but redact content.
+		if (msg.userDeletedForMe === true) {
+			return {
+				...msg,
+				content: 'Deleted for me',
+				type: 'deleted',
+				isDeleted: true,
+				deletedForEveryone: false,
+				media: null,
+				location: null,
+				musicMetadata: null
 			};
 		}
 		return msg;
@@ -718,31 +753,37 @@ messageSchema.methods.editMessage = async function(newContent) {
       throw new Error('Message is too old to edit');
     }
     
+    if (!Array.isArray(this.editHistory)) {
+      this.editHistory = [];
+    }
+    
     // Store edit history and update content atomically
     if (this.content !== newContent) {
+      const previousContent = this.content;
+      const editedAt = new Date();
       await this.constructor.updateOne(
         { _id: this._id },
         {
           $push: {
             editHistory: {
-              content: this.content,
-              editedAt: new Date()
+              content: previousContent,
+              editedAt
             }
           },
           $set: {
             content: newContent,
-            editedAt: new Date()
+            editedAt
           }
         }
       );
       
       // Update local instance
       this.editHistory.push({
-        content: this.content,
-        editedAt: new Date()
+        content: previousContent,
+        editedAt
       });
       this.content = newContent;
-      this.editedAt = new Date();
+      this.editedAt = editedAt;
     }
     
     return this;

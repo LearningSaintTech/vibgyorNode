@@ -271,7 +271,46 @@ datingChatSchema.statics.getUserDatingChats = async function(userId, page = 1, l
     // Use aggregation pipeline to filter archived chats in MongoDB instead of JavaScript
     // This is much more efficient and uses indexes
     const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
-    
+    const userIdStr = userId != null ? String(userId) : '';
+    const archiveFilterStage = includeArchived
+      ? {
+          $expr: {
+            $gt: [
+              {
+                $size: {
+                  $filter: {
+                    input: '$currentUserSettings',
+                    as: 'us',
+                    cond: {
+                      $and: [
+                        { $eq: ['$$us.isArchived', true] },
+                        { $eq: [{ $ifNull: ['$$us.deletedAt', null] }, null] }
+                      ]
+                    }
+                  }
+                }
+              },
+              0
+            ]
+          }
+        }
+      : {
+          $expr: {
+            $eq: [
+              {
+                $size: {
+                  $filter: {
+                    input: '$currentUserSettings',
+                    as: 'us',
+                    cond: { $eq: ['$$us.isArchived', true] }
+                  }
+                }
+              },
+              0
+            ]
+          }
+        };
+
     const pipeline = [
       {
         $match: {
@@ -281,36 +320,22 @@ datingChatSchema.statics.getUserDatingChats = async function(userId, page = 1, l
       },
       {
         $addFields: {
-          userSetting: {
-            $arrayElemAt: [
-              {
-                $filter: {
-                  input: '$userSettings',
-                  as: 'setting',
-                  cond: {
-                    $or: [
-                      { $eq: ['$$setting.userId', userIdObj] },
-                      { $eq: [{ $toString: '$$setting.userId' }, userIdObj.toString()] }
-                    ]
-                  }
-                }
-              },
-              0
-            ]
+          currentUserSettings: {
+            $filter: {
+              input: { $ifNull: ['$userSettings', []] },
+              as: 'us',
+              cond: {
+                $eq: [
+                  { $toString: { $ifNull: ['$$us.userId._id', '$$us.userId'] } },
+                  userIdStr
+                ]
+              }
+            }
           }
         }
       },
       {
-        $match: {
-          $expr: includeArchived
-            ? { $eq: ['$userSetting.isArchived', true] }
-            : {
-              $or: [
-                { $ne: ['$userSetting.isArchived', true] },
-                { $eq: ['$userSetting', null] }
-              ]
-            }
-        }
+        $match: archiveFilterStage
       },
       {
         $sort: { lastMessageAt: -1, updatedAt: -1 }
@@ -387,6 +412,11 @@ datingChatSchema.statics.getUserDatingChats = async function(userId, page = 1, l
       {
         $addFields: {
           lastMessage: { $arrayElemAt: ['$lastMessage', 0] }
+        }
+      },
+      {
+        $project: {
+          currentUserSettings: 0
         }
       }
     ];

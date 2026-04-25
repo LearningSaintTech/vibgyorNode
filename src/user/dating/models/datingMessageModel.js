@@ -1,4 +1,7 @@
 const mongoose = require('mongoose');
+
+const MESSAGE_VIDEO_MAX_MB = Math.max(1, parseInt(process.env.MESSAGE_VIDEO_MAX_MB || '120', 10));
+const MESSAGE_MEDIA_MAX_BYTES = MESSAGE_VIDEO_MAX_MB * 1024 * 1024;
 const { Schema } = mongoose;
 
 /**
@@ -57,7 +60,7 @@ const datingMessageSchema = new Schema({
     fileSize: {
       type: Number,
       min: 0,
-      max: 50 * 1024 * 1024 // 50MB max file size
+      max: MESSAGE_MEDIA_MAX_BYTES // configurable media max (default 120MB)
     },
     duration: {
       type: Number,
@@ -236,6 +239,12 @@ const datingMessageSchema = new Schema({
     duration: Number, // in seconds
     genre: String
   },
+
+  // Client-generated idempotency key (optional)
+  clientMessageId: {
+    type: String,
+    maxlength: 128
+  },
   
   // Message metadata
   createdAt: {
@@ -265,6 +274,15 @@ datingMessageSchema.index({ type: 1, createdAt: -1 });
 datingMessageSchema.index({ isDeleted: 1, deletedBy: 1 });
 datingMessageSchema.index({ 'readBy.userId': 1 });
 datingMessageSchema.index({ content: 'text' }); // Text index for search
+datingMessageSchema.index(
+  { chatId: 1, senderId: 1, clientMessageId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      clientMessageId: { $exists: true, $type: 'string' }
+    }
+  }
+);
 
 // Pre-save middleware
 datingMessageSchema.pre('save', function(next) {
@@ -351,9 +369,11 @@ datingMessageSchema.statics.getChatMessages = async function(chatId, page = 1, l
       {
         $match: userIdObj ? {
           $or: [
-            { isDeleted: false },
+            // Keep global placeholder when deleted for everyone.
             { deletedForEveryone: true },
-            { userDeletedForMe: false }
+            // Keep non-globally-deleted messages in list; per-user delete-for-me
+            // is rendered as a user-specific placeholder in the transform stage.
+            { isDeleted: false }
           ]
         } : {
           $or: [
@@ -511,15 +531,28 @@ datingMessageSchema.statics.getChatMessages = async function(chatId, page = 1, l
 
     // Transform deleted messages to show placeholder
     const transformedMessages = messages.map(msg => {
-      // If message is deleted for everyone, show placeholder
+      // If message is deleted for everyone, show shared placeholder.
       if (msg.isDeleted && msg.deletedForEveryone) {
         return {
           ...msg,
           content: 'This message was deleted',
           type: 'deleted',
-          media: null, // Remove media for deleted messages
-          location: null, // Remove location for deleted messages
-          musicMetadata: null // Remove music metadata for deleted messages
+          media: null,
+          location: null,
+          musicMetadata: null
+        };
+      }
+      // If current user deleted this message "for me", keep row but redact content.
+      if (msg.userDeletedForMe === true) {
+        return {
+          ...msg,
+          content: 'Deleted for me',
+          type: 'deleted',
+          isDeleted: true,
+          deletedForEveryone: false,
+          media: null,
+          location: null,
+          musicMetadata: null
         };
       }
       return msg;
@@ -768,23 +801,9 @@ datingMessageSchema.methods.deleteForUser = async function(userId, deleteForEver
     
     // Check if already deleted by this user - use Set for O(1) lookup
     const deletedByUserIdsSet = new Set(this.deletedBy.map(d => d.userId.toString()));
-    const alreadyDeletedByUser = deletedByUserIdsSet.has(userIdStr);
-    const existingDeletion = alreadyDeletedByUser 
-      ? this.deletedBy.find(deletion => deletion.userId.toString() === userIdStr)
-      : null;
+    const alreadyDeleted = deletedByUserIdsSet.has(userIdStr);
     
-    // If already deleted for everyone, just return (idempotent)
-    if (deleteForEveryone && this.deletedForEveryone && existingDeletion) {
-      return this;
-    }
-    
-    // If already deleted "for me" and trying to delete "for me" again, return (idempotent)
-    if (!deleteForEveryone && existingDeletion && !existingDeletion.deletedForEveryone) {
-      return this;
-    }
-    
-    // If already deleted by this user with same type, throw error
-    if (existingDeletion && existingDeletion.deletedForEveryone === deleteForEveryone) {
+    if (alreadyDeleted) {
       throw new Error('Message already deleted by this user');
     }
     

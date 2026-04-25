@@ -11,6 +11,12 @@ const { encrypt, decryptContent } = require('../../../utils/cryptoUtil');
 function decryptMessage(msg) {
   if (!msg) return msg;
   if (msg.content != null && msg.content !== '') msg.content = decryptContent(msg.content);
+  if (msg.replyTo && typeof msg.replyTo === 'object' && msg.replyTo.content != null && msg.replyTo.content !== '') {
+    msg.replyTo.content = decryptContent(msg.replyTo.content);
+  }
+  if (msg.forwardedFrom && typeof msg.forwardedFrom === 'object' && msg.forwardedFrom.content != null && msg.forwardedFrom.content !== '') {
+    msg.forwardedFrom.content = decryptContent(msg.forwardedFrom.content);
+  }
   return msg;
 }
 
@@ -20,10 +26,51 @@ function decryptMessages(list) {
   return list;
 }
 
+/** Normalize viewedBy.userId for comparisons (ObjectId, string, or populated { _id }). */
+function viewedByUserIdToString(entry) {
+  if (!entry || entry.userId == null) return '';
+  const u = entry.userId;
+  if (typeof u === 'object' && u._id != null) {
+    return String(u._id);
+  }
+  if (typeof u === 'object' && typeof u.toString === 'function') {
+    return String(u.toString());
+  }
+  return String(u);
+}
+
 /**
  * Enhanced Message Service with comprehensive error handling and edge cases
  */
 class MessageService {
+  static getVideoMaxBytes() {
+    const maxMb = Math.max(1, parseInt(process.env.MESSAGE_VIDEO_MAX_MB || '120', 10));
+    return maxMb * 1024 * 1024;
+  }
+
+  /**
+   * @param {import('mongoose').Document} message - populated Message document
+   * @param {{ isIdempotentReplay?: boolean }} [options]
+   */
+  static _formatSendResponse(message, options = {}) {
+    const out = decryptMessage({
+      _id: message._id,
+      messageId: message._id,
+      chatId: message.chatId,
+      senderId: message.senderId,
+      type: message.type,
+      content: message.content,
+      media: message.media,
+      replyTo: message.replyTo,
+      forwardedFrom: message.forwardedFrom,
+      createdAt: message.createdAt,
+      status: message.status
+    });
+    if (options.isIdempotentReplay) {
+      out.isIdempotentReplay = true;
+    }
+    return out;
+  }
   
   /**
    * Send a message to a chat
@@ -87,6 +134,21 @@ class MessageService {
         throw new Error('Access denied to this chat');
       }
       console.log('✅ [BACKEND_MSG_SVC] User is participant');
+
+      const rawClientId = messageData.clientMessageId != null ? String(messageData.clientMessageId).trim() : '';
+      const clientMessageId = rawClientId.length > 0 && rawClientId.length <= 128 ? rawClientId : null;
+      if (clientMessageId) {
+        const existing = await Message.findOne({ chatId, senderId, clientMessageId })
+          .populate([
+            { path: 'senderId', select: 'username fullName profilePictureUrl' },
+            { path: 'replyTo', select: 'content type senderId' },
+            { path: 'forwardedFrom', select: 'content type senderId' }
+          ]);
+        if (existing) {
+          console.log('✅ [BACKEND_MSG_SVC] Idempotent hit (clientMessageId):', clientMessageId);
+          return MessageService._formatSendResponse(existing, { isIdempotentReplay: true });
+        }
+      }
       
       // Handle media upload if file is present
       let mediaData = {};
@@ -110,7 +172,7 @@ class MessageService {
         const maxSizes = {
           audio: 50 * 1024 * 1024, // 50MB for music
           voice: 10 * 1024 * 1024, // 10MB for voice messages
-          video: 50 * 1024 * 1024, // 50MB for videos
+          video: MessageService.getVideoMaxBytes(), // configurable video max (default 120MB)
           image: 10 * 1024 * 1024, // 10MB for images
           gif: 10 * 1024 * 1024, // 10MB for GIFs
           document: 25 * 1024 * 1024 // 25MB for documents
@@ -183,6 +245,18 @@ class MessageService {
           fileName: file.originalname,
           fileSize: file.size
         };
+
+        if (type === 'image') {
+          const u = mediaData.url;
+          console.log('[IMG_MSG_FLOW] service.after_s3_upload', {
+            type,
+            chatId: String(chatId),
+            urlPrefix: typeof u === 'string' ? u.slice(0, 100) : u,
+            urlLen: typeof u === 'string' ? u.length : 0,
+            mimeType: mediaData.mimeType,
+            fileSize: mediaData.fileSize,
+          });
+        }
         
         // Add duration for video, audio, and voice messages (required by schema)
         if (['video', 'audio', 'voice'].includes(type)) {
@@ -301,7 +375,8 @@ class MessageService {
         oneViewExpiresAt: oneViewExpiresAt,
         replyTo: replyTo || null,
         forwardedFrom: forwardedFrom || null,
-        status: 'sent'
+        status: 'sent',
+        ...(clientMessageId ? { clientMessageId } : {})
       });
       
       // Debug: Log message before saving (especially for voice messages)
@@ -316,7 +391,31 @@ class MessageService {
         });
       }
       
-      await message.save();
+      try {
+        await message.save();
+        if (type === 'image' && message.media?.url) {
+          const u = message.media.url;
+          console.log('[IMG_MSG_FLOW] service.after_db_save', {
+            messageId: String(message._id),
+            mediaUrlPrefix: typeof u === 'string' ? u.slice(0, 100) : u,
+            mediaUrlLen: typeof u === 'string' ? u.length : 0,
+          });
+        }
+      } catch (saveErr) {
+        if (saveErr && saveErr.code === 11000 && clientMessageId) {
+          const existing = await Message.findOne({ chatId, senderId, clientMessageId })
+            .populate([
+              { path: 'senderId', select: 'username fullName profilePictureUrl' },
+              { path: 'replyTo', select: 'content type senderId' },
+              { path: 'forwardedFrom', select: 'content type senderId' }
+            ]);
+          if (existing) {
+            console.log('✅ [BACKEND_MSG_SVC] Idempotent after duplicate key (clientMessageId):', clientMessageId);
+            return MessageService._formatSendResponse(existing, { isIdempotentReplay: true });
+          }
+        }
+        throw saveErr;
+      }
       
       // Debug: Log message after saving (especially for voice messages)
       if (type === 'voice') {
@@ -406,10 +505,39 @@ class MessageService {
             })
           )
       );
+
+      // Deterministic delivered semantics:
+      // If any recipient currently has an active socket connection, mark this message delivered now.
+      const recipientIds = chat.participants
+        .map((p) => p.toString())
+        .filter((pId) => pId !== senderIdStr);
+      const realtime = enhancedRealtimeService;
+      const hasOnlineRecipient =
+        !!(realtime && realtime.connectedUsers) &&
+        recipientIds.some((recipientId) => {
+          const sockets = realtime.connectedUsers.get(recipientId);
+          return !!(sockets && sockets.size > 0);
+        });
+      if (hasOnlineRecipient && message.status === 'sent') {
+        await Message.updateOne(
+          { _id: message._id, status: 'sent' },
+          { $set: { status: 'delivered' } }
+        );
+        message.status = 'delivered';
+      }
       
       // Emit real-time message to chat participants
-      const realtime = enhancedRealtimeService;
       if (realtime && realtime.emitNewMessage) {
+        if (message.type === 'image' && message.media?.url) {
+          const u = message.media.url;
+          console.log('[IMG_MSG_FLOW] service.before_socket_emit', {
+            messageId: String(message._id),
+            chatId: String(chatId),
+            mediaUrlPrefix: typeof u === 'string' ? u.slice(0, 100) : u,
+            mediaUrlLen: typeof u === 'string' ? u.length : 0,
+            dimensions: message.media.dimensions || null,
+          });
+        }
         realtime.emitNewMessage(chatId, {
           _id: message._id,
           chatId: message.chatId,
@@ -435,22 +563,17 @@ class MessageService {
             fullName: message.senderId.fullName,
             profilePictureUrl: message.senderId.profilePictureUrl
           }
-        });
-        
-        // Emit delivered status update to sender after a short delay
-        // This simulates message delivery when receiver receives it
-        setTimeout(() => {
-          if (realtime.io) {
-            const senderRoom = `user:${senderId}`;
-            realtime.io.to(senderRoom).emit('message_status_update', {
-              messageId: message._id,
-              chatId: chatId,
-              status: 'delivered',
-              timestamp: new Date()
-            });
-            console.log('✅ [MESSAGE_SERVICE] Delivered status update emitted for message:', message._id);
-          }
-        }, 500);
+        }, { recipientIds });
+        if (hasOnlineRecipient && realtime.io) {
+          const senderRoom = `user:${senderId}`;
+          realtime.io.to(senderRoom).emit('message_status_update', {
+            messageId: message._id,
+            chatId: chatId,
+            status: 'delivered',
+            timestamp: new Date()
+          });
+          console.log('✅ [MESSAGE_SERVICE] Delivered status emitted (online recipient):', message._id);
+        }
       }
       
       const responseMessage = decryptMessage({
@@ -621,20 +744,16 @@ class MessageService {
         )
       ]);
 
-      // Emit realtime read status so senders see "read" when API is used (e.g. from notification)
+      // Emit realtime read status (batched) so senders see "read" when API is used
       const realtime = enhancedRealtimeService;
       if (realtime && realtime.io && messagesToMark.length > 0) {
         const room = `chat:${chatId}`;
         const timestamp = new Date();
-        messagesToMark.forEach((msg) => {
-          realtime.io.to(room).emit('message_status_update', {
-            messageId: msg._id,
-            chatId: chatId,
-            status: 'read',
-            timestamp
-          });
-        });
-        console.log('✅ [MESSAGE_SERVICE] Read status emitted for', messagesToMark.length, 'messages (API mark-read)');
+        const messageIds = messagesToMark.map((msg) => msg._id);
+        const readBatch = { chatId, status: 'read', timestamp, messageIds };
+        if (messageIds.length === 1) readBatch.messageId = messageIds[0];
+        realtime.io.to(room).emit('message_status_update', readBatch);
+        console.log('✅ [MESSAGE_SERVICE] Batched read status emitted for', messagesToMark.length, 'messages (API mark-read)');
       }
 
       return {
@@ -658,6 +777,11 @@ class MessageService {
    */
   static async editMessage(messageId, userId, newContent) {
     try {
+      console.log('[MessageService] editMessage start', {
+        messageId: messageId != null ? String(messageId) : messageId,
+        userId: userId != null ? String(userId) : userId,
+        newContentLen: typeof newContent === 'string' ? newContent.length : 0,
+      });
       // Input validation
       if (!messageId || !userId || !newContent || newContent.trim() === '') {
         throw new Error('Message ID, User ID, and content are required');
@@ -672,7 +796,12 @@ class MessageService {
       
       // Check if user is the sender
       const userIdStr = userId.toString();
-      if (message.senderId.toString() !== userIdStr) {
+      const rawSender = message.senderId;
+      const senderStr =
+        rawSender && typeof rawSender === 'object' && rawSender._id != null
+          ? String(rawSender._id)
+          : String(rawSender);
+      if (senderStr !== userIdStr) {
         throw new Error('You can only edit your own messages');
       }
       
@@ -689,34 +818,51 @@ class MessageService {
       
       // Fetch full message document for editing (need mongoose document for instance method)
       const messageDoc = await Message.findById(messageId);
+      if (!messageDoc) {
+        throw new Error('Message not found');
+      }
       console.log('[MESSAGE_SERVICE] Edit message before encryption:', newContent.trim());
       const contentToSave = encrypt(newContent.trim());
       await messageDoc.editMessage(contentToSave === newContent.trim() ? newContent.trim() : contentToSave);
       
-      const decryptedContent = decryptContent(messageDoc.content);
+      // Re-read from DB so content/editedAt always match persisted state (avoids stale mongoose doc)
+      const fresh = await Message.findById(messageId).select('content editedAt chatId').lean();
+      if (!fresh) {
+        throw new Error('Message not found after edit');
+      }
+      const decryptedContent = decryptContent(fresh.content);
+      const editedAtOut = fresh.editedAt != null ? fresh.editedAt : messageDoc.editedAt;
+      console.log('[MessageService] editMessage persisted', {
+        messageId: String(messageId),
+        chatId: fresh.chatId != null ? String(fresh.chatId) : fresh.chatId,
+        editedAt: editedAtOut,
+        decryptedLen: typeof decryptedContent === 'string' ? decryptedContent.length : 0,
+      });
       // Emit message update to chat participants
       try {
         const realtime = enhancedRealtimeService;
-        if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`chat:${messageDoc.chatId}`).emit('message_update', {
-            messageId: messageDoc._id,
-            chatId: messageDoc.chatId,
+        if (realtime && realtime.io) {
+          realtime.io.to(`chat:${fresh.chatId}`).emit('message_update', {
+            messageId: String(messageDoc._id),
+            chatId: String(fresh.chatId),
             content: decryptedContent,
-            editedAt: messageDoc.editedAt
+            editedAt: editedAtOut
           });
           
           // Also emit to all participants' global rooms for chat list updates
-          const chat = await Chat.findById(messageDoc.chatId)
+          const chat = await Chat.findById(fresh.chatId)
             .select('participants')
             .lean();
-          chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('message_update', {
-              messageId: messageDoc._id,
-              chatId: messageDoc.chatId,
-              content: decryptedContent,
-              editedAt: messageDoc.editedAt
+          if (chat?.participants?.length) {
+            chat.participants.forEach(participantId => {
+              realtime.io.to(`user:${participantId}`).emit('message_update', {
+                messageId: String(messageDoc._id),
+                chatId: String(fresh.chatId),
+                content: decryptedContent,
+                editedAt: editedAtOut
+              });
             });
-          });
+          }
         }
       } catch (wsError) {
         console.error('[MessageService] WebSocket emission error:', wsError);
@@ -726,7 +872,7 @@ class MessageService {
       return {
         messageId: messageDoc._id,
         content: decryptedContent,
-        editedAt: messageDoc.editedAt
+        editedAt: editedAtOut
       };
       
     } catch (error) {
@@ -779,25 +925,26 @@ class MessageService {
       // Emit real-time deletion event
       const realtime = enhancedRealtimeService;
       if (realtime && realtime.io) {
+        const deletionPayload = {
+          messageId: message._id,
+          chatId: message.chatId,
+          deletedForEveryone: !!deleteForEveryone,
+          deletedBy: userId,
+          timestamp: new Date()
+        };
         if (deleteForEveryone) {
-          // Emit to all chat participants
-          realtime.io.to(`chat:${message.chatId}`).emit('message_deleted', {
-            messageId: message._id,
-            chatId: message.chatId,
-            deletedForEveryone: true,
-            deletedBy: userId,
-            timestamp: new Date()
+          // Emit to all participants via user rooms for reliability even when some clients
+          // are not currently subscribed to chat:{chatId} room.
+          const participantIds = Array.isArray(chat?.participants)
+            ? chat.participants.map((p) => p.toString())
+            : [];
+          participantIds.forEach((participantId) => {
+            realtime.io.to(`user:${participantId}`).emit('message_deleted', deletionPayload);
           });
-          console.log(`🔵 [MESSAGE_SERVICE] Message ${message._id} deleted for everyone - event emitted to chat ${message.chatId}`);
+          console.log(`🔵 [MESSAGE_SERVICE] Message ${message._id} deleted for everyone - event emitted to ${participantIds.length} participant user rooms`);
         } else {
           // Emit only to deleting user
-          realtime.io.to(`user:${userId}`).emit('message_deleted', {
-            messageId: message._id,
-            chatId: message.chatId,
-            deletedForEveryone: false,
-            deletedBy: userId,
-            timestamp: new Date()
-          });
+          realtime.io.to(`user:${userId}`).emit('message_deleted', deletionPayload);
           console.log(`🔵 [MESSAGE_SERVICE] Message ${message._id} deleted for me - event emitted to user ${userId}`);
         }
       }
@@ -858,18 +1005,18 @@ class MessageService {
       // Emit reaction to chat participants
       try {
         const realtime = enhancedRealtimeService;
-        if (realtime && typeof realtime.to === 'function') {
+        if (realtime && realtime.io) {
           const reactionData = {
             messageId: messageDoc._id,
             chatId: messageDoc.chatId,
             reactions: messageDoc.reactions
           };
           
-          realtime.to(`chat:${messageDoc.chatId}`).emit('message_reaction', reactionData);
+          realtime.io.to(`chat:${messageDoc.chatId}`).emit('message_reaction', reactionData);
           
           // Also emit to all participants' global rooms for chat list updates
           chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('message_reaction', reactionData);
+            realtime.io.to(`user:${participantId}`).emit('message_reaction', reactionData);
           });
         }
       } catch (wsError) {
@@ -924,8 +1071,8 @@ class MessageService {
       // Emit reaction update to chat participants
       try {
         const realtime = enhancedRealtimeService;
-        if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`chat:${messageDoc.chatId}`).emit('message_reaction', {
+        if (realtime && realtime.io) {
+          realtime.io.to(`chat:${messageDoc.chatId}`).emit('message_reaction', {
             messageId: messageDoc._id,
             chatId: messageDoc.chatId,
             reactions: messageDoc.reactions
@@ -933,7 +1080,7 @@ class MessageService {
           
           // Also emit to all participants' global rooms for chat list updates
           chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('message_reaction', {
+            realtime.io.to(`user:${participantId}`).emit('message_reaction', {
               messageId: messageDoc._id,
               chatId: messageDoc.chatId,
               reactions: messageDoc.reactions
@@ -1184,6 +1331,7 @@ class MessageService {
       
       const message = await Message.findById(messageId)
         .populate('senderId', 'username fullName profilePictureUrl')
+        .populate('viewedBy.userId', 'username fullName')
         .populate('replyTo', 'content type senderId')
         .populate('forwardedFrom', 'content type senderId')
         .populate('reactions.userId', 'username fullName')
@@ -1229,47 +1377,78 @@ class MessageService {
   static async markOneViewAsViewed(messageId, userId) {
     console.log('🔵 [BACKEND_MSG_SVC] markOneViewAsViewed called:', { messageId, userId, timestamp: new Date().toISOString() });
     try {
-      // Find the message
-      const message = await Message.findById(messageId);
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+      const userIdStr = userIdObj.toString();
+
+      const snapshot = await Message.findById(messageId)
+        .select('isOneView oneViewExpiresAt viewedBy chatId')
+        .lean();
+      if (!snapshot) {
+        throw new Error('Message not found');
+      }
+      if (!snapshot.isOneView) {
+        throw new Error('Message is not a one-view message');
+      }
+
+      const alreadyViewed = (snapshot.viewedBy || []).some((v) => viewedByUserIdToString(v) === userIdStr);
+      if (alreadyViewed) {
+        console.log('✅ [BACKEND_MSG_SVC] Message already viewed by user (idempotent)');
+        const existing = await Message.findById(messageId)
+          .populate('senderId', 'username fullName profilePictureUrl')
+          .populate('viewedBy.userId', 'username fullName')
+          .lean();
+        decryptMessage(existing);
+        return existing;
+      }
+
+      // Atomic add: avoids lost updates if two devices mark viewed concurrently
+      const updateRes = await Message.updateOne(
+        {
+          _id: messageId,
+          isOneView: true,
+          viewedBy: { $not: { $elemMatch: { userId: userIdObj } } },
+        },
+        {
+          $push: {
+            viewedBy: { userId: userIdObj, viewedAt: new Date() },
+          },
+        }
+      );
+
+      if (updateRes.matchedCount === 0) {
+        const exists = await Message.findById(messageId).select('isOneView viewedBy').lean();
+        if (!exists) {
+          throw new Error('Message not found');
+        }
+        if (!exists.isOneView) {
+          throw new Error('Message is not a one-view message');
+        }
+        const racedAlready = (exists.viewedBy || []).some((v) => viewedByUserIdToString(v) === userIdStr);
+        if (!racedAlready) {
+          throw new Error('Message not found');
+        }
+        console.log('✅ [BACKEND_MSG_SVC] One-view mark raced; user already in viewedBy');
+      }
+
+      const message = await Message.findById(messageId)
+        .populate('senderId', 'username fullName profilePictureUrl')
+        .populate('viewedBy.userId', 'username fullName')
+        .lean();
+
       if (!message) {
         throw new Error('Message not found');
       }
-      
-      // Check if it's a one-view message
-      if (!message.isOneView) {
-        throw new Error('Message is not a one-view message');
-      }
-      
-      // Check if already viewed by this user using Set for O(1) lookup
-      const userIdStr = userId.toString();
-      const viewedBySet = new Set((message.viewedBy || []).map(v => v.userId?.toString() || v.toString()));
-      if (viewedBySet.has(userIdStr)) {
-        console.log('✅ [BACKEND_MSG_SVC] Message already viewed by user');
-        return message;
-      }
-      
-      // Add user to viewedBy array
-      message.viewedBy.push({
-        userId: userId,
-        viewedAt: new Date()
-      });
-      
-      // Check if message has expired
-      if (message.oneViewExpiresAt && new Date() > message.oneViewExpiresAt) {
-        console.log('⚠️ [BACKEND_MSG_SVC] One-view message has expired');
-        // Optionally delete the media or mark as expired
+
+      if (message.oneViewExpiresAt && new Date() > new Date(message.oneViewExpiresAt)) {
+        await Message.updateOne({ _id: messageId }, { $set: { isDeleted: true } });
         message.isDeleted = true;
       }
-      
-      await message.save();
-      await message.populate([
-        { path: 'senderId', select: 'username fullName profilePictureUrl' },
-        { path: 'viewedBy.userId', select: 'username fullName' }
-      ]);
-      if (message.content != null) message.content = decryptContent(message.content);
+
+      decryptMessage(message);
       console.log('✅ [BACKEND_MSG_SVC] One-view message marked as viewed:', { messageId, userId });
       return message;
-      
     } catch (error) {
       console.error('❌ [BACKEND_MSG_SVC] markOneViewAsViewed error:', error);
       throw error;

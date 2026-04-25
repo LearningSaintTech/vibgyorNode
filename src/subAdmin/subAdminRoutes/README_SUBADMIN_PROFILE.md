@@ -251,7 +251,7 @@ Authorization: Bearer <admin_jwt_token>
 
 ### Create Profile
 ```bash
-curl -X POST "http://localhost:3000/subadmin/profile" \
+curl -X POST "http://192.168.1.39:3000/subadmin/profile" \
   -H "Authorization: Bearer YOUR_SUBADMIN_TOKEN" \
   -F "firstName=John" \
   -F "lastName=Doe" \
@@ -264,7 +264,7 @@ curl -X POST "http://localhost:3000/subadmin/profile" \
 
 ### Update Profile
 ```bash
-curl -X PUT "http://localhost:3000/subadmin/profile" \
+curl -X PUT "http://192.168.1.39:3000/subadmin/profile" \
   -H "Authorization: Bearer YOUR_SUBADMIN_TOKEN" \
   -F "city=Delhi" \
   -F "profileImage=@/path/to/new-image.jpg"
@@ -272,13 +272,13 @@ curl -X PUT "http://localhost:3000/subadmin/profile" \
 
 ### Get Profile
 ```bash
-curl -X GET "http://localhost:3000/subadmin/profile" \
+curl -X GET "http://192.168.1.39:3000/subadmin/profile" \
   -H "Authorization: Bearer YOUR_SUBADMIN_TOKEN"
 ```
 
 ### Delete Profile
 ```bash
-curl -X DELETE "http://localhost:3000/subadmin/profile" \
+curl -X DELETE "http://192.168.1.39:3000/subadmin/profile" \
   -H "Authorization: Bearer YOUR_SUBADMIN_TOKEN"
 ```
 

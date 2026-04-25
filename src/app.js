@@ -6,7 +6,13 @@ const { createServer } = require('http');
 const { createHttpsServer } = require('../https-setup');
 
 // Import enhanced middleware
-const { responseTime, compressionMiddleware, apiRateLimit, authRateLimit } = require('./middleware/performanceMiddleware');
+const {
+	responseTime,
+	compressionMiddleware,
+	apiRateLimit,
+	authRateLimit,
+	messageWriteRateLimit
+} = require('./middleware/performanceMiddleware');
 
 // Import enhanced realtime service
 const enhancedRealtimeService = require('./services/enhancedRealtimeService');
@@ -58,23 +64,32 @@ app.use((cookieParser()));
 
 // Enhanced Middleware
 app.use(helmet());
-// app.use(cors({ 
-//   origin: [
-//     'http://localhost:5173',
-//     'https://localhost:5173',
-//     'http://127.0.0.1:5173',
-//     'https://127.0.0.1:5173',
-//     process.env.CORS_ORIGIN
-//   ].filter(Boolean), 
-//   credentials: true 
-// }));
+function corsOriginCallback() {
+	const raw = process.env.CORS_ORIGIN;
+	if (!raw || String(raw).trim() === '') {
+		return (origin, callback) => callback(null, true);
+	}
+	const allowed = String(raw)
+		.split(',')
+		.map((s) => s.trim())
+		.filter(Boolean);
+	return (origin, callback) => {
+		if (!origin) {
+			return callback(null, true);
+		}
+		if (allowed.includes(origin)) {
+			return callback(null, true);
+		}
+		return callback(null, false);
+	};
+}
 
-app.use(cors({
-	origin: (origin, callback) => {
-		callback(null, true); // allow all origins
-	},
-	credentials: true
-}));
+app.use(
+	cors({
+		origin: corsOriginCallback(),
+		credentials: true
+	})
+);
 
 app.use(compressionMiddleware); // Add compression
 app.use(express.json({ limit: '10mb' })); // Increase JSON limit for file uploads
@@ -83,9 +98,13 @@ const { encryptionMiddleware } = require('./middleware/encryptionMiddleware');
 app.use(encryptionMiddleware); // Decrypt X-Payload-Encrypted request body; encrypt response when requested
 app.use(responseTime); // Add response time logging
 
-// Rate limiting - COMMENTED OUT FOR TESTING
-// app.use('/api/v1', apiRateLimit);
-// app.use('/user/auth', authRateLimit);
+if (process.env.ENABLE_API_RATE_LIMIT === 'true') {
+	app.use('/api/v1', apiRateLimit);
+	app.use('/user/auth', authRateLimit);
+	app.use('/api/v1/user/messages', messageWriteRateLimit);
+	app.use('/user/dating/messages', messageWriteRateLimit);
+	console.log('✅ API rate limiting enabled (ENABLE_API_RATE_LIMIT=true)');
+}
 
 // API Versioning
 app.use('/api/v1', (req, res, next) => {
@@ -173,6 +192,25 @@ app.get('/health', (req, res) => {
 		version: '2.0.0',
 		timestamp: new Date().toISOString(),
 		features: ['chat', 'calls', 'realtime', 'webrtc']
+	});
+});
+
+// Lightweight ops metrics (enable with ENABLE_METRICS=true; optional METRICS_SECRET via X-Metrics-Secret header)
+app.get('/api/v1/metrics', (req, res) => {
+	if (process.env.ENABLE_METRICS !== 'true') {
+		return res.status(404).json({ error: 'Not found' });
+	}
+	const secret = process.env.METRICS_SECRET;
+	if (secret && req.get('X-Metrics-Secret') !== secret) {
+		return res.status(403).json({ error: 'Forbidden' });
+	}
+	res.status(200).json({
+		uptimeSeconds: Math.round(process.uptime()),
+		connectedUsers: enhancedRealtimeService.getConnectedUsersCount(),
+		activeCalls: enhancedRealtimeService.getActiveCallsCount(),
+		scopedPresence: enhancedRealtimeService.usesScopedPresence(),
+		memory: process.memoryUsage(),
+		timestamp: new Date().toISOString()
 	});
 });
 

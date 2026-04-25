@@ -53,6 +53,22 @@ const messageRateLimit = createRateLimit(
   'Too many messages, please slow down.'
 );
 
+/** POST/PUT/PATCH/DELETE only — avoids throttling message history GET */
+const messageWriteRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: {
+    success: false,
+    message: 'Too many message writes, please slow down.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+    return req.ip === '127.0.0.1' || req.ip === '::1';
+  }
+});
+
 // File upload rate limiting
 const uploadRateLimit = createRateLimit(
   60 * 60 * 1000, // 1 hour
@@ -289,6 +305,7 @@ module.exports = {
   authRateLimit,
   callRateLimit,
   messageRateLimit,
+  messageWriteRateLimit,
   uploadRateLimit,
   speedLimiter,
   

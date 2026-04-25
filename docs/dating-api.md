@@ -134,7 +134,7 @@ Error codes bubble up with descriptive messages (e.g., `Profile not found`, `Use
    - Unified collection (`scriptFiles/corrected-postman-collection.json`) also contains these calls under *User → Dating* with extra test scripts that capture `targetUserId`, `matchId`, `commentId`, and `reportId`.
 
 2. **Environment Variables**
-   - `baseUrl = http://localhost:3000` (or deployed host).  
+   - `baseUrl = http://192.168.1.39:3000` (or deployed host).  
    - `token = <JWT>` (set in `Authorization` header used by all requests).  
    - Dynamic vars captured from test scripts: `targetUserId`, `matchId`, `commentId`, `reportId`.
 

@@ -2117,7 +2117,7 @@ async function sharePost(req, res) {
     // Emit real-time event for post share
     try {
       const currentUser = await User.findById(userId).select('username fullName profilePictureUrl');
-      enhancedRealtimeService.broadcast(`post:${postId}`, 'post:shared', {
+      enhancedRealtimeService.emitToPost(postId, 'post:shared', {
         postId: postId,
         userId: userId,
         user: {

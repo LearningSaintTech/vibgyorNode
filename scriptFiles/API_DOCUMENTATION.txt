@@ -19,7 +19,7 @@
 
 VibgyorNode is a comprehensive social messaging platform with real-time communication, WebRTC calling, and content management features. The API supports three user roles: Admin, SubAdmin, and User.
 
-**Base URL:** `http://localhost:3000` (Development)  
+**Base URL:** `http://192.168.1.39:3000` (Development)  
 **API Version:** v1 (Legacy) and v2 (Enhanced)  
 **Authentication:** JWT Bearer Token  
 **Content-Type:** `application/json`  

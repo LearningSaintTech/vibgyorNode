@@ -74,7 +74,7 @@ router.post('/offline', async (req, res) => {
     
     // Trigger WebSocket broadcast to notify all users
     const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
-    enhancedRealtimeService.broadcastUserOffline(decoded.userId, user);
+    await enhancedRealtimeService.broadcastUserOffline(decoded.userId, user);
     
     console.log('[OFFLINE_ENDPOINT] Offline status processed successfully');
     res.status(200).json({ success: true, message: 'User status updated to offline' });

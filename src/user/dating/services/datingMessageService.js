@@ -11,6 +11,12 @@ const { encrypt, decryptContent } = require('../../../utils/cryptoUtil');
 function decryptMessage(msg) {
   if (!msg) return msg;
   if (msg.content != null && msg.content !== '') msg.content = decryptContent(msg.content);
+  if (msg.replyTo && typeof msg.replyTo === 'object' && msg.replyTo.content != null && msg.replyTo.content !== '') {
+    msg.replyTo.content = decryptContent(msg.replyTo.content);
+  }
+  if (msg.forwardedFrom && typeof msg.forwardedFrom === 'object' && msg.forwardedFrom.content != null && msg.forwardedFrom.content !== '') {
+    msg.forwardedFrom.content = decryptContent(msg.forwardedFrom.content);
+  }
   return msg;
 }
 
@@ -24,6 +30,42 @@ function decryptMessages(list) {
  * Dating Message Service - Separate from social messages
  */
 class DatingMessageService {
+  static getVideoMaxBytes() {
+    const maxMb = Math.max(1, parseInt(process.env.MESSAGE_VIDEO_MAX_MB || '120', 10));
+    return maxMb * 1024 * 1024;
+  }
+
+  /** Normalize viewedBy.userId for comparisons (ObjectId, string, or populated { _id }). */
+  static viewedByUserIdToString(entry) {
+    if (!entry || entry.userId == null) return '';
+    const u = entry.userId;
+    if (typeof u === 'object' && u._id != null) return String(u._id);
+    if (typeof u === 'object' && typeof u.toString === 'function') return String(u.toString());
+    return String(u);
+  }
+
+  /** @param {import('mongoose').Document} message - populated DatingMessage document */
+  static _formatSendResponse(message, options = {}) {
+    const out = decryptMessage({
+      _id: message._id,
+      messageId: message._id,
+      chatId: message.chatId,
+      senderId: message.senderId,
+      type: message.type,
+      content: message.content,
+      media: message.media,
+      location: message.location,
+      musicMetadata: message.musicMetadata,
+      isOneView: message.isOneView,
+      oneViewExpiresAt: message.oneViewExpiresAt,
+      replyTo: message.replyTo,
+      forwardedFrom: message.forwardedFrom,
+      createdAt: message.createdAt,
+      status: message.status
+    });
+    if (options.isIdempotentReplay) out.isIdempotentReplay = true;
+    return out;
+  }
   
   /**
    * Send a message to a dating chat
@@ -37,10 +79,11 @@ class DatingMessageService {
         chatId,
         senderId,
         type = 'text',
-        content = '',
+        content: initialContent = '',
         replyTo = null,
         forwardedFrom = null
       } = messageData;
+      let content = initialContent;
       
       // Input validation
       if (!chatId || !senderId) {
@@ -57,7 +100,7 @@ class DatingMessageService {
       
       // Validate chat exists and user is participant
       const chat = await DatingChat.findById(chatId)
-        .select('participants lastMessage lastMessageAt')
+        .select('participants lastMessage lastMessageAt userSettings')
         .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
@@ -112,6 +155,21 @@ class DatingMessageService {
           }
         }
       }
+
+      const rawClientId = messageData.clientMessageId != null ? String(messageData.clientMessageId).trim() : '';
+      const clientMessageId = rawClientId.length > 0 && rawClientId.length <= 128 ? rawClientId : null;
+      if (clientMessageId) {
+        const existing = await DatingMessage.findOne({ chatId, senderId, clientMessageId })
+          .populate([
+            { path: 'senderId', select: 'username fullName profilePictureUrl' },
+            { path: 'replyTo', select: 'content type senderId' },
+            { path: 'forwardedFrom', select: 'content type senderId' }
+          ]);
+        if (existing) {
+          console.log('[DATING_MESSAGE_SERVICE] Idempotent hit (clientMessageId):', clientMessageId);
+          return DatingMessageService._formatSendResponse(existing, { isIdempotentReplay: true });
+        }
+      }
       
       // Handle location messages (no file upload needed)
       let locationData = null;
@@ -134,7 +192,7 @@ class DatingMessageService {
         const maxSizes = {
           audio: 50 * 1024 * 1024, // 50MB for music
           voice: 10 * 1024 * 1024, // 10MB for voice messages
-          video: 50 * 1024 * 1024, // 50MB for videos
+          video: DatingMessageService.getVideoMaxBytes(), // configurable video max (default 120MB)
           image: 10 * 1024 * 1024, // 10MB for images
           gif: 10 * 1024 * 1024, // 10MB for GIFs
           document: 25 * 1024 * 1024 // 25MB for documents
@@ -284,10 +342,27 @@ class DatingMessageService {
         oneViewExpiresAt: oneViewExpiresAt,
         replyTo: replyTo || null,
         forwardedFrom: forwardedFrom || null,
-        status: 'sent'
+        status: 'sent',
+        ...(clientMessageId ? { clientMessageId } : {})
       });
       
-      await message.save();
+      try {
+        await message.save();
+      } catch (saveErr) {
+        if (saveErr && saveErr.code === 11000 && clientMessageId) {
+          const existing = await DatingMessage.findOne({ chatId, senderId, clientMessageId })
+            .populate([
+              { path: 'senderId', select: 'username fullName profilePictureUrl' },
+              { path: 'replyTo', select: 'content type senderId' },
+              { path: 'forwardedFrom', select: 'content type senderId' }
+            ]);
+          if (existing) {
+            console.log('[DATING_MESSAGE_SERVICE] Idempotent after duplicate key (clientMessageId):', clientMessageId);
+            return DatingMessageService._formatSendResponse(existing, { isIdempotentReplay: true });
+          }
+        }
+        throw saveErr;
+      }
       await message.populate([
         { path: 'senderId', select: 'username fullName profilePictureUrl' },
         { path: 'replyTo', select: 'content type senderId' },
@@ -297,23 +372,44 @@ class DatingMessageService {
       // Update chat's last message and increment unread count atomically
       // Note: chat is now a lean object, so we need to use updateOne
       const senderIdObj = mongoose.Types.ObjectId.isValid(senderId) ? new mongoose.Types.ObjectId(senderId) : senderId;
-      await DatingChat.updateOne(
-        { _id: chatId },
-        {
-          $set: {
-            lastMessage: message._id,
-            lastMessageAt: new Date()
-          },
-          $inc: {
-            'userSettings.$[elem].unreadCount': 1
+      const arrayFilters = [{ 'elem.userId': { $ne: senderIdObj } }];
+      const unarchiveUpdates = [];
+      chat.participants.forEach(participant => {
+        const pIdStr = participant.toString();
+        if (pIdStr !== senderIdStr) {
+          const recipientSettings = chat.userSettings?.find(us => {
+            const usIdStr = us.userId?.toString() || String(us.userId);
+            return usIdStr === pIdStr;
+          });
+          if (recipientSettings?.deletedAt) {
+            const participantIdObj = mongoose.Types.ObjectId.isValid(participant)
+              ? new mongoose.Types.ObjectId(participant)
+              : participant;
+            unarchiveUpdates.push(
+              DatingChat.updateOne(
+                { _id: chatId, 'userSettings.userId': participantIdObj },
+                { $set: { 'userSettings.$.isArchived': false } }
+              )
+            );
           }
-        },
-        {
-          arrayFilters: [
-            { 'elem.userId': { $ne: senderIdObj } }
-          ]
         }
-      );
+      });
+      await Promise.all([
+        DatingChat.updateOne(
+          { _id: chatId },
+          {
+            $set: {
+              lastMessage: message._id,
+              lastMessageAt: new Date()
+            },
+            $inc: {
+              'userSettings.$[elem].unreadCount': 1
+            }
+          },
+          { arrayFilters }
+        ),
+        ...unarchiveUpdates
+      ]);
       
       // Send notifications to all participants except sender in parallel
       await Promise.allSettled(
@@ -338,8 +434,25 @@ class DatingMessageService {
           )
       );
       
-      // Emit real-time message to chat participants (dating-specific room)
+      const recipientIds = chat.participants
+        .map((p) => p.toString())
+        .filter((pId) => pId !== senderIdStr);
       const realtime = enhancedRealtimeService;
+      const hasOnlineRecipient =
+        !!(realtime && realtime.connectedUsers) &&
+        recipientIds.some((recipientId) => {
+          const sockets = realtime.connectedUsers.get(recipientId);
+          return !!(sockets && sockets.size > 0);
+        });
+      if (hasOnlineRecipient && message.status === 'sent') {
+        await DatingMessage.updateOne(
+          { _id: message._id, status: 'sent' },
+          { $set: { status: 'delivered' } }
+        );
+        message.status = 'delivered';
+      }
+
+      // Emit real-time message to chat participants (dating-specific room)
       const decryptedContent = decryptContent(message.content);
       if (realtime && realtime.emitDatingMessage) {
         realtime.emitDatingMessage(chatId, {
@@ -349,6 +462,10 @@ class DatingMessageService {
           type: message.type,
           content: decryptedContent,
           media: message.media,
+          location: message.location,
+          musicMetadata: message.musicMetadata,
+          isOneView: message.isOneView,
+          oneViewExpiresAt: message.oneViewExpiresAt,
           replyTo: message.replyTo,
           forwardedFrom: message.forwardedFrom,
           createdAt: message.createdAt,
@@ -369,6 +486,10 @@ class DatingMessageService {
           type: message.type,
           content: decryptedContent,
           media: message.media,
+          location: message.location,
+          musicMetadata: message.musicMetadata,
+          isOneView: message.isOneView,
+          oneViewExpiresAt: message.oneViewExpiresAt,
           replyTo: message.replyTo,
           forwardedFrom: message.forwardedFrom,
           createdAt: message.createdAt,
@@ -400,18 +521,15 @@ class DatingMessageService {
         status: message.status
       });
       
-      // Emit delivered status update to sender after a short delay
-      setTimeout(() => {
-        if (realtime && realtime.io) {
-          const senderRoom = `user:${senderId}`;
-          realtime.io.to(senderRoom).emit('dating_message_status_update', {
-            messageId: message._id,
-            chatId: chatId,
-            status: 'delivered',
-            timestamp: new Date()
-          });
-        }
-      }, 500);
+      if (hasOnlineRecipient && realtime && realtime.io) {
+        const senderRoom = `user:${senderId}`;
+        realtime.io.to(senderRoom).emit('dating_message_status_update', {
+          messageId: message._id,
+          chatId: chatId,
+          status: 'delivered',
+          timestamp: new Date()
+        });
+      }
       
       return responseMessage;
     } catch (error) {
@@ -440,7 +558,7 @@ class DatingMessageService {
       
       // Validate chat access with lean query and Set lookup
       const chat = await DatingChat.findById(chatId)
-        .select('participants')
+        .select('participants userSettings')
         .lean();
       if (!chat) {
         throw new Error('Dating chat not found');
@@ -452,7 +570,13 @@ class DatingMessageService {
         throw new Error('Access denied to this dating chat');
       }
       
-      const messages = await DatingMessage.getChatMessages(chatId, page, limit, userId);
+      const userSettings = chat.userSettings?.find(setting => {
+        const settingUserId = setting.userId?.toString() || String(setting.userId);
+        return settingUserId === userIdStr;
+      });
+      const deletedAt = userSettings?.deletedAt || null;
+
+      const messages = await DatingMessage.getChatMessages(chatId, page, limit, userId, deletedAt);
       decryptMessages(messages);
       return {
         messages,
@@ -494,12 +618,23 @@ class DatingMessageService {
       if (!participantSet.has(userIdStr)) {
         throw new Error('Access denied to this dating chat');
       }
-      
-      // Mark messages as read and reset unread count atomically
+
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
+      const messagesToMark = await DatingMessage.find({
+        chatId: chatId,
+        senderId: { $ne: userIdObj },
+        'readBy.userId': { $ne: userIdObj },
+        isDeleted: false
+      })
+        .select('_id')
+        .limit(100)
+        .lean();
+
       const [readCount] = await Promise.all([
         DatingMessage.markChatAsRead(chatId, userId),
         DatingChat.updateOne(
-          { _id: chatId, 'userSettings.userId': userId },
+          { _id: chatId, 'userSettings.userId': userIdObj },
           {
             $set: {
               'userSettings.$.unreadCount': 0,
@@ -508,6 +643,16 @@ class DatingMessageService {
           }
         )
       ]);
+
+      const realtime = enhancedRealtimeService;
+      if (realtime && realtime.io && messagesToMark.length > 0) {
+        const room = `dating-chat:${chatId}`;
+        const timestamp = new Date();
+        const messageIds = messagesToMark.map((msg) => msg._id);
+        const readBatch = { chatId, status: 'read', timestamp, messageIds };
+        if (messageIds.length === 1) readBatch.messageId = messageIds[0];
+        realtime.io.to(room).emit('dating_message_status_update', readBatch);
+      }
       
       return {
         chatId,
@@ -562,27 +707,32 @@ class DatingMessageService {
       const contentToSave = encrypt(newContent.trim());
       await messageDoc.editMessage(contentToSave === newContent.trim() ? newContent.trim() : contentToSave);
       
-      const decryptedContent = decryptContent(messageDoc.content);
+      const fresh = await DatingMessage.findById(messageId).select('content editedAt chatId').lean();
+      if (!fresh) {
+        throw new Error('Dating message not found after edit');
+      }
+      const decryptedContent = decryptContent(fresh.content);
+      const editedAtOut = fresh.editedAt != null ? fresh.editedAt : messageDoc.editedAt;
       // Emit message update to chat participants
       try {
         const realtime = enhancedRealtimeService;
-        if (realtime && typeof realtime.to === 'function') {
-          realtime.to(`dating-chat:${messageDoc.chatId}`).emit('dating_message_update', {
+        if (realtime && realtime.io) {
+          realtime.io.to(`dating-chat:${fresh.chatId}`).emit('dating_message_update', {
             messageId: messageDoc._id,
-            chatId: messageDoc.chatId,
+            chatId: fresh.chatId,
             content: decryptedContent,
-            editedAt: messageDoc.editedAt
+            editedAt: editedAtOut
           });
           
-          const chat = await DatingChat.findById(messageDoc.chatId)
+          const chat = await DatingChat.findById(fresh.chatId)
             .select('participants')
             .lean();
           chat.participants.forEach(participantId => {
-            realtime.to(`user:${participantId}`).emit('dating_message_update', {
+            realtime.io.to(`user:${participantId}`).emit('dating_message_update', {
               messageId: messageDoc._id,
-              chatId: messageDoc.chatId,
+              chatId: fresh.chatId,
               content: decryptedContent,
-              editedAt: messageDoc.editedAt
+              editedAt: editedAtOut
             });
           });
         }
@@ -593,7 +743,7 @@ class DatingMessageService {
       return {
         messageId: messageDoc._id,
         content: decryptedContent,
-        editedAt: messageDoc.editedAt
+        editedAt: editedAtOut
       };
       
     } catch (error) {
@@ -654,32 +804,31 @@ class DatingMessageService {
       // Emit real-time deletion event
       const realtime = enhancedRealtimeService;
       if (realtime && realtime.io) {
+        const deletionPayload = {
+          messageId: message._id,
+          chatId: message.chatId,
+          deletedForEveryone: !!deleteForEveryone,
+          deletedBy: userId,
+          timestamp: new Date()
+        };
         if (deleteForEveryone) {
-          // Emit to all chat participants
-          realtime.io.to(`dating-chat:${message.chatId}`).emit('dating_message_deleted', {
-            messageId: message._id,
-            chatId: message.chatId,
-            deletedForEveryone: true,
-            deletedBy: userId,
-            timestamp: new Date()
+          const participantIds = Array.isArray(chat?.participants)
+            ? chat.participants.map((p) => p.toString())
+            : [];
+          participantIds.forEach((participantId) => {
+            realtime.io.to(`user:${participantId}`).emit('dating_message_deleted', deletionPayload);
           });
-          console.log(`🔵 [DATING_MESSAGE_SERVICE] Message ${message._id} deleted for everyone - event emitted to chat ${message.chatId}`);
+          console.log(`🔵 [DATING_MESSAGE_SERVICE] Message ${message._id} deleted for everyone - event emitted to ${participantIds.length} participant user rooms`);
         } else {
           // Emit only to deleting user
-          realtime.io.to(`user:${userId}`).emit('dating_message_deleted', {
-            messageId: message._id,
-            chatId: message.chatId,
-            deletedForEveryone: false,
-            deletedBy: userId,
-            timestamp: new Date()
-          });
-          console.log(`🔵 [DATING_MESSAGE_SERVICE] Message ${message._id} deleted for user ${userId} only`);
+          realtime.io.to(`user:${userId}`).emit('dating_message_deleted', deletionPayload);
+          console.log(`🔵 [DATING_MESSAGE_SERVICE] Message ${message._id} deleted for me - event emitted to user ${userId}`);
         }
       }
       
       // Use refreshed message if available, otherwise use original message or fallback values
       const finalMessage = refreshedMessage || message;
-      const finalMessageId = finalMessage && finalMessage._id ? finalMessage._id.toString() : messageId.toString();
+      const finalMessageId = finalMessage && finalMessage._id ? finalMessage._id : message._id;
       const finalIsDeleted = finalMessage && finalMessage.isDeleted === true;
       
       // Use the deleteForEveryone parameter we already have, or get it from the message if available
@@ -691,7 +840,9 @@ class DatingMessageService {
       return {
         messageId: finalMessageId,
         isDeleted: finalIsDeleted,
-        deletedForEveryone: finalDeletedForEveryone
+        deletedForEveryone: finalDeletedForEveryone,
+        chatId: message.chatId,
+        chat
       };
       
     } catch (error) {
@@ -988,7 +1139,8 @@ class DatingMessageService {
       }
       
       const messages = await DatingMessage.searchMessages(chatId, query.trim(), userId, page, limit);
-      
+      decryptMessages(messages);
+
       return {
         messages,
         pagination: {
@@ -1039,7 +1191,8 @@ class DatingMessageService {
       }
       
       const mediaMessages = await DatingMessage.getChatMedia(chatId, type, userId, page, limit);
-      
+      decryptMessages(mediaMessages);
+
       return {
         mediaMessages,
         pagination: {
@@ -1114,43 +1267,62 @@ class DatingMessageService {
    */
   static async markOneViewAsViewed(messageId, userId) {
     try {
-      // Find the message
-      const message = await DatingMessage.findById(messageId);
-      if (!message) {
+      const userIdObj = mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+      const userIdStr = userIdObj.toString();
+
+      const snapshot = await DatingMessage.findById(messageId)
+        .select('isOneView oneViewExpiresAt viewedBy')
+        .lean();
+      if (!snapshot) {
         throw new Error('Dating message not found');
       }
-      
-      // Check if it's a one-view message
-      if (!message.isOneView) {
+      if (!snapshot.isOneView) {
         throw new Error('Message is not a one-view message');
       }
-      
-      // Check if already viewed by this user using Set for O(1) lookup
-      const userIdStr = userId.toString();
-      const viewedBySet = new Set((message.viewedBy || []).map(v => v.userId?.toString() || v.toString()));
-      if (viewedBySet.has(userIdStr)) {
-        if (message.content != null) message.content = decryptContent(message.content);
-        return message;
+
+      const alreadyViewed = (snapshot.viewedBy || []).some((v) => DatingMessageService.viewedByUserIdToString(v) === userIdStr);
+      if (alreadyViewed) {
+        const existing = await DatingMessage.findById(messageId)
+          .populate('senderId', 'username fullName profilePictureUrl')
+          .populate('viewedBy.userId', 'username fullName')
+          .lean();
+        decryptMessage(existing);
+        return existing;
       }
-      
-      // Add user to viewedBy array
-      message.viewedBy.push({
-        userId: userId,
-        viewedAt: new Date()
-      });
-      
-      // Check if message has expired
-      if (message.oneViewExpiresAt && new Date() > message.oneViewExpiresAt) {
-        // Optionally delete the media or mark as expired
+
+      const updateRes = await DatingMessage.updateOne(
+        {
+          _id: messageId,
+          isOneView: true,
+          viewedBy: { $not: { $elemMatch: { userId: userIdObj } } }
+        },
+        {
+          $push: {
+            viewedBy: { userId: userIdObj, viewedAt: new Date() }
+          }
+        }
+      );
+
+      if (updateRes.matchedCount === 0) {
+        const exists = await DatingMessage.findById(messageId).select('isOneView viewedBy').lean();
+        if (!exists) throw new Error('Dating message not found');
+        if (!exists.isOneView) throw new Error('Message is not a one-view message');
+      }
+
+      const message = await DatingMessage.findById(messageId)
+        .populate('senderId', 'username fullName profilePictureUrl')
+        .populate('viewedBy.userId', 'username fullName')
+        .lean();
+      if (!message) throw new Error('Dating message not found');
+
+      if (message.oneViewExpiresAt && new Date() > new Date(message.oneViewExpiresAt)) {
+        await DatingMessage.updateOne({ _id: messageId }, { $set: { isDeleted: true } });
         message.isDeleted = true;
       }
-      
-      await message.save();
-      await message.populate([
-        { path: 'senderId', select: 'username fullName profilePictureUrl' },
-        { path: 'viewedBy.userId', select: 'username fullName' }
-      ]);
-      if (message.content != null) message.content = decryptContent(message.content);
+
+      decryptMessage(message);
       return message;
       
     } catch (error) {

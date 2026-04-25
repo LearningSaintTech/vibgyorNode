@@ -36,7 +36,7 @@ VibgyorNode implements a **two-step authentication system**:
 ## API Endpoints Reference
 
 ### Base URLs
-- **Development**: `http://localhost:3000`
+- **Development**: `http://192.168.1.39:3000`
 - **User Auth**: `/user/auth/*`
 - **Username**: `/user/username/*`
 - **Catalog**: `/user/catalog/*`

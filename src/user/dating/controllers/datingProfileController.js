@@ -83,13 +83,15 @@ async function getAllDatingProfiles(req, res) {
 			location: userLocation
 		});
 
-		// Use query parameters if provided, otherwise fall back to user's stored preferences
-		// IMPORTANT: Only use preferences if they are explicitly set (not empty strings)
-		// This ensures new profiles see all profiles without filters initially
+		// Use query parameters by default.
+		// Optional behavior: allow preference-driven defaults only when explicitly requested.
+		// This avoids over-filtering (e.g. city/country + hereTo) that can hide valid profiles.
+		const usePreferenceDefaults = req.query.usePreferences === 'true';
+
 		let finalHereTo = null;
 		if (hereTo !== null && hereTo !== undefined) {
 			finalHereTo = hereTo;
-		} else {
+		} else if (usePreferenceDefaults) {
 			const prefHereTo = userPreferences.hereTo || user?.preferences?.hereFor;
 			if (prefHereTo && prefHereTo.trim() !== '') {
 				finalHereTo = prefHereTo;
@@ -99,32 +101,30 @@ async function getAllDatingProfiles(req, res) {
 		let finalWantToMeet = null;
 		if (wantToMeet !== null && wantToMeet !== undefined) {
 			finalWantToMeet = wantToMeet;
-		} else {
+		} else if (usePreferenceDefaults) {
 			const prefWantToMeet = userPreferences.wantToMeet || user?.preferences?.wantToMeet;
 			if (prefWantToMeet && prefWantToMeet.trim() !== '') {
 				finalWantToMeet = prefWantToMeet;
 			}
 		}
 		
-		// Age range: use query params or user's stored preferences
-		// Only use preferences if they are explicitly set (not default values 18-100)
+		// Age range: use query params or (optionally) user's stored preferences
 		let finalAgeMin = null;
 		let finalAgeMax = null;
 		if (ageMin !== null && ageMin !== undefined && ageMin !== '') {
 			finalAgeMin = parseInt(ageMin, 10);
-		} else if (userPreferences.ageRange?.min && userPreferences.ageRange.min !== 18) {
+		} else if (usePreferenceDefaults && userPreferences.ageRange?.min && userPreferences.ageRange.min !== 18) {
 			// Only use if not the default value
 			finalAgeMin = userPreferences.ageRange.min;
 		}
 		if (ageMax !== null && ageMax !== undefined && ageMax !== '') {
 			finalAgeMax = parseInt(ageMax, 10);
-		} else if (userPreferences.ageRange?.max && userPreferences.ageRange.max !== 100) {
+		} else if (usePreferenceDefaults && userPreferences.ageRange?.max && userPreferences.ageRange.max !== 100) {
 			// Only use if not the default value
 			finalAgeMax = userPreferences.ageRange.max;
 		}
 
-		// Languages: use query params or user's stored preferences
-		// Only use if explicitly set (not empty array)
+		// Languages: use query params or (optionally) user's stored preferences
 		let languagesArray = null;
 		if (languages) {
 			if (typeof languages === 'string') {
@@ -132,31 +132,30 @@ async function getAllDatingProfiles(req, res) {
 			} else if (Array.isArray(languages)) {
 				languagesArray = languages;
 			}
-		} else if (userPreferences.languages && Array.isArray(userPreferences.languages) && userPreferences.languages.length > 0) {
+		} else if (usePreferenceDefaults && userPreferences.languages && Array.isArray(userPreferences.languages) && userPreferences.languages.length > 0) {
 			const filteredLangs = userPreferences.languages.filter(lang => lang && lang.trim() !== '');
 			if (filteredLangs.length > 0) {
 				languagesArray = filteredLangs;
 			}
 		}
 
-		// Location: use query params or user's stored preferences
-		// Only use if explicitly set (not empty strings)
+		// Location: use explicit query params only by default.
+		// Preference fallback can be enabled via usePreferences=true.
 		const location = {};
 		if (city) {
 			location.city = city;
-		} else if (userLocation.city && userLocation.city.trim() !== '') {
+		} else if (usePreferenceDefaults && userLocation.city && userLocation.city.trim() !== '') {
 			location.city = userLocation.city;
 		}
 		if (country) {
 			location.country = country;
-		} else if (userLocation.country && userLocation.country.trim() !== '') {
+		} else if (usePreferenceDefaults && userLocation.country && userLocation.country.trim() !== '') {
 			location.country = userLocation.country;
 		}
 
-		// Distance: use query params or user's stored preferences
-		// Only use if explicitly set (not default value 100)
+		// Distance: use query params or (optionally) user's stored preferences
 		let finalDistanceMax = distanceMax ? parseFloat(distanceMax) : null;
-		if (!finalDistanceMax && userPreferences.distanceRange?.max && userPreferences.distanceRange.max !== 100) {
+		if (!finalDistanceMax && usePreferenceDefaults && userPreferences.distanceRange?.max && userPreferences.distanceRange.max !== 100) {
 			finalDistanceMax = userPreferences.distanceRange.max;
 		}
 		if (filter === 'near_by' && !finalDistanceMax) {
@@ -178,6 +177,7 @@ async function getAllDatingProfiles(req, res) {
 		};
 
 		console.log('[DATING][PROFILE] Final filters applied:', {
+			usePreferenceDefaults,
 			fromQuery: { hereTo, wantToMeet, ageMin, ageMax, languages, city, country, distanceMax },
 			fromPreferences: {
 				hereTo: userPreferences.hereTo || user?.preferences?.hereFor,

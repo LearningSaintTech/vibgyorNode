@@ -38,6 +38,20 @@ class MessageController {
         }
       }
       
+      if (type === 'image') {
+        console.log('[IMG_MSG_FLOW] controller.sendMessage entry', {
+          chatId,
+          userId: String(userId),
+          hasFile: !!file,
+          fileSize: file?.size,
+          mimetype: file?.mimetype,
+          originalname: file?.originalname,
+          width: req.body.width,
+          height: req.body.height,
+          clientMessageId: req.body.clientMessageId || null,
+        });
+      }
+
       const messageData = {
         chatId,
         senderId: userId,
@@ -45,6 +59,7 @@ class MessageController {
         content: content.trim(),
         replyTo,
         forwardedFrom,
+        clientMessageId: req.body.clientMessageId || null,
         // One-view fields
         isOneView: req.body.isOneView === true || req.body.isOneView === 'true',
         oneViewExpirationHours: req.body.oneViewExpirationHours || null,
@@ -63,7 +78,16 @@ class MessageController {
       };
       
       const message = await MessageService.sendMessage(messageData, file);
-      
+
+      if (type === 'image') {
+        const u = message?.media?.url;
+        console.log('[IMG_MSG_FLOW] controller.sendMessage response_ready', {
+          messageId: message?.messageId || message?._id,
+          mediaUrl: typeof u === 'string' ? u.slice(0, 120) + (u.length > 120 ? '…' : '') : u,
+          mediaUrlLen: typeof u === 'string' ? u.length : 0,
+        });
+      }
+
       res.status(201).json(createResponse(
         'Message sent successfully',
         { message },
@@ -163,11 +187,23 @@ class MessageController {
       const { content } = req.body;
       const userId = req.user.userId;
       
+      console.log('[MessageController] editMessage', {
+        messageId,
+        userId: userId != null ? String(userId) : userId,
+        contentLen: typeof content === 'string' ? content.length : 0,
+      });
+      
       if (!content || content.trim() === '') {
         return res.status(400).json(createErrorResponse('Message content is required'));
       }
       
       const result = await MessageService.editMessage(messageId, userId, content);
+      
+      console.log('[MessageController] editMessage ok', {
+        messageId: result?.messageId != null ? String(result.messageId) : result?.messageId,
+        editedAt: result?.editedAt,
+        contentLen: typeof result?.content === 'string' ? result.content.length : 0,
+      });
       
       res.status(200).json(createResponse(
         'Message edited successfully',

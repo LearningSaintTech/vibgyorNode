@@ -12,6 +12,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const { server } = require('./app'); // Import server from app.js
+const enhancedRealtimeService = require('./services/enhancedRealtimeService');
 const { connectToDatabase } = require('./dbConfig/db');
 const pushNotificationRetryQueue = require('./notification/services/pushNotificationRetryQueue');
 
@@ -72,6 +73,8 @@ process.on('unhandledRejection', (reason, promise) => {
 		// Connect to database
 		await connectToDatabase();
 		console.log('✅ Database connected successfully');
+
+		await enhancedRealtimeService.attachRedisAdapterIfConfigured();
 		
 		// Start push notification retry queue
 		pushNotificationRetryQueue.start();

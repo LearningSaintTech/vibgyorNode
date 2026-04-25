@@ -54,6 +54,10 @@ const ALL_MIME = [
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB default
 const MAX_MUSIC_SIZE = 50 * 1024 * 1024; // 50MB
 const MAX_DOCUMENT_SIZE = 25 * 1024 * 1024; // 25MB
+// Message upload hard limit for single file routes (chat message file upload).
+// Allows larger videos while keeping a controlled upper bound.
+const MESSAGE_UPLOAD_MAX_MB = Math.max(1, parseInt(process.env.MESSAGE_UPLOAD_MAX_MB || '120', 10));
+const MAX_MESSAGE_UPLOAD_SIZE = MESSAGE_UPLOAD_MAX_MB * 1024 * 1024;
 const MAX_FILES = 20;
 
 const storage = multer.memoryStorage();
@@ -123,6 +127,13 @@ function fileFilter(req, file, cb) {
 		filename: file.originalname,
 		size: file.size
 	});
+	if (file.mimetype && file.mimetype.startsWith('image/')) {
+		console.log('[IMG_MSG_FLOW] multer.file_in_memory', {
+			mimetype: file.mimetype,
+			filename: file.originalname,
+			size: file.size,
+		});
+	}
 	cb(null, true);
 }
 
@@ -146,13 +157,13 @@ const uploadMultipleMedia = multer({
 const uploadSingle = multer({
 	storage,
 	fileFilter,
-	limits: { fileSize: MAX_MUSIC_SIZE }
+	limits: { fileSize: MAX_MESSAGE_UPLOAD_SIZE }
 }).single('file');
 
 const uploadMultiple = multer({
 	storage,
 	fileFilter,
-	limits: { fileSize: MAX_MUSIC_SIZE, files: MAX_FILES }
+	limits: { fileSize: MAX_MESSAGE_UPLOAD_SIZE, files: MAX_FILES }
 }).array('files', MAX_FILES);
 
 // Posts with thumbnails

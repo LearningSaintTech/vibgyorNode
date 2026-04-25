@@ -20,14 +20,14 @@ async function updateUserStatus(req, res) {
 				if (!wasOnline) {
 					const user = await User.findById(currentUserId);
 					const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
-					enhancedRealtimeService.broadcast('user_online', {
+					await enhancedRealtimeService.broadcastUserOnline(currentUserId, {
 						userId: currentUserId,
 						username: user?.username,
 						fullName: user?.fullName,
 						profilePictureUrl: user?.profilePictureUrl,
 						timestamp: new Date()
 					});
-					console.log(`[STATUS_CONTROLLER] ✅ User ${currentUserId} online status broadcasted to all users`);
+					console.log(`[STATUS_CONTROLLER] User ${currentUserId} online presence emitted`);
 				}
 			} else {
 				await userStatus.setOffline();
@@ -35,7 +35,7 @@ async function updateUserStatus(req, res) {
 				if (wasOnline) {
 					const user = await User.findById(currentUserId);
 					const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
-					enhancedRealtimeService.broadcastUserOffline(currentUserId, user);
+					await enhancedRealtimeService.broadcastUserOffline(currentUserId, user);
 				}
 			}
 		}

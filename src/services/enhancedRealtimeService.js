@@ -1,4 +1,5 @@
 const { Server } = require('socket.io');
+const mongoose = require('mongoose');
 const { verifyAccessToken } = require('../utils/Jwt');
 const Chat = require('../user/social/userModel/chatModel');
 const Message = require('../user/social/userModel/messageModel');
@@ -15,6 +16,94 @@ class EnhancedRealtimeService {
     this.connectedUsers = new Map(); // userId -> Set of socketIds (supports multiple connections per user)
     this.userRooms = new Map(); // userId -> Set of room names
     this.activeCalls = new Map(); // callId -> call data
+    /** @type {Map<string, { count: number, resetAt: number }>} */
+    this._socketUserMessageBuckets = new Map();
+  }
+
+  /**
+   * Per-user cap for socket-originated sends (all tabs share bucket).
+   * On when ENABLE_SOCKET_MESSAGE_RATE_LIMIT=true or NODE_ENV=production; off when DISABLE_SOCKET_MESSAGE_RATE_LIMIT=1.
+   */
+  checkUserSocketMessageBurst(userId) {
+    if (process.env.DISABLE_SOCKET_MESSAGE_RATE_LIMIT === '1') return true;
+    const enabled =
+      process.env.ENABLE_SOCKET_MESSAGE_RATE_LIMIT === 'true' ||
+      process.env.NODE_ENV === 'production';
+    if (!enabled) return true;
+
+    const max = Math.max(1, parseInt(process.env.SOCKET_MESSAGE_RATE_MAX || '60', 10));
+    const windowMs = Math.max(1000, parseInt(process.env.SOCKET_MESSAGE_RATE_WINDOW_MS || '60000', 10));
+    const now = Date.now();
+    let b = this._socketUserMessageBuckets.get(userId);
+    if (!b || now >= b.resetAt) {
+      b = { count: 0, resetAt: now + windowMs };
+      this._socketUserMessageBuckets.set(userId, b);
+    }
+    b.count += 1;
+    return b.count <= max;
+  }
+
+  /**
+   * Global presence fan-out (legacy). Set USE_LEGACY_GLOBAL_PRESENCE=1 to force.
+   * Otherwise scoped in production or when USE_SCOPED_PRESENCE=true.
+   */
+  usesLegacyGlobalPresence() {
+    return process.env.USE_LEGACY_GLOBAL_PRESENCE === '1';
+  }
+
+  usesScopedPresence() {
+    if (this.usesLegacyGlobalPresence()) return false;
+    if (process.env.USE_SCOPED_PRESENCE === 'true') return true;
+    return process.env.NODE_ENV === 'production';
+  }
+
+  /**
+   * Emit user_online / user_offline / user_status_update only to users who share an active chat (cap on chat scan).
+   */
+  async emitPresenceToChatPartners(subjectUserId, event, payload) {
+    if (!this.io) return;
+    const maxChats = Math.min(
+      500,
+      Math.max(1, parseInt(process.env.PRESENCE_MAX_CHATS_SCAN || '200', 10))
+    );
+    const uidObj = mongoose.Types.ObjectId.isValid(subjectUserId)
+      ? new mongoose.Types.ObjectId(subjectUserId)
+      : subjectUserId;
+    const uidStr = subjectUserId.toString();
+    let targets;
+    try {
+      const chats = await Chat.find({ participants: uidObj, isActive: true })
+        .select('participants')
+        .limit(maxChats)
+        .lean();
+      targets = new Set();
+      for (const c of chats) {
+        for (const p of c.participants || []) {
+          const ps = p.toString();
+          if (ps !== uidStr) targets.add(ps);
+        }
+      }
+    } catch (e) {
+      console.error('[PRESENCE] emitPresenceToChatPartners query failed:', e.message);
+      this.io.emit(event, { ...payload, presenceScope: 'global_fallback' });
+      return;
+    }
+    const out = { ...payload, presenceScope: 'chat_partners' };
+    for (const pid of targets) {
+      this.io.to(`user:${pid}`).emit(event, out);
+    }
+  }
+
+  /**
+   * REST / controller: user came online (no socket instance).
+   */
+  async broadcastUserOnline(userId, payload) {
+    if (!this.io) return;
+    if (!this.usesScopedPresence()) {
+      this.io.emit('user_online', { ...payload, presenceScope: 'global' });
+      return;
+    }
+    await this.emitPresenceToChatPartners(userId, 'user_online', payload);
   }
 
   /**
@@ -156,6 +245,10 @@ class EnhancedRealtimeService {
         totalConnections: this.connectedUsers.size
       });
 
+      socket.onAny(() => {
+        socket.lastActivity = new Date();
+      });
+
       // Handle user connection
       this.handleUserConnection(socket);
 
@@ -217,14 +310,20 @@ class EnhancedRealtimeService {
     if (isNewConnection && userSockets.size === 1) {
       this.updateUserStatus(userId, 'online');
       
-      // Notify other users about online status (only once, not for each connection)
-      socket.broadcast.emit('user_online', {
+      const onlinePayload = {
         userId: userId,
         username: socket.user.username,
         fullName: socket.user.fullName,
         profilePictureUrl: socket.user.profilePictureUrl,
         timestamp: new Date()
-      });
+      };
+      if (this.usesScopedPresence()) {
+        this.emitPresenceToChatPartners(userId, 'user_online', onlinePayload).catch((err) =>
+          console.error('[PRESENCE] scoped user_online failed:', err.message)
+        );
+      } else {
+        socket.broadcast.emit('user_online', { ...onlinePayload, presenceScope: 'global' });
+      }
     }
     
     // Emit connection success
@@ -257,7 +356,10 @@ class EnhancedRealtimeService {
         // Validate chat access (social chat)
         console.log('🔵 [REALTIME_SVC] Validating chat access...', { chatId, userId });
         const chat = await Chat.findById(chatId);
-        if (!chat || !chat.participants.includes(userId)) {
+        const participantOk =
+          chat &&
+          chat.participants.some((p) => p.toString() === userId.toString());
+        if (!participantOk) {
           console.error('❌ [REALTIME_SVC] Access denied to social chat:', { chatId, userId, participants: chat?.participants, chatExists: !!chat });
           socket.emit('error', { message: 'Access denied to this chat' });
           return;
@@ -273,35 +375,10 @@ class EnhancedRealtimeService {
         const clientCount = clientsInRoom ? clientsInRoom.size : 0;
         console.log('✅ [REALTIME_SVC] User joined social chat room:', { userId, chatId, room, clientCount });
         
-        // Mark messages as read and emit status updates
-        console.log('🔵 [REALTIME_SVC] Marking messages as read...', { chatId, userId });
-        const updatedMessages = await Message.find({
-          chatId: chatId,
-          senderId: { $ne: userId },
-          'readBy.userId': { $ne: userId },
-          isDeleted: false
-        }).limit(100); // Limit to recent messages to avoid performance issues
-        
-        await Message.markChatAsRead(chatId, userId);
-        console.log('✅ [REALTIME_SVC] Messages marked as read');
-        
-        // Emit status updates for each message that was marked as read
-        // Note: room variable is already declared above
-        for (const msg of updatedMessages) {
-          this.io.to(room).emit('message_status_update', {
-            messageId: msg._id,
-            chatId: chatId,
-            status: 'read',
-            timestamp: new Date()
-          });
-        }
-        console.log('✅ [REALTIME_SVC] Status updates emitted for', updatedMessages.length, 'messages');
-        
-        // Reset unread count
-        console.log('🔵 [REALTIME_SVC] Resetting unread count...', { chatId, userId });
-        chat.resetUnreadCount(userId);
-        await chat.save();
-        console.log('✅ [REALTIME_SVC] Unread count reset');
+        // IMPORTANT: Joining a room must NOT imply read.
+        // Read status should be driven only by explicit mark-as-read actions
+        // from an actively open chat screen.
+        console.log('ℹ️ [REALTIME_SVC] join_chat subscribed without read side-effects', { chatId, userId });
         
         // Notify other participants
         console.log('🔵 [REALTIME_SVC] Notifying other participants...', { chatId, room });
@@ -345,13 +422,8 @@ class EnhancedRealtimeService {
         socket.join(`dating-chat:${chatId}`);
         console.log('[REALTIME_SERVICE] ✅ User joined dating chat room:', { userId, chatId, room: `dating-chat:${chatId}` });
         
-        // Mark messages as read
-        const DatingMessage = require('../user/dating/models/datingMessageModel');
-        await DatingMessage.markChatAsRead(chatId, userId);
-        
-        // Reset unread count
-        chat.resetUnreadCount(userId);
-        await chat.save();
+        // IMPORTANT: Joining a room must NOT imply read for dating chats either.
+        console.log('[REALTIME_SERVICE] ℹ️ join_dating_chat subscribed without read side-effects', { chatId, userId });
         
         // Notify other participants
         socket.to(`dating-chat:${chatId}`).emit('user_joined_dating_chat', {
@@ -392,45 +464,65 @@ class EnhancedRealtimeService {
       });
     });
 
-    // Typing indicators
-    socket.on('typing_start', (data) => {
-      console.log('[REALTIME_SERVICE] ⌨️ Typing start received:', {
-        userId: socket.userId,
-        username: socket.user?.username,
-        chatId: data.chatId,
-        data: data
-      });
-      
-      const { chatId } = data;
-      socket.to(`chat:${chatId}`).emit('user_typing', {
-        userId: socket.userId,
-        username: socket.user.username,
-        chatId: chatId,
-        isTyping: true,
-        timestamp: new Date()
-      });
-      
-      console.log('[REALTIME_SERVICE] ✅ Typing start broadcasted to chat:', chatId);
+    // Typing indicators (membership required — same as dating)
+    socket.on('typing_start', async (data) => {
+      try {
+        const chatId = data?.chatId;
+        const userId = socket.userId;
+        if (!chatId) return;
+
+        const chat = await Chat.findById(chatId).select('participants').lean();
+        if (!chat) {
+          socket.emit('error', { message: 'Chat not found' });
+          return;
+        }
+        const participantSet = new Set(chat.participants.map((p) => p.toString()));
+        if (!participantSet.has(userId)) {
+          socket.emit('error', { message: 'Access denied to this chat' });
+          return;
+        }
+
+        socket.to(`chat:${chatId}`).emit('user_typing', {
+          userId,
+          username: socket.user.username,
+          chatId,
+          isTyping: true,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] Error handling typing_start:', error);
+        socket.emit('error', { message: 'Failed to send typing indicator' });
+      }
     });
 
-    socket.on('typing_stop', (data) => {
-      console.log('[REALTIME_SERVICE] ⌨️ Typing stop received:', {
-        userId: socket.userId,
-        username: socket.user?.username,
-        chatId: data.chatId,
-        data: data
-      });
-      
-      const { chatId } = data;
-      socket.to(`chat:${chatId}`).emit('user_typing', {
-        userId: socket.userId,
-        username: socket.user.username,
-        chatId: chatId,
-        isTyping: false,
-        timestamp: new Date()
-      });
-      
-      console.log('[REALTIME_SERVICE] ✅ Typing stop broadcasted to chat:', chatId);
+    socket.on('typing_stop', async (data) => {
+      try {
+        const chatId = data?.chatId;
+        const userId = socket.userId;
+        if (!chatId) return;
+
+        const chat = await Chat.findById(chatId).select('participants').lean();
+        if (!chat) {
+          socket.emit('error', { message: 'Chat not found' });
+          return;
+        }
+        const participantSet = new Set(chat.participants.map((p) => p.toString()));
+        if (!participantSet.has(userId)) {
+          socket.emit('error', { message: 'Access denied to this chat' });
+          return;
+        }
+
+        socket.to(`chat:${chatId}`).emit('user_typing', {
+          userId,
+          username: socket.user.username,
+          chatId,
+          isTyping: false,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error('[REALTIME_SERVICE] Error handling typing_stop:', error);
+        socket.emit('error', { message: 'Failed to send typing indicator' });
+      }
     });
 
     // Dating typing indicators
@@ -506,8 +598,22 @@ class EnhancedRealtimeService {
       }
     });
 
-    // Social message events
+    // Social message events — single path via MessageService (encrypt, chat update, notify, emit)
     socket.on('new_message', async (data) => {
+      const allowSocketSend =
+        process.env.ALLOW_SOCKET_MESSAGE_SEND !== 'false' &&
+        process.env.ALLOW_SOCKET_MESSAGE_SEND !== '0';
+      if (!allowSocketSend) {
+        socket.emit('error', {
+          message: 'Sending via socket is disabled. Use the REST API to send messages.',
+          code: 'USE_REST_FOR_SEND'
+        });
+        return;
+      }
+      if (!this.checkUserSocketMessageBurst(socket.userId)) {
+        socket.emit('error', { message: 'Too many messages. Please slow down.', code: 'RATE_LIMIT' });
+        return;
+      }
       console.log('🔵 [REALTIME_SVC] new_message event received via socket:', {
         userId: socket.userId,
         username: socket.user?.username,
@@ -517,235 +623,104 @@ class EnhancedRealtimeService {
         timestamp: new Date().toISOString()
       });
       try {
-        const { chatId, content, type, replyTo, forwardedFrom } = data;
-        
-        // Validate chat access (social chat)
-        console.log('🔵 [REALTIME_SVC] Validating chat access for socket message...', { chatId, userId: socket.userId });
-        const chat = await Chat.findById(chatId);
-        if (!chat || !chat.participants.includes(socket.userId)) {
-          console.error('❌ [REALTIME_SVC] Access denied to social chat via socket:', { chatId, userId: socket.userId, chatExists: !!chat });
-          socket.emit('error', { message: 'Access denied to this chat' });
-          return;
-        }
-        console.log('✅ [REALTIME_SVC] Chat access validated');
+        const payload = data || {};
+        const MessageService = require('../user/social/services/messageService');
+        const saved = await MessageService.sendMessage(
+          {
+            chatId: payload.chatId,
+            senderId: socket.userId,
+            type: payload.type || 'text',
+            content: typeof payload.content === 'string' ? payload.content : '',
+            replyTo: payload.replyTo || null,
+            forwardedFrom: payload.forwardedFrom || null,
+            clientMessageId: payload.clientMessageId,
+            location: payload.location,
+            isOneView: payload.isOneView,
+            oneViewExpirationHours: payload.oneViewExpirationHours,
+            gifSource: payload.gifSource,
+            gifId: payload.gifId,
+            musicMetadata: payload.musicMetadata,
+            duration: payload.duration,
+            width: payload.width,
+            height: payload.height
+          },
+          null
+        );
 
-        // Check for duplicate message (same content, sender, and chat within last 5 seconds)
-        // This prevents duplicate creation when API and socket both try to create the same message
-        const fiveSecondsAgo = new Date(Date.now() - 5000);
-        const duplicateCheck = await Message.findOne({
-          chatId: chatId,
-          senderId: socket.userId,
-          content: content,
-          createdAt: { $gte: fiveSecondsAgo }
-        });
-
-        if (duplicateCheck) {
-          console.log('⚠️ [REALTIME_SVC] Duplicate message detected, skipping creation:', { 
-            existingMessageId: duplicateCheck._id,
-            chatId,
-            contentPreview: content?.substring(0, 50)
-          });
-          
-          // Populate and broadcast the existing message instead
-          await duplicateCheck.populate('senderId', 'username fullName profilePictureUrl');
-          const messageDataForBroadcast = {
-            _id: duplicateCheck._id,
-            chatId: duplicateCheck.chatId,
-            senderId: duplicateCheck.senderId,
-            type: duplicateCheck.type,
-            content: duplicateCheck.content,
-            createdAt: duplicateCheck.createdAt,
-            status: duplicateCheck.status,
-            media: duplicateCheck.media,
-            location: duplicateCheck.location,
-            musicMetadata: duplicateCheck.musicMetadata,
-            isOneView: duplicateCheck.isOneView,
-            oneViewExpiresAt: duplicateCheck.oneViewExpiresAt,
-            viewedBy: duplicateCheck.viewedBy,
-            gifSource: duplicateCheck.gifSource,
-            gifId: duplicateCheck.gifId,
-            isAnimated: duplicateCheck.isAnimated,
-            sender: {
-              _id: duplicateCheck.senderId._id,
-              username: duplicateCheck.senderId.username,
-              fullName: duplicateCheck.senderId.fullName,
-              profilePictureUrl: duplicateCheck.senderId.profilePictureUrl
+        const chatId = payload.chatId;
+        if (!saved.isIdempotentReplay) {
+          const chatDoc = await Chat.findById(chatId).select('participants').lean();
+          if (chatDoc && this.io) {
+            const senderUsername =
+              (saved.senderId && saved.senderId.username) || socket.user?.username || 'user';
+            for (const participantId of chatDoc.participants) {
+              if (participantId.toString() !== socket.userId) {
+                this.io.to(`user:${participantId}`).emit('new_message_notification', {
+                  chatId,
+                  messageId: saved._id,
+                  sender: senderUsername,
+                  content: saved.content,
+                  type: saved.type,
+                  timestamp: saved.createdAt
+                });
+              }
             }
-          };
-          
-          const room = `chat:${chatId}`;
-          this.io.to(room).emit('message_received', messageDataForBroadcast);
-          console.log('✅ [REALTIME_SVC] Existing message broadcasted to room:', { room, messageId: duplicateCheck._id });
-          return;
+          }
         }
-
-        // Create message
-        console.log('🔵 [REALTIME_SVC] Creating message from socket event...', { chatId, type, contentLength: content?.length });
-        const message = new Message({
-          chatId,
-          senderId: socket.userId,
-          type: type || 'text',
-          content,
-          replyTo,
-          forwardedFrom,
-          status: 'sent'
-        });
-
-        await message.save();
-        console.log('✅ [REALTIME_SVC] Message saved:', { messageId: message._id });
-        
-        await message.populate('senderId', 'username fullName profilePictureUrl');
-        console.log('✅ [REALTIME_SVC] Message populated');
-
-        // Update chat's last message
-        console.log('🔵 [REALTIME_SVC] Updating chat...', { chatId });
-        chat.lastMessage = message._id;
-        chat.lastMessageAt = new Date();
-        await chat.save();
-        console.log('✅ [REALTIME_SVC] Chat updated');
-
-        // Broadcast message to social chat participants
-        const room = `chat:${chatId}`;
-        const clientsInRoom = this.io.sockets.adapter.rooms.get(room);
-        const clientCount = clientsInRoom ? clientsInRoom.size : 0;
-        console.log('🔵 [REALTIME_SVC] Broadcasting message to room:', { room, clientCount });
-        
-        const messageDataForBroadcast = {
-          _id: message._id,
-          chatId: message.chatId,
-          senderId: message.senderId,
-          type: message.type,
-          content: message.content,
-          createdAt: message.createdAt,
-          status: message.status,
-          media: message.media,
-          location: message.location,
-          musicMetadata: message.musicMetadata,
-          isOneView: message.isOneView,
-          oneViewExpiresAt: message.oneViewExpiresAt,
-          viewedBy: message.viewedBy,
-          gifSource: message.gifSource,
-          gifId: message.gifId,
-          isAnimated: message.isAnimated,
-          sender: {
-            _id: message.senderId._id,
-            username: message.senderId.username,
-            fullName: message.senderId.fullName,
-            profilePictureUrl: message.senderId.profilePictureUrl
-          }
-        };
-        
-        this.io.to(room).emit('message_received', messageDataForBroadcast);
-        console.log('✅ [REALTIME_SVC] Message broadcasted to room:', { room, clientCount, messageId: message._id });
-
-        // Emit delivered status update to sender (if they're in the room)
-        // Check if sender is online and in the chat room
-        const senderRoom = `user:${socket.userId}`;
-        this.io.to(senderRoom).emit('message_status_update', {
-          messageId: message._id,
-          chatId: chatId,
-          status: 'delivered',
-          timestamp: new Date()
-        });
-        console.log('✅ [REALTIME_SVC] Delivered status update emitted to sender');
-
-        // Update unread counts for other participants
-        let notificationsSent = 0;
-        chat.participants.forEach(participantId => {
-          if (participantId.toString() !== socket.userId) {
-            chat.incrementUnreadCount(participantId);
-            
-            // Notify user about new message
-            const userRoom = `user:${participantId}`;
-            this.io.to(userRoom).emit('new_message_notification', {
-              chatId: chatId,
-              messageId: message._id,
-              sender: message.senderId.username,
-              content: message.content,
-              type: message.type,
-              timestamp: message.createdAt
-            });
-            notificationsSent++;
-          }
-        });
-        console.log('✅ [REALTIME_SVC] Unread counts updated and notifications sent:', { notificationsSent });
-
       } catch (error) {
-        console.error('❌ [REALTIME_SVC] Error handling new social message:', { error: error.message, stack: error.stack, chatId: data?.chatId, userId: socket.userId });
-        socket.emit('error', { message: 'Failed to send message' });
+        console.error('❌ [REALTIME_SVC] Error handling new social message:', {
+          error: error.message,
+          stack: error.stack,
+          chatId: data?.chatId,
+          userId: socket.userId
+        });
+        socket.emit('error', { message: error.message || 'Failed to send message' });
       }
     });
 
-    // Dating message events
+    // Dating message events — single path via DatingMessageService (encrypt, notify, emitDatingMessage)
     socket.on('new_dating_message', async (data) => {
+      const allowSocketSend =
+        process.env.ALLOW_SOCKET_MESSAGE_SEND !== 'false' &&
+        process.env.ALLOW_SOCKET_MESSAGE_SEND !== '0';
+      if (!allowSocketSend) {
+        socket.emit('error', {
+          message: 'Sending via socket is disabled. Use the REST API to send messages.',
+          code: 'USE_REST_FOR_SEND'
+        });
+        return;
+      }
+      if (!this.checkUserSocketMessageBurst(socket.userId)) {
+        socket.emit('error', { message: 'Too many messages. Please slow down.', code: 'RATE_LIMIT' });
+        return;
+      }
       try {
-        const { chatId, content, type, replyTo, forwardedFrom } = data;
-        
-        // Validate chat access (dating chat)
-        const DatingChat = require('../user/dating/models/datingChatModel');
-        const chat = await DatingChat.findById(chatId);
-        if (!chat || !chat.participants.some(p => p.toString() === socket.userId)) {
-          socket.emit('error', { message: 'Access denied to this dating chat' });
-          return;
-        }
-
-        // Create message
-        const DatingMessage = require('../user/dating/models/datingMessageModel');
-        const message = new DatingMessage({
-          chatId,
-          senderId: socket.userId,
-          type: type || 'text',
-          content,
-          replyTo,
-          forwardedFrom,
-          status: 'sent'
-        });
-
-        await message.save();
-        await message.populate('senderId', 'username fullName profilePictureUrl');
-
-        // Update chat's last message
-        chat.lastMessage = message._id;
-        chat.lastMessageAt = new Date();
-        await chat.save();
-
-        // Broadcast message to dating chat participants
-        this.io.to(`dating-chat:${chatId}`).emit('dating_message_received', {
-          _id: message._id,
-          chatId: message.chatId,
-          senderId: message.senderId,
-          type: message.type,
-          content: message.content,
-          createdAt: message.createdAt,
-          status: message.status,
-          sender: {
-            _id: message.senderId._id,
-            username: message.senderId.username,
-            fullName: message.senderId.fullName,
-            profilePictureUrl: message.senderId.profilePictureUrl
-          }
-        });
-
-        // Update unread counts for other participants
-        chat.participants.forEach(participantId => {
-          if (participantId.toString() !== socket.userId) {
-            chat.incrementUnreadCount(participantId);
-            
-            // Notify user about new dating message
-            this.io.to(`user:${participantId}`).emit('dating_new_message_notification', {
-              chatId: chatId,
-              messageId: message._id,
-              sender: message.senderId.username,
-              content: message.content,
-              type: message.type,
-              timestamp: message.createdAt
-            });
-          }
-        });
-
+        const payload = data || {};
+        const DatingMessageService = require('../user/dating/services/datingMessageService');
+        await DatingMessageService.sendMessage(
+          {
+            chatId: payload.chatId,
+            senderId: socket.userId,
+            type: payload.type || 'text',
+            content: typeof payload.content === 'string' ? payload.content : '',
+            replyTo: payload.replyTo || null,
+            forwardedFrom: payload.forwardedFrom || null,
+            clientMessageId: payload.clientMessageId,
+            location: payload.location,
+            isOneView: payload.isOneView,
+            oneViewExpirationHours: payload.oneViewExpirationHours,
+            gifSource: payload.gifSource,
+            gifId: payload.gifId,
+            musicMetadata: payload.musicMetadata,
+            duration: payload.duration,
+            width: payload.width,
+            height: payload.height
+          },
+          null
+        );
       } catch (error) {
         console.error('Error handling new dating message:', error);
-        socket.emit('error', { message: 'Failed to send dating message' });
+        socket.emit('error', { message: error.message || 'Failed to send dating message' });
       }
     });
   }
@@ -1138,12 +1113,16 @@ class EnhancedRealtimeService {
         const { status } = data;
         await this.updateUserStatus(socket.userId, status);
         
-        // Broadcast status update
-        socket.broadcast.emit('user_status_update', {
+        const statusPayload = {
           userId: socket.userId,
           status: status,
           timestamp: new Date()
-        });
+        };
+        if (this.usesScopedPresence()) {
+          await this.emitPresenceToChatPartners(socket.userId, 'user_status_update', statusPayload);
+        } else {
+          socket.broadcast.emit('user_status_update', { ...statusPayload, presenceScope: 'global' });
+        }
       } catch (error) {
         console.error('Error updating user status:', error);
         socket.emit('error', { message: 'Failed to update status' });
@@ -1267,16 +1246,20 @@ class EnhancedRealtimeService {
           }
         }
         
-        // Notify other users about offline status (only when all connections are gone)
-        this.io.emit('user_offline', {
+        const offlinePayload = {
           userId: userId,
           username: socket.user?.username,
           fullName: socket.user?.fullName,
           profilePictureUrl: socket.user?.profilePictureUrl,
           timestamp: new Date()
-        });
+        };
+        if (this.usesScopedPresence()) {
+          await this.emitPresenceToChatPartners(userId, 'user_offline', offlinePayload);
+        } else {
+          this.io.emit('user_offline', { ...offlinePayload, presenceScope: 'global' });
+        }
         
-        console.log(`[CONNECTION] ✅ User ${userId} offline status broadcasted (all connections closed)`);
+        console.log(`[CONNECTION] ✅ User ${userId} offline presence emitted (all connections closed)`);
       } else {
         console.log(`[CONNECTION] ℹ️ User ${userId} still has ${userSockets.size} active connection(s)`);
       }
@@ -1482,23 +1465,27 @@ class EnhancedRealtimeService {
   /**
    * Broadcast user offline status
    */
-  broadcastUserOffline(userId, userDetails) {
-    if (this.io) {
-      this.io.emit('user_offline', {
-        userId: userId,
-        username: userDetails?.username,
-        fullName: userDetails?.fullName,
-        profilePictureUrl: userDetails?.profilePictureUrl,
-        timestamp: new Date()
-      });
-      console.log(`[REALTIME_SERVICE] ✅ User ${userId} offline status broadcasted to all users`);
+  async broadcastUserOffline(userId, userDetails) {
+    if (!this.io) return;
+    const payload = {
+      userId: userId,
+      username: userDetails?.username,
+      fullName: userDetails?.fullName,
+      profilePictureUrl: userDetails?.profilePictureUrl,
+      timestamp: new Date()
+    };
+    if (this.usesScopedPresence()) {
+      await this.emitPresenceToChatPartners(userId, 'user_offline', payload);
+    } else {
+      this.io.emit('user_offline', { ...payload, presenceScope: 'global' });
     }
+    console.log(`[REALTIME_SERVICE] User ${userId} offline presence emitted`);
   }
 
   /**
    * Emit new message to chat participants (social chats)
    */
-  emitNewMessage(chatId, messageData) {
+  emitNewMessage(chatId, messageData, options = {}) {
     console.log('🔵 [REALTIME_SVC] emitNewMessage called:', { 
       chatId, 
       messageId: messageData._id,
@@ -1507,6 +1494,16 @@ class EnhancedRealtimeService {
       content: messageData.content,
       timestamp: new Date().toISOString()
     });
+    if (messageData.type === 'image' && messageData.media) {
+      const u = messageData.media.url;
+      console.log('[IMG_MSG_FLOW] realtime.emitNewMessage payload', {
+        chatId: String(chatId),
+        messageId: String(messageData._id),
+        mediaUrlPrefix: typeof u === 'string' ? u.slice(0, 120) : u,
+        mediaUrlLen: typeof u === 'string' ? u.length : 0,
+        hasDimensions: !!(messageData.media.dimensions || (messageData.media.width && messageData.media.height)),
+      });
+    }
     if (this.io) {
       console.log(`🔵 [REALTIME_SVC] Broadcasting new message to social chat ${chatId}:`, {
         messageId: messageData._id,
@@ -1522,6 +1519,11 @@ class EnhancedRealtimeService {
       console.log(`🔵 [REALTIME_SVC] Emitting to room ${room}, ${clientCount} client(s) connected`);
       
       this.io.to(room).emit('message_received', messageData);
+      const recipientIds = Array.isArray(options.recipientIds) ? options.recipientIds : [];
+      recipientIds.forEach((recipientId) => {
+        if (!recipientId) return;
+        this.io.to(`user:${recipientId}`).emit('message_received', messageData);
+      });
       
       console.log(`✅ [REALTIME_SVC] Social message broadcasted to chat ${chatId} (${clientCount} client(s))`);
     } else {
@@ -1568,6 +1570,37 @@ class EnhancedRealtimeService {
       console.log(`[REALTIME_SERVICE] ✅ Dating message broadcasted to chat ${chatId}`);
     } else {
       console.error('[REALTIME_SERVICE] ❌ Cannot broadcast dating message - Socket.IO not initialized');
+    }
+  }
+
+  /**
+   * Multi-node: attach Redis adapter when REDIS_URL is set. Call after init() (e.g. from server.js after DB connect).
+   */
+  async attachRedisAdapterIfConfigured() {
+    const redisUrl = process.env.REDIS_URL && process.env.REDIS_URL.trim();
+    if (!redisUrl) {
+      console.log('[REALTIME] REDIS_URL not set — Socket.IO single-node mode');
+      return;
+    }
+    if (!this.io) {
+      console.warn('[REALTIME] Cannot attach Redis adapter: Socket.IO not initialized');
+      return;
+    }
+    try {
+      const { createAdapter } = require('@socket.io/redis-adapter');
+      const { createClient } = require('redis');
+      const pubClient = createClient({ url: redisUrl });
+      const subClient = pubClient.duplicate();
+      pubClient.on('error', (err) => console.error('[REALTIME] Redis pub client error:', err.message));
+      subClient.on('error', (err) => console.error('[REALTIME] Redis sub client error:', err.message));
+      await Promise.all([pubClient.connect(), subClient.connect()]);
+      this.io.adapter(createAdapter(pubClient, subClient));
+      console.log('[REALTIME] Socket.IO Redis adapter attached');
+    } catch (err) {
+      console.error('[REALTIME] Redis adapter failed:', err.message);
+      if (process.env.REDIS_REQUIRED === 'true') {
+        throw err;
+      }
     }
   }
 }

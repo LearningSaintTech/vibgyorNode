@@ -31,7 +31,7 @@ Set the following variables in your Postman environment:
 
 | Variable | Description | Example Value |
 |----------|-------------|---------------|
-| `baseUrl` | Base URL of your API server | `http://localhost:3000` |
+| `baseUrl` | Base URL of your API server | `http://192.168.1.39:3000` |
 | `adminToken` | Admin access token | (Obtained from admin login) |
 
 ### 3. Get Admin Token

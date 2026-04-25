@@ -15,7 +15,7 @@ This folder contains a Postman collection that includes **all** APIs exposed by 
 
 1. **Import in Postman**: File → Import → select `VibgyorNode-API-Collection.postman_collection.json`.
 2. **Set variables** (Collection or Environment):
-   - `baseUrl`: e.g. `http://localhost:3000` or your deployed URL
+   - `baseUrl`: e.g. `http://192.168.1.39:3000` or your deployed URL
    - `userToken`: JWT for user endpoints (after login via `/user/auth/verify-otp`)
    - `adminToken`: JWT for admin/subadmin endpoints (after login via `/admin-auth/verify-otp`)
 3. **Path/query placeholders** to replace as needed: `{{userId}}`, `{{postId}}`, `{{chatId}}`, `{{messageId}}`, `{{callId}}`, `{{reportId}}`, `{{matchId}}`, `{{moderationId}}`, `{{subAdminId}}`, `{{requestId}}`, `{{storyId}}`, `{{hashtag}}`, `{{listType}}`, `{{photoIndex}}`, `{{videoIndex}}`, `{{id}}`.
