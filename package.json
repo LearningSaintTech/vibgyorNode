@@ -11,6 +11,7 @@
     "kill-port:bat": "kill-port-3000.bat",
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed:admin": "node scriptFiles/createAdmin.js",
+    "upload:identification": "node scriptFiles/uploadIdentificationList.js",
     "seed": "node src/seed.js",
     "seed:reset": "node src/seed.js --reset",
     "seed:optimization": "node scriptFiles/seedOptimizationTest.js",

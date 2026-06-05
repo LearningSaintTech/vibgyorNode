@@ -2,23 +2,23 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 // Import models
-const User = require('./src/user/auth/model/userAuthModel');
-const Post = require('./src/user/social/userModel/postModel');
-const Chat = require('./src/user/social/userModel/chatModel');
-const Message = require('./src/user/social/userModel/messageModel');
-const Story = require('./src/user/social/userModel/storyModel');
-const MessageRequest = require('./src/user/social/userModel/messageRequestModel');
-const FollowRequest = require('./src/user/social/userModel/followRequestModel');
-const UserStatus = require('./src/user/social/userModel/userStatusModel');
-const Call = require('./src/user/social/userModel/callModel');
-const UserCatalog = require('./src/user/auth/model/userCatalogModel');
+const User = require('./src/modules/user/user.model');
+const Post = require('./src/modules/social/post/post.model');
+const Chat = require('./src/modules/social/chat/chat.model');
+const Message = require('./src/modules/social/message/message.model');
+const Story = require('./src/modules/social/story/story.model');
+const MessageRequest = require('./src/modules/social/messageRequest/messageRequest.model');
+const FollowRequest = require('./src/modules/social/graph/followRequest.model');
+const UserStatus = require('./src/modules/social/status/status.model');
+const Call = require('./src/modules/social/call/call.model');
+const UserCatalog = require('./src/modules/user/catalog/catalog.model');
 
 // Import dating models
-const DatingMatch = require('./src/user/dating/models/datingMatchModel');
-const DatingChat = require('./src/user/dating/models/datingChatModel');
-const DatingMessage = require('./src/user/dating/models/datingMessageModel');
-const DatingInteraction = require('./src/user/dating/models/datingInteractionModel');
-const DatingProfileComment = require('./src/user/dating/models/datingProfileCommentModel');
+const DatingMatch = require('./src/modules/dating/interaction/datingMatch.model');
+const DatingChat = require('./src/modules/dating/chat/datingChat.model');
+const DatingMessage = require('./src/modules/dating/message/datingMessage.model');
+const DatingInteraction = require('./src/modules/dating/interaction/datingInteraction.model');
+const DatingProfileComment = require('./src/modules/dating/profile/datingProfileComment.model');
 
 // Database connection
 const connectDB = async () => {

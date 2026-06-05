@@ -1,11 +1,11 @@
 const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const { verifyAccessToken } = require('../utils/Jwt');
-const Chat = require('../user/social/userModel/chatModel');
-const Message = require('../user/social/userModel/messageModel');
-const Call = require('../user/social/userModel/callModel');
-const User = require('../user/auth/model/userAuthModel');
-const UserStatus = require('../user/social/userModel/userStatusModel');
+const Chat = require('../modules/social/chat/chat.model');
+const Message = require('../modules/social/message/message.model');
+const Call = require('../modules/social/call/call.model');
+const User = require('../modules/user/user.model');
+const UserStatus = require('../modules/social/status/status.model');
 
 /**
  * Enhanced Real-time Service with comprehensive WebRTC and chat features
@@ -410,7 +410,7 @@ class EnhancedRealtimeService {
         const userId = socket.userId;
         
         // Validate chat access (dating chat)
-        const DatingChat = require('../user/dating/models/datingChatModel');
+        const DatingChat = require('../modules/dating/chat/datingChat.model');
         const chat = await DatingChat.findById(chatId);
         if (!chat || !chat.participants.some(p => p.toString() === userId)) {
           console.log('[REALTIME_SERVICE] ❌ Access denied to dating chat:', { chatId, userId, participants: chat?.participants });
@@ -539,7 +539,7 @@ class EnhancedRealtimeService {
         const userId = socket.userId;
         
         // Validate chat access (dating chat)
-        const DatingChat = require('../user/dating/models/datingChatModel');
+        const DatingChat = require('../modules/dating/chat/datingChat.model');
         const chat = await DatingChat.findById(chatId);
         if (!chat || !chat.participants.some(p => p.toString() === userId)) {
           console.log('[REALTIME_SERVICE] ❌ Access denied to dating chat for typing:', { chatId, userId });
@@ -575,7 +575,7 @@ class EnhancedRealtimeService {
         const userId = socket.userId;
         
         // Validate chat access (dating chat)
-        const DatingChat = require('../user/dating/models/datingChatModel');
+        const DatingChat = require('../modules/dating/chat/datingChat.model');
         const chat = await DatingChat.findById(chatId);
         if (!chat || !chat.participants.some(p => p.toString() === userId)) {
           console.log('[REALTIME_SERVICE] ❌ Access denied to dating chat for typing:', { chatId, userId });
@@ -624,7 +624,7 @@ class EnhancedRealtimeService {
       });
       try {
         const payload = data || {};
-        const MessageService = require('../user/social/services/messageService');
+        const MessageService = require('../modules/social/message/message.service');
         const saved = await MessageService.sendMessage(
           {
             chatId: payload.chatId,
@@ -696,7 +696,7 @@ class EnhancedRealtimeService {
       }
       try {
         const payload = data || {};
-        const DatingMessageService = require('../user/dating/services/datingMessageService');
+        const DatingMessageService = require('../modules/dating/message/message.service');
         await DatingMessageService.sendMessage(
           {
             chatId: payload.chatId,
@@ -1061,7 +1061,7 @@ class EnhancedRealtimeService {
         const userId = socket.userId;
         
         // Update notification status via notification service
-        const notificationService = require('../notification/services/notificationService');
+        const notificationService = require('../modules/notification/services/notificationService');
         await notificationService.markAsRead(notificationId, userId);
         
         // Emit confirmation
@@ -1088,7 +1088,7 @@ class EnhancedRealtimeService {
         const userId = socket.userId;
         
         // Record click analytics
-        const Notification = require('../notification/models/notificationModel');
+        const Notification = require('../modules/notification/models/notificationModel');
         const notification = await Notification.findOne({
           _id: notificationId,
           recipient: userId
@@ -1546,7 +1546,7 @@ class EnhancedRealtimeService {
       this.io.to(`dating-chat:${chatId}`).emit('dating_message_received', messageData);
       
       // Also emit to user rooms for notifications
-      const DatingChat = require('../user/dating/models/datingChatModel');
+      const DatingChat = require('../modules/dating/chat/datingChat.model');
       DatingChat.findById(chatId)
         .then(chat => {
           if (chat) {

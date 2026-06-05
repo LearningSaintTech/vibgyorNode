@@ -13,9 +13,9 @@
 
 require('dotenv').config();
 const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
-const User = require('../src/user/auth/model/userAuthModel');
-const Post = require('../src/user/social/userModel/postModel');
-const Story = require('../src/user/social/userModel/storyModel');
+const User = require('../src/modules/user/user.model');
+const Post = require('../src/modules/social/post/post.model');
+const Story = require('../src/modules/social/story/story.model');
 const { faker } = require('@faker-js/faker');
 
 // Configuration

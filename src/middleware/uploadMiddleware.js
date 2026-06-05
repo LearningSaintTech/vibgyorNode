@@ -166,6 +166,13 @@ const uploadMultiple = multer({
 	limits: { fileSize: MAX_MESSAGE_UPLOAD_SIZE, files: MAX_FILES }
 }).array('files', MAX_FILES);
 
+/** Catalog admin: any field name (Man.png, identification[0][icon], files, etc.) */
+const uploadCatalogMedia = multer({
+	storage,
+	fileFilter: imageFileFilter,
+	limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
+}).any();
+
 // Posts with thumbnails
 const uploadWithThumbnails = multer({
 	storage,
@@ -181,6 +188,7 @@ const uploadWithThumbnails = multer({
 module.exports = {
 	uploadSingle,
 	uploadMultiple,
+	uploadCatalogMedia,
 	uploadWithThumbnails,
 	MAX_FILE_SIZE,
 	MAX_MUSIC_SIZE,

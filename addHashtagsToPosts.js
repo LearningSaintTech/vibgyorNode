@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 // Import Post model
-const Post = require('./src/user/social/userModel/postModel');
+const Post = require('./src/modules/social/post/post.model');
 
 // Sample hashtags array (same as in comprehensiveSeed.js)
 const SAMPLE_HASHTAGS = [

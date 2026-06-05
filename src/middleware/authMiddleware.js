@@ -1,7 +1,7 @@
 const { verifyAccessToken } = require('../utils/Jwt');
 const ApiResponse = require('../utils/apiResponse');
 const { Roles, AllRoles } = require('../utils/constData');
-const SubAdmin = require('../subAdmin/subAdminModel/subAdminAuthModel');
+const SubAdmin = require('../modules/subAdmin/auth/subAdmin.model');
 
 /**
  * Authorization middleware factory.

@@ -13,7 +13,7 @@
 
 require('dotenv').config();
 const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
-const Post = require('../src/user/social/userModel/postModel');
+const Post = require('../src/modules/social/post/post.model');
 
 // Sample captions to use
 const SAMPLE_CAPTIONS = [

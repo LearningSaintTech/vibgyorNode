@@ -1,3 +1,4 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 const path = require('path');
 
 // Load environment variables
@@ -14,7 +15,7 @@ if (process.env.NODE_ENV !== 'production') {
 const { server } = require('./app'); // Import server from app.js
 const enhancedRealtimeService = require('./services/enhancedRealtimeService');
 const { connectToDatabase } = require('./dbConfig/db');
-const pushNotificationRetryQueue = require('./notification/services/pushNotificationRetryQueue');
+const pushNotificationRetryQueue = require('./modules/notification/services/pushNotificationRetryQueue');
 
 // Get port from environment variable (Render provides PORT automatically)
 const PORT = process.env.PORT || 3000;

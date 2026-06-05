@@ -14,8 +14,8 @@
 
 require('dotenv').config();
 const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
-const User = require('../src/user/auth/model/userAuthModel');
-const Story = require('../src/user/social/userModel/storyModel');
+const User = require('../src/modules/user/user.model');
+const Story = require('../src/modules/social/story/story.model');
 const { uploadToS3 } = require('../src/services/s3Service');
 const fs = require('fs');
 const path = require('path');

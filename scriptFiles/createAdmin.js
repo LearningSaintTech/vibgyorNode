@@ -4,7 +4,7 @@
 */
 require('dotenv').config();
 const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
-const Admin = require('../src/admin/adminModel/adminModel');
+const Admin = require('../src/modules/admin/auth/admin.model');
 
 function parseArgs(argv) {
 	const args = {};

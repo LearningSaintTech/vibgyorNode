@@ -1,9 +1,9 @@
-const Post = require('../user/social/userModel/postModel');
-const Story = require('../user/social/userModel/storyModel');
-const User = require('../user/auth/model/userAuthModel');
-const Message = require('../user/social/userModel/messageModel');
-const Call = require('../user/social/userModel/callModel');
-const ContentModeration = require('../user/social/userModel/contentModerationModel');
+const Post = require('../modules/social/post/post.model');
+const Story = require('../modules/social/story/story.model');
+const User = require('../modules/user/user.model');
+const Message = require('../modules/social/message/message.model');
+const Call = require('../modules/social/call/call.model');
+const ContentModeration = require('../modules/social/contentModeration/contentModeration.model');
 // TODO: Notification model will be used with new architecture
 // const Notification = require('../user/social/userModel/notificationModel');
 

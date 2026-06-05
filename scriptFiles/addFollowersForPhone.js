@@ -13,7 +13,7 @@
 
 require('dotenv').config();
 const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
-const User = require('../src/user/auth/model/userAuthModel');
+const User = require('../src/modules/user/user.model');
 
 // ---------- CONFIG ----------
 const TARGET_PHONE = '9829699382'; // Phone number of the user to receive followers

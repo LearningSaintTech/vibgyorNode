@@ -2,8 +2,8 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 // Import models
-const Post = require('./src/user/social/userModel/postModel');
-const Story = require('./src/user/social/userModel/storyModel');
+const Post = require('./src/modules/social/post/post.model');
+const Story = require('./src/modules/social/story/story.model');
 
 // Database connection
 const connectDB = async () => {

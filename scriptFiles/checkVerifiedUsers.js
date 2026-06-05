@@ -5,7 +5,7 @@
 
 require('dotenv').config();
 const { connectToDatabase, disconnectFromDatabase } = require('../src/dbConfig/db');
-const User = require('../src/user/auth/model/userAuthModel');
+const User = require('../src/modules/user/user.model');
 
 async function checkVerifiedUsers() {
 	try {

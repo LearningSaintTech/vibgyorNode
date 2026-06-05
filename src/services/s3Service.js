@@ -1,10 +1,11 @@
+const path = require('path');
 const { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { getCloudFrontUrl, getResponsiveUrls } = require('./cloudfrontService');
-require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-const BUCKET = process.env.AWS_S3_BUCKET_NAME;
-const REGION = process.env.AWS_REGION;
+const BUCKET = process.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET;
+const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
 const USE_CLOUDFRONT = process.env.USE_CLOUDFRONT === 'true' || process.env.USE_CLOUDFRONT === '1';
 
 console.log(`[S3] Initializing S3 service - Bucket: ${BUCKET}, Region: ${REGION}, Use CloudFront: ${USE_CLOUDFRONT}`);
