@@ -342,6 +342,30 @@ async function resendOtp({ phoneNumber, countryCode = '+91' }) {
 	return resendOtpForAdmin(admin, phone.phoneNumber, phone.countryCode);
 }
 
+function formatAdminProfileData(admin) {
+	return {
+		id: admin._id,
+		phoneNumber: admin.phoneNumber,
+		countryCode: admin.countryCode,
+		firstName: admin.firstName || '',
+		lastName: admin.lastName || '',
+		email: admin.email || '',
+		avatarUrl: admin.avatarUrl || '',
+		gender: admin.gender,
+		dateOfBirth: admin.dateOfBirth,
+		address: admin.address || '',
+		city: admin.city || '',
+		state: admin.state || '',
+		pinCode: admin.pinCode || '',
+		role: admin.role,
+		isProfileCompleted: admin.isProfileCompleted,
+		isVerified: admin.isVerified,
+		lastLoginAt: admin.lastLoginAt,
+		createdAt: admin.createdAt,
+		updatedAt: admin.updatedAt,
+	};
+}
+
 async function getProfile(userId) {
 	const admin = await adminAuthRepository.findAdminById(userId);
 	if (!admin) {
@@ -351,23 +375,7 @@ async function getProfile(userId) {
 	return {
 		ok: true,
 		message: 'Profile retrieved successfully',
-		data: {
-			id: admin._id,
-			phoneNumber: admin.phoneNumber,
-			countryCode: admin.countryCode,
-			firstName: admin.firstName || '',
-			lastName: admin.lastName || '',
-			email: admin.email || '',
-			avatarUrl: admin.avatarUrl || '',
-			gender: admin.gender,
-			dateOfBirth: admin.dateOfBirth,
-			address: admin.address || '',
-			city: admin.city || '',
-			state: admin.state || '',
-			pinCode: admin.pinCode || '',
-			role: admin.role,
-			isProfileCompleted: admin.isProfileCompleted,
-		},
+		data: formatAdminProfileData(admin),
 	};
 }
 
@@ -452,25 +460,7 @@ async function updateProfile(userId, body, file) {
 	return {
 		ok: true,
 		message: 'Profile updated successfully',
-		data: {
-			id: admin._id,
-			phoneNumber: admin.phoneNumber,
-			countryCode: admin.countryCode,
-			firstName: admin.firstName || '',
-			lastName: admin.lastName || '',
-			email: admin.email || '',
-			avatarUrl: admin.avatarUrl || '',
-			gender: admin.gender,
-			dateOfBirth: admin.dateOfBirth,
-			address: admin.address || '',
-			city: admin.city || '',
-			state: admin.state || '',
-			pinCode: admin.pinCode || '',
-			isProfileCompleted: admin.isProfileCompleted,
-			role: admin.role,
-			isVerified: admin.isVerified,
-			lastLoginAt: admin.lastLoginAt,
-		},
+		data: formatAdminProfileData(admin),
 	};
 }
 

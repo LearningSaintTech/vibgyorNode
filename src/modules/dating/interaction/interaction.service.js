@@ -10,6 +10,12 @@ const {
 } = require('./interaction.repository');
 const { invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 const notificationService = require('../../notification/services/notificationService');
+const {
+	calculateDistance,
+	calculateMatchPercentage,
+	MATCH_USER_SELECT_FIELDS,
+	getProfileIdentificationTexts,
+} = require('../matching/matchUtils');
 
 async function loadUsers(currentUserId, targetUserId) {
 	console.log('[DATING][INTERACTION] loadUsers payload', { currentUserId, targetUserId });
@@ -353,140 +359,6 @@ async function getProfileComments(req, res) {
 	}
 }
 
-// Helper function to calculate distance between two coordinates
-function calculateDistance(lat1, lon1, lat2, lon2) {
-	const R = 6371; // Radius of the Earth in km
-	const dLat = (lat2 - lat1) * Math.PI / 180;
-	const dLon = (lon2 - lon1) * Math.PI / 180;
-	const a =
-		Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-		Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-		Math.sin(dLon / 2) * Math.sin(dLon / 2);
-	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-	return R * c;
-}
-
-// Helper function to calculate match percentage
-function calculateMatchPercentage(currentUser, profile, distance = null) {
-	let matchScore = 0;
-	let maxScore = 0;
-	let availableFactors = 0;
-
-	// 1. Shared Interests (30% weight)
-	if (currentUser.interests && Array.isArray(currentUser.interests) && currentUser.interests.length > 0 &&
-		profile.interests && Array.isArray(profile.interests) && profile.interests.length > 0) {
-		maxScore += 30;
-		availableFactors++;
-		const currentInterests = currentUser.interests.map(i => i.toLowerCase());
-		const profileInterests = profile.interests.map(i => i.toLowerCase());
-		const sharedInterests = currentInterests.filter(i => profileInterests.includes(i));
-		if (currentInterests.length > 0) {
-			const interestMatch = (sharedInterests.length / Math.max(currentInterests.length, profileInterests.length)) * 30;
-			matchScore += interestMatch;
-		}
-	}
-
-	// 2. Age Compatibility (20% weight)
-	if (currentUser.dating?.preferences?.ageRange && profile.age) {
-		maxScore += 20;
-		availableFactors++;
-		const { min, max } = currentUser.dating.preferences.ageRange;
-		let ageScore = 0;
-		if (profile.age >= min && profile.age <= max) {
-			ageScore = 20;
-			matchScore += ageScore;
-		} else {
-			const ageDiff = Math.min(
-				Math.abs(profile.age - min),
-				Math.abs(profile.age - max)
-			);
-			if (ageDiff <= 5) {
-				ageScore = 10;
-			} else if (ageDiff <= 10) {
-				ageScore = 5;
-			}
-			matchScore += ageScore;
-		}
-	}
-
-	// 3. Preferences Matching (25% weight)
-	let prefScore = 0;
-	let prefMax = 0;
-	
-	if (currentUser.dating?.preferences?.hereTo && profile.dating?.preferences?.hereTo) {
-		prefMax += 10;
-		if (currentUser.dating.preferences.hereTo === profile.dating.preferences.hereTo) {
-			prefScore += 10;
-		} else {
-			prefScore += 5;
-		}
-	}
-
-	if (currentUser.dating?.preferences?.wantToMeet && profile.dating?.preferences?.wantToMeet) {
-		prefMax += 15;
-		const currentWant = (currentUser.dating.preferences.wantToMeet || '').toLowerCase();
-		const profileWant = (profile.dating.preferences.wantToMeet || '').toLowerCase();
-		const currentGender = (profile.gender || '').toLowerCase();
-		const userGender = (currentUser.gender || '').toLowerCase();
-		
-		let wantToMeetScore = 0;
-		if (currentWant === 'everyone' || profileWant === 'everyone') {
-			wantToMeetScore = 15;
-		} else if (currentWant === currentGender || profileWant === userGender) {
-			wantToMeetScore = 15;
-		} else {
-			wantToMeetScore = 5;
-		}
-		prefScore += wantToMeetScore;
-	}
-	
-	if (prefMax > 0) {
-		maxScore += 25;
-		availableFactors++;
-		const prefMatchScore = (prefScore / prefMax) * 25;
-		matchScore += prefMatchScore;
-	}
-
-	// 4. Language Matching (15% weight)
-	if (currentUser.dating?.preferences?.languages && Array.isArray(currentUser.dating.preferences.languages) && currentUser.dating.preferences.languages.length > 0 &&
-		profile.dating?.preferences?.languages && Array.isArray(profile.dating.preferences.languages) && profile.dating.preferences.languages.length > 0) {
-		maxScore += 15;
-		availableFactors++;
-		const currentLangs = currentUser.dating.preferences.languages.map(l => l.toLowerCase());
-		const profileLangs = profile.dating.preferences.languages.map(l => l.toLowerCase());
-		const sharedLangs = currentLangs.filter(l => profileLangs.includes(l));
-		if (currentLangs.length > 0) {
-			const langMatch = (sharedLangs.length / Math.max(currentLangs.length, profileLangs.length)) * 15;
-			matchScore += langMatch;
-		}
-	}
-
-	// 5. Distance Bonus (10% weight) - closer is better
-	if (distance !== null && distance !== undefined) {
-		maxScore += 10;
-		availableFactors++;
-		let distanceScore = 0;
-		if (distance <= 10) {
-			distanceScore = 10;
-		} else if (distance <= 25) {
-			distanceScore = 7;
-		} else if (distance <= 50) {
-			distanceScore = 5;
-		} else if (distance <= 100) {
-			distanceScore = 3;
-		}
-		matchScore += distanceScore;
-	}
-
-	if (maxScore === 0 || availableFactors === 0) {
-		return 0;
-	}
-
-	const rawPercentage = (matchScore / maxScore) * 100;
-	const percentage = Math.min(100, Math.max(0, Math.round(rawPercentage)));
-	return percentage;
-}
-
 async function getMatches(req, res) {
 	try {
 		console.log('[DATING][MATCHES] payload', { query: req.query, userId: req.user?.userId });
@@ -495,7 +367,7 @@ async function getMatches(req, res) {
 		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
 		// Get current user's full data for match percentage calculation
-		const currentUser = await User.findById(currentUserId).select('interests dating preferences gender location dob').lean();
+		const currentUser = await User.findById(currentUserId).select(MATCH_USER_SELECT_FIELDS).lean();
 		if (!currentUser) {
 			return ApiResponse.notFound(res, 'Current user not found');
 		}
@@ -542,7 +414,13 @@ async function getMatches(req, res) {
 					'userA._id': 1,
 					'userA.location': 1,
 					'userA.dob': 1,
-					'userA.interests': 1,
+					'userA.likes': 1,
+					'userA.identification': 1,
+					'userA.orientation': 1,
+					'userA.lookingFor': 1,
+					'userA.relationshipStyle': 1,
+					'userA.whatBringsYouToVibgyor': 1,
+					'userA.preferences': 1,
 					'userA.gender': 1,
 					'userA.dating': 1,
 					'userB.username': 1,
@@ -551,7 +429,13 @@ async function getMatches(req, res) {
 					'userB._id': 1,
 					'userB.location': 1,
 					'userB.dob': 1,
-					'userB.interests': 1,
+					'userB.likes': 1,
+					'userB.identification': 1,
+					'userB.orientation': 1,
+					'userB.lookingFor': 1,
+					'userB.relationshipStyle': 1,
+					'userB.whatBringsYouToVibgyor': 1,
+					'userB.preferences': 1,
 					'userB.gender': 1,
 					'userB.dating': 1,
 					status: 1,
@@ -906,7 +790,7 @@ async function getDatingProfileLikes(req, res) {
 				.sort({ createdAt: -1 })
 				.skip(skip)
 				.limit(parseInt(limit, 10))
-				.populate('user', 'username fullName profilePictureUrl gender location verificationStatus')
+				.populate('user', 'username fullName profilePictureUrl gender identification orientation location verificationStatus')
 				.lean(),
 			DatingInteraction.countDocuments({
 				targetUser: targetUserId,
@@ -962,6 +846,9 @@ async function getDatingProfileLikes(req, res) {
 				fullName: liker.fullName,
 				profilePictureUrl: liker.profilePictureUrl,
 				gender: liker.gender,
+				identification: liker.identification || [],
+				identificationLabels: getProfileIdentificationTexts(liker),
+				orientation: liker.orientation || '',
 				location: {
 					city: liker.location?.city || '',
 					country: liker.location?.country || ''

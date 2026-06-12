@@ -112,46 +112,40 @@ async function uploadDatingPhotos(req, res) {
 
 				console.log(`[DATING][UPLOAD][PHOTOS] 📤 Uploading ${req.files.length} photo(s) to S3`);
 
-				// Upload all photos to S3
+				const s3Results = await Promise.all(
+					req.files.map((file, i) =>
+						uploadToS3({
+							buffer: file.buffer,
+							contentType: file.mimetype,
+							userId: user._id,
+							category: 'dating',
+							type: 'images',
+							filename: file.originalname,
+							metadata: {
+								uploadType: 'dating-photo',
+								userId: String(user._id),
+								originalName: file.originalname,
+								order: existingPhotosCount + i,
+							},
+						})
+					)
+				);
+
 				const uploadedPhotos = [];
-
-				for (let i = 0; i < req.files.length; i++) {
-					const file = req.files[i];
-					const { buffer, originalname, mimetype } = file;
-
-					console.log(`[DATING][UPLOAD] Processing photo ${i + 1}/${req.files.length}:`, originalname);
-
-					// Upload to S3
-					const uploadResult = await uploadToS3({
-						buffer,
-						contentType: mimetype,
-						userId: user._id,
-						category: 'dating',
-						type: 'images',
-						filename: originalname,
-						metadata: {
-							uploadType: 'dating-photo',
-							userId: String(user._id),
-							originalName: originalname,
-							order: existingPhotosCount + i
-						}
-					});
-
-					// For images, thumbnail is same as URL (can be enhanced later with image processing)
+				for (let i = 0; i < s3Results.length; i++) {
+					const uploadResult = s3Results[i];
 					const photoData = {
 						url: uploadResult.url,
-						thumbnailUrl: uploadResult.url, // Can be replaced with actual thumbnail URL later
+						thumbnailUrl: uploadResult.url,
 						order: existingPhotosCount + i,
-						uploadedAt: new Date()
+						uploadedAt: new Date(),
 					};
-
-					// Add photo to user's dating profile
 					await user.addDatingPhoto(photoData);
 					uploadedPhotos.push({
 						url: photoData.url,
 						thumbnailUrl: photoData.thumbnailUrl,
 						order: photoData.order,
-						uploadedAt: photoData.uploadedAt
+						uploadedAt: photoData.uploadedAt,
 					});
 				}
 
@@ -239,52 +233,48 @@ async function uploadDatingVideos(req, res) {
 
 				console.log(`[DATING][UPLOAD][VIDEOS] 📤 Uploading ${req.files.length} video(s) to S3`);
 
-				// Upload all videos to S3
+				const s3Results = await Promise.all(
+					req.files.map((file, i) =>
+						uploadToS3({
+							buffer: file.buffer,
+							contentType: file.mimetype,
+							userId: user._id,
+							category: 'dating',
+							type: 'videos',
+							filename: file.originalname,
+							metadata: {
+								uploadType: 'dating-video',
+								userId: String(user._id),
+								originalName: file.originalname,
+								order: existingVideosCount + i,
+							},
+						})
+					)
+				);
+
 				const uploadedVideos = [];
-
-				for (let i = 0; i < req.files.length; i++) {
-					const file = req.files[i];
-					const { buffer, originalname, mimetype } = file;
-
-					console.log(`[DATING][UPLOAD] Processing video ${i + 1}/${req.files.length}:`, originalname);
-
-					// Upload to S3
-					const uploadResult = await uploadToS3({
-						buffer,
-						contentType: mimetype,
-						userId: user._id,
-						category: 'dating',
-						type: 'videos',
-						filename: originalname,
-						metadata: {
-							uploadType: 'dating-video',
-							userId: String(user._id),
-							originalName: originalname,
-							order: existingVideosCount + i
-						}
-					});
-
-					// Extract duration from request body if provided (client should send this)
-					const duration = req.body?.durations && req.body.durations[i] 
-						? parseFloat(req.body.durations[i]) 
-						: 0;
+				for (let i = 0; i < s3Results.length; i++) {
+					const uploadResult = s3Results[i];
+					const duration =
+						req.body?.durations && req.body.durations[i]
+							? parseFloat(req.body.durations[i])
+							: 0;
 
 					const videoData = {
 						url: uploadResult.url,
-						thumbnailUrl: uploadResult.url, // Can be replaced with actual thumbnail URL later
-						duration: duration,
+						thumbnailUrl: uploadResult.url,
+						duration,
 						order: existingVideosCount + i,
-						uploadedAt: new Date()
+						uploadedAt: new Date(),
 					};
 
-					// Add video to user's dating profile
 					await user.addDatingVideo(videoData);
 					uploadedVideos.push({
 						url: videoData.url,
 						thumbnailUrl: videoData.thumbnailUrl,
 						duration: videoData.duration,
 						order: videoData.order,
-						uploadedAt: videoData.uploadedAt
+						uploadedAt: videoData.uploadedAt,
 					});
 				}
 

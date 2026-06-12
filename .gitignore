@@ -52,8 +52,8 @@ config/firebase-service-account.json
 *.pem
 *.key
 
-# Media uploads (user-generated content)
-media/
+# Media uploads (user-generated content — root folder only, not src/modules/**/media)
+/media/
 uploads/
 temp/
 tmp/

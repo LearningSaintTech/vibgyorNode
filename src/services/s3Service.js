@@ -227,30 +227,10 @@ async function uploadToS3({ buffer, contentType, userId, category, type, filenam
 
 	console.log('[S3] Detected media type', { mediaType, contentType });
 
-	let blurhash = null;
-	if (contentType.startsWith('image/')) {
-		console.log('[S3] Attempting BlurHash generation', { Key });
-		try {
-			const { generateBlurHash } = require('./blurhashService');
-			const blurhashPromise = generateBlurHash(buffer);
+	// BlurHash is generated in the background by callers — do not block uploads on Sharp.
+	const blurhash = null;
 
-			const timeoutPromise = new Promise((resolve) => {
-				setTimeout(() => resolve(null), 2000);
-			});
-
-			blurhash = await Promise.race([blurhashPromise, timeoutPromise]);
-
-			if (blurhash) {
-				console.log('✅ [S3] BlurHash generated successfully', { Key, preview: blurhash.substring(0, 30) + '...' });
-			} else {
-				console.log('⏱️ [S3] BlurHash generation timed out (continuing)', { Key });
-			}
-		} catch (error) {
-			console.warn('⚠️ [S3] BlurHash generation failed (non-critical)', { Key, error: error.message });
-		}
-	}
-
-	console.log('🎉 [S3] Upload completed successfully', { Key, mediaType, hasBlurhash: !!blurhash, hasResponsive: !!responsiveUrls });
+	console.log('🎉 [S3] Upload completed successfully', { Key, mediaType, hasResponsive: !!responsiveUrls });
 
 	return {
 		key: Key,

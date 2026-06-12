@@ -6,6 +6,11 @@ const notificationService = require('../../notification/services/notificationSer
 const contentModeration = ContentModeration;
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
+const {
+  deferTask,
+  resolveMentionUserIds,
+  schedulePostMediaBlurhash,
+} = require('../../../utils/uploadOptimizations');
 
 // Helper function to normalize location with all fields visible
 function normalizeLocation(location) {
@@ -413,6 +418,62 @@ function transformPostMedia(post, userId = null, savedPostIds = []) {
   return postObj;
 }
 
+async function uploadPostMediaItem(file, videoIndex, thumbnailMap, userId) {
+  const isImage = file.mimetype.startsWith('image/');
+  const isVideo = file.mimetype.startsWith('video/');
+  const thumbnailFile = isVideo && videoIndex >= 0 ? thumbnailMap.get(videoIndex) : null;
+
+  const [uploadResult, thumbnailResult] = await Promise.all([
+    uploadToS3({
+      buffer: file.buffer,
+      contentType: file.mimetype,
+      userId,
+      category: 'posts',
+      type: isImage ? 'image' : 'video',
+      filename: file.originalname,
+      metadata: {
+        originalName: file.originalname,
+        uploadedAt: new Date().toISOString(),
+      },
+    }),
+    thumbnailFile
+      ? uploadToS3({
+          buffer: thumbnailFile.buffer,
+          contentType: thumbnailFile.mimetype,
+          userId,
+          category: 'posts',
+          type: 'image',
+          filename: `thumbnail_${file.originalname.replace(/\.[^/.]+$/, '.jpg')}`,
+          metadata: {
+            originalName: thumbnailFile.originalname,
+            uploadedAt: new Date().toISOString(),
+            isThumbnail: 'true',
+          },
+        }).catch((thumbError) => {
+          console.warn('[POST] Thumbnail upload failed, continuing without thumbnail:', thumbError);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    mediaItem: {
+      type: uploadResult.type,
+      url: uploadResult.url,
+      thumbnail: thumbnailResult?.url || uploadResult.thumbnail || null,
+      filename: file.originalname,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+      duration: uploadResult.duration || null,
+      dimensions: uploadResult.dimensions || null,
+      s3Key: uploadResult.key,
+      responsiveUrls: uploadResult.responsiveUrls || null,
+      blurhash: null,
+    },
+    imageBuffer: isImage ? file.buffer : null,
+  };
+}
+
 // Create a new post
 async function createPost(req, res) {
   try {
@@ -423,100 +484,49 @@ async function createPost(req, res) {
       return ApiResponse.badRequest(res, 'Post media is required');
     }
 
-    // Process media files and thumbnails
-    const media = [];
-
     // Handle both uploadMultiple (req.files array) and uploadWithThumbnails (req.files object)
     let mediaFiles = [];
     let thumbnailFiles = [];
 
     if (Array.isArray(req.files)) {
-      // Old format: uploadMultiple - all files in array
       mediaFiles = req.files;
     } else if (req.files && typeof req.files === 'object') {
-      // New format: uploadWithThumbnails - files organized by fieldname
       mediaFiles = req.files.files || [];
       thumbnailFiles = req.files.thumbnails || [];
     }
 
-    // Create thumbnail map for quick lookup (match by index)
     const thumbnailMap = new Map();
     thumbnailFiles.forEach((thumbFile, index) => {
       thumbnailMap.set(index, thumbFile);
     });
 
+    const invalidMedia = mediaFiles.find(
+      (file) => !file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')
+    );
+    if (invalidMedia) {
+      return ApiResponse.badRequest(res, 'Only images and videos are allowed');
+    }
+
+    let media = [];
+    let mediaUploadMeta = [];
+
     if (mediaFiles.length > 0) {
-      let videoIndex = 0; // Track video index for thumbnail matching
+      let videoIndex = 0;
+      const videoIndexByFile = mediaFiles.map((file) =>
+        file.mimetype.startsWith('video/') ? videoIndex++ : -1
+      );
 
-      for (let i = 0; i < mediaFiles.length; i++) {
-        const file = mediaFiles[i];
-
-        // Validate media type - only images and videos allowed
-        if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
-          return ApiResponse.badRequest(res, 'Only images and videos are allowed');
-        }
-
-        try {
-          // Upload main media file to S3
-          const uploadResult = await uploadToS3({
-            buffer: file.buffer,
-            contentType: file.mimetype,
-            userId: userId,
-            category: 'posts',
-            type: file.mimetype.startsWith('image/') ? 'image' : 'video',
-            filename: file.originalname,
-            metadata: {
-              originalName: file.originalname,
-              uploadedAt: new Date().toISOString()
-            }
-          });
-
-          // Upload thumbnail for videos (if provided)
-          let thumbnailUrl = null;
-          if (file.mimetype.startsWith('video/')) {
-            const thumbnailFile = thumbnailMap.get(videoIndex);
-            if (thumbnailFile) {
-              try {
-                const thumbnailResult = await uploadToS3({
-                  buffer: thumbnailFile.buffer,
-                  contentType: thumbnailFile.mimetype,
-                  userId: userId,
-                  category: 'posts',
-                  type: 'image',
-                  filename: `thumbnail_${file.originalname.replace(/\.[^/.]+$/, '.jpg')}`,
-                  metadata: {
-                    originalName: thumbnailFile.originalname,
-                    uploadedAt: new Date().toISOString(),
-                    isThumbnail: 'true',
-                    parentMedia: uploadResult.key
-                  }
-                });
-                thumbnailUrl = thumbnailResult.url;
-                console.log('[POST] Video thumbnail uploaded:', thumbnailResult.url);
-              } catch (thumbError) {
-                console.warn('[POST] Thumbnail upload failed, continuing without thumbnail:', thumbError);
-              }
-            }
-            videoIndex++;
-          }
-
-          media.push({
-            type: uploadResult.type,
-            url: uploadResult.url,
-            thumbnail: thumbnailUrl || uploadResult.thumbnail || null,
-            filename: file.originalname,
-            fileSize: file.size,
-            mimeType: file.mimetype,
-            duration: uploadResult.duration || null,
-            dimensions: uploadResult.dimensions || null,
-            s3Key: uploadResult.key,
-            responsiveUrls: uploadResult.responsiveUrls || null, // Multiple sizes for images
-            blurhash: uploadResult.blurhash || null, // BlurHash for instant placeholders
-          });
-        } catch (uploadError) {
-          console.error('[POST] Media upload error:', uploadError);
-          return ApiResponse.serverError(res, 'Failed to upload media');
-        }
+      try {
+        const uploadResults = await Promise.all(
+          mediaFiles.map((file, index) =>
+            uploadPostMediaItem(file, videoIndexByFile[index], thumbnailMap, userId)
+          )
+        );
+        media = uploadResults.map((result) => result.mediaItem);
+        mediaUploadMeta = uploadResults;
+      } catch (uploadError) {
+        console.error('[POST] Media upload error:', uploadError);
+        return ApiResponse.serverError(res, 'Failed to upload media');
       }
     }
 
@@ -544,31 +554,12 @@ async function createPost(req, res) {
       }
     });
 
-    // Process mentions
-    const processedMentions = [];
-    if (mentions && Array.isArray(mentions)) {
-      processedMentions.push(...mentions);
-    }
-
-    // Extract mentions from content
-    const contentMentions = content ? content.match(/@\w+/g) || [] : [];
-    for (const mention of contentMentions) {
-      const username = mention.replace('@', '').trim();
-      const user = await User.findOne({ username: username });
-      if (user && !processedMentions.includes(user._id.toString())) {
-        processedMentions.push(user._id);
-      }
-    }
-
-    // Extract mentions from caption as well
-    const captionMentions = caption ? caption.match(/@\w+/g) || [] : [];
-    for (const mention of captionMentions) {
-      const username = mention.replace('@', '').trim();
-      const user = await User.findOne({ username: username });
-      if (user && !processedMentions.some(id => id.toString() === user._id.toString())) {
-        processedMentions.push(user._id);
-      }
-    }
+    const initialMentions = Array.isArray(mentions) ? [...mentions] : [];
+    const processedMentions = await resolveMentionUserIds(
+      [content, caption],
+      User,
+      initialMentions
+    );
 
     // Create post
     const postData = {
@@ -598,61 +589,57 @@ async function createPost(req, res) {
     const post = new Post(postData);
     await post.save();
 
-    // OPTIMIZED: Calculate engagement score on post creation (Phase 3)
-    if (post.updateEngagementScore) {
-      post.updateEngagementScore();
-      await post.save();
-    }
+    mediaUploadMeta.forEach((result, index) => {
+      if (result.imageBuffer) {
+        schedulePostMediaBlurhash(Post, post._id, index, result.imageBuffer);
+      }
+    });
 
-    // Send notifications for mentions
-    if (processedMentions && processedMentions.length > 0) {
-      processedMentions.forEach(async (mentionedUserId) => {
-        if (mentionedUserId.toString() !== userId.toString()) {
-          try {
-            await notificationService.create({
-              context: 'social',
-              type: 'post_mention',
-              recipientId: mentionedUserId.toString(),
-              senderId: userId.toString(),
-              data: {
-                postId: post._id.toString(),
-                contentType: 'post'
-              }
-            });
-          } catch (notificationError) {
-            console.error('[POST] Mention notification error:', notificationError);
-            // Don't fail post creation if notification fails
-          }
+    deferTask(async () => {
+      if (post.updateEngagementScore) {
+        post.updateEngagementScore();
+        await post.save();
+      }
+    }, `post-engagement:${post._id}`);
+
+    deferTask(async () => {
+      for (const mentionedUserId of processedMentions) {
+        if (mentionedUserId.toString() === userId.toString()) continue;
+        try {
+          await notificationService.create({
+            context: 'social',
+            type: 'post_mention',
+            recipientId: mentionedUserId.toString(),
+            senderId: userId.toString(),
+            data: {
+              postId: post._id.toString(),
+              contentType: 'post',
+            },
+          });
+        } catch (notificationError) {
+          console.error('[POST] Mention notification error:', notificationError);
         }
-      });
-    }
+      }
+    }, `post-mentions:${post._id}`);
 
-    // Populate author information
     await post.populate('author', 'username fullName profilePictureUrl isVerified privacySettings');
 
-    // Create content moderation record
-    try {
-      await contentModeration.createModerationRecord('post', post._id, {
-        author: userId,
-        text: content || '',
-        media: media,
-        hashtags: processedHashtags,
-        mentions: processedMentions
-      });
-    } catch (moderationError) {
-      console.error('[POST] Content moderation error:', moderationError);
-      // Don't fail the post creation if moderation fails
-    }
+    const postId = post._id;
+    deferTask(async () => {
+      try {
+        await contentModeration.createModerationRecord('post', postId, {
+          author: userId,
+          text: content || '',
+          media,
+          hashtags: processedHashtags,
+          mentions: processedMentions,
+        });
+      } catch (moderationError) {
+        console.error('[POST] Content moderation error:', moderationError);
+      }
+    }, `post-moderation:${postId}`);
 
-    // Get user's saved posts for isSaved flag
-    let savedPostIds = [];
-    if (userId) {
-      const user = await User.findById(userId).select('savedPosts').lean();
-      savedPostIds = user?.savedPosts?.map(id => id.toString()) || [];
-    }
-
-    // Transform media into organized structure before returning (includes isLiked and isSaved)
-    const transformedPost = transformPostMedia(post, userId, savedPostIds);
+    const transformedPost = transformPostMedia(post, userId, []);
 
     console.log('[POST] Post created successfully:', post._id);
     return ApiResponse.success(res, transformedPost, 'Post created successfully');

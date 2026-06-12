@@ -10,9 +10,15 @@ const { signAccessToken, signRefreshToken } = require('../../../utils/Jwt');
 const { sendEmail, sendVerificationEmail, sendOtpVerificationEmail } = require('../../../services/emailService');
 const { HARD_CODED_OTP, OTP_TTL_MS, RESEND_WINDOW_MS } = require('./auth.constants');
 const profileSteps = require('../../../utils/profileSteps');
-const { applyProfileFieldUpdates } = require('../profileFieldUpdate');
+const { applyProfileFieldUpdates, ensureDatingProfileActive } = require('../profileFieldUpdate');
 const { parseBoolean } = require('../profileFormBody');
 const { mergeIconTextMediaIntoBody } = require('../profileIconTextMedia');
+const {
+	getUserIdentificationKey,
+	validateIncomingProfileCatalogFields,
+	syncProfileCatalogDependentFields,
+} = require('../catalog/catalog.profileValidation');
+const { buildAuthenticatedUserProfile } = require('./userProfileResponse');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -405,45 +411,12 @@ async function getMe(req, res) {
 		
 		console.log('[USER][AUTH][GET_ME] Dating stats:', { likesReceived: datingLikesReceived, commentsReceived: datingCommentsReceived });
 
-		const profileData = {
-			id: user._id,
-			phoneNumber: user.maskedPhone(),
-			countryCode: user.countryCode,
-			email: user.email,
-			emailVerified: user.emailVerified,
-			username: user.username,
-			fullName: user.fullName,
-			dob: user.dob,
-			bio: user.bio,
-			gender: user.gender,
-			pronouns: user.pronouns,
-			likes: user.likes || [],
-			interests: user.interests || [],
-			preferences: Array.isArray(user.preferences) ? user.preferences : [],
-			profilePictureUrl: user.profilePictureUrl,
-			idProofUrl: user.idProofUrl,
-			location: user.location,
-			role: user.role,
-			isProfileCompleted: user.isProfileCompleted,
-			isActive: user.isActive,
-			verificationStatus: user.verificationStatus,
-			verificationDocument: user.verificationDocument,
-			following: user.following || [],
-			followers: user.followers || [],
-			blockedUsers: user.blockedUsers || [],
-			privacySettings: user.privacySettings,
-			lastLoginAt: user.lastLoginAt,
-			createdAt: user.createdAt,
-			updatedAt: user.updatedAt,
-			// Dating data added
+		const profileData = buildAuthenticatedUserProfile(user, {
 			dating: {
-				photos: user.dating?.photos || [],
-				videos: user.dating?.videos || [],
-				isDatingProfileActive: user.dating?.isDatingProfileActive || false,
 				likesReceived: datingLikesReceived,
-				commentsReceived: datingCommentsReceived
-			}
-		};
+				commentsReceived: datingCommentsReceived,
+			},
+		});
 
 		console.log('[USER][AUTH][GET_ME] ✅ Profile data prepared:', {
 			hasDatingData: !!profileData.dating,
@@ -481,45 +454,12 @@ async function getProfile(req, res) {
 			})
 		]);
 
-	const profileData = {
-		id: user._id,
-		phoneNumber: user.maskedPhone(),
-		countryCode: user.countryCode,
-		email: user.email,
-		emailVerified: user.emailVerified,
-		username: user.username,
-		fullName: user.fullName,
-		dob: user.dob,
-		bio: user.bio,
-		gender: user.gender,
-		pronouns: user.pronouns,
-		likes: user.likes || [],
-		interests: user.interests || [],
-		preferences: Array.isArray(user.preferences) ? user.preferences : [],
-		profilePictureUrl: user.profilePictureUrl,
-		idProofUrl: user.idProofUrl,
-		location: user.location,
-		role: user.role,
-		isProfileCompleted: user.isProfileCompleted,
-		isActive: user.isActive,
-		verificationStatus: user.verificationStatus,
-		verificationDocument: user.verificationDocument,
-		following: user.following || [],
-		followers: user.followers || [],
-		blockedUsers: user.blockedUsers || [],
-		privacySettings: user.privacySettings,
-		lastLoginAt: user.lastLoginAt,
-		createdAt: user.createdAt,
-		updatedAt: user.updatedAt,
-		// Dating data added
+	const profileData = buildAuthenticatedUserProfile(user, {
 		dating: {
-			photos: user.dating?.photos || [],
-			videos: user.dating?.videos || [],
-			isDatingProfileActive: user.dating?.isDatingProfileActive || false,
 			likesReceived: datingLikesReceived,
-			commentsReceived: datingCommentsReceived
-		}
-	};
+			commentsReceived: datingCommentsReceived,
+		},
+	});
 
 	return ApiResponse.success(res, profileData, 'Profile retrieved successfully');
 	} catch (e) {
@@ -566,7 +506,19 @@ async function updateProfile(req, res) {
 			req.user?.userId
 		);
 
+		const catalogValidation = await validateIncomingProfileCatalogFields(user, profileBody);
+		if (!catalogValidation.ok) {
+			return ApiResponse.badRequest(
+				res,
+				catalogValidation.message,
+				catalogValidation.code
+			);
+		}
+
+		const wasProfileCompleted = Boolean(user.isProfileCompleted);
+		const previousIdentification = getUserIdentificationKey(user);
 		applyProfileFieldUpdates(user, profileBody);
+		await syncProfileCatalogDependentFields(user, previousIdentification);
 
 		if (!user.isProfileCompleted) {
 			const stepResult = profileSteps.applyProfileStepUpdate(user, {
@@ -592,6 +544,10 @@ async function updateProfile(req, res) {
 				return ApiResponse.badRequest(res, message, stepResult.code);
 			}
 			user.profileCompletionStep = profileSteps.getResumeStep(user);
+		}
+
+		if (!wasProfileCompleted && user.isProfileCompleted) {
+			ensureDatingProfileActive(user);
 		}
 
 		try {
@@ -718,10 +674,14 @@ async function resendEmailOtp(req, res) {
 
 async function getProfileStep(req, res) {
 	try {
-		const user = await User.findById(req.user?.userId);
+		const user = await User.findById(req.user?.userId).select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt');
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 
-		return ApiResponse.success(res, profileSteps.buildStepResponse(user), 'Profile step retrieved');
+		return ApiResponse.success(
+			res,
+			buildAuthenticatedUserProfile(user),
+			'Profile step retrieved'
+		);
 	} catch (e) {
 		console.error('[USER] getProfileStep error', e?.message || e);
 		return ApiResponse.serverError(res, 'Failed to get profile step');

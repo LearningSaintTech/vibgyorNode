@@ -5,6 +5,10 @@ function trimStr(value) {
 	return String(value).trim();
 }
 
+function identificationKey(value) {
+	return trimStr(value).toLowerCase();
+}
+
 /** Legacy { name, svgUrl } → { icon, text } */
 function legacyIconText(item) {
 	if (!item || typeof item !== 'object') return null;
@@ -34,13 +38,12 @@ function normalizeIdentificationItem(item) {
 	if (item == null) return null;
 	if (typeof item === 'string') {
 		const text = trimStr(item);
-		return text ? { icon: '', text, description: '' } : null;
+		return text ? { text, description: '' } : null;
 	}
 	if (typeof item !== 'object') return null;
 	const text = trimStr(item.text || item.name);
 	if (!text) return null;
 	return {
-		icon: trimStr(item.icon || item.svgUrl || item.svgData || ''),
 		text,
 		description: trimStr(item.description),
 	};
@@ -49,6 +52,47 @@ function normalizeIdentificationItem(item) {
 function normalizeIdentificationList(items) {
 	if (!Array.isArray(items)) return [];
 	return items.map(normalizeIdentificationItem).filter(Boolean);
+}
+
+function normalizeLinkedTextItem(item) {
+	if (item == null) return null;
+	if (typeof item === 'string') {
+		const text = trimStr(item);
+		return text ? { identification: '', text } : null;
+	}
+	if (typeof item !== 'object') return null;
+	const text = trimStr(item.text);
+	if (!text) return null;
+	return {
+		identification: trimStr(item.identification),
+		text,
+	};
+}
+
+function normalizeLinkedTextList(items) {
+	if (!Array.isArray(items)) return [];
+	return items.map(normalizeLinkedTextItem).filter(Boolean);
+}
+
+function normalizeLinkedIconTextItem(item) {
+	if (item == null) return null;
+	if (typeof item === 'string') {
+		const text = trimStr(item);
+		return text ? { identification: '', icon: '', text } : null;
+	}
+	if (typeof item !== 'object') return null;
+	const text = trimStr(item.text || item.name);
+	if (!text) return null;
+	return {
+		identification: trimStr(item.identification),
+		icon: trimStr(item.icon || item.svgUrl || item.svgData || ''),
+		text,
+	};
+}
+
+function normalizeLinkedIconTextList(items) {
+	if (!Array.isArray(items)) return [];
+	return items.map(normalizeLinkedIconTextItem).filter(Boolean);
 }
 
 function normalizeIconCommunityItem(item) {
@@ -111,6 +155,10 @@ function normalizeListByType(listType, items) {
 	switch (config.itemType) {
 		case 'identification':
 			return normalizeIdentificationList(items);
+		case 'linkedText':
+			return normalizeLinkedTextList(items);
+		case 'linkedIconText':
+			return normalizeLinkedIconTextList(items);
 		case 'iconText':
 			return normalizeIconTextList(items);
 		case 'iconCommunity':
@@ -124,12 +172,49 @@ function normalizeListByType(listType, items) {
 	}
 }
 
+function filterByIdentification(items, identification) {
+	const key = identificationKey(identification);
+	if (!key) return items;
+	return (items || []).filter(
+		(item) => identificationKey(item?.identification) === key
+	);
+}
+
+function filterCatalogListsByIdentification(catalogData, identification) {
+	const key = identificationKey(identification);
+	if (!key) return catalogData;
+
+	return {
+		...catalogData,
+		pronouns: filterByIdentification(catalogData.pronouns, identification),
+		orientation: filterByIdentification(catalogData.orientation, identification),
+	};
+}
+
+function getPrimaryIdentificationText(identificationValue) {
+	if (Array.isArray(identificationValue) && identificationValue.length > 0) {
+		const first = identificationValue[0];
+		if (typeof first === 'string') return trimStr(first);
+		if (first && typeof first === 'object') return trimStr(first.text);
+		return '';
+	}
+	if (identificationValue && typeof identificationValue === 'object' && !Array.isArray(identificationValue)) {
+		return trimStr(identificationValue.text);
+	}
+	if (typeof identificationValue === 'string') return trimStr(identificationValue);
+	return '';
+}
+
 function getItemKey(listType, item) {
 	const config = CATALOG_LIST_REGISTRY[listType];
 	if (!config) return '';
 
 	switch (config.itemType) {
 		case 'identification':
+			return identificationKey(item?.text);
+		case 'linkedText':
+		case 'linkedIconText':
+			return `${identificationKey(item?.identification)}::${trimStr(item?.text).toLowerCase()}`;
 		case 'iconText':
 			return trimStr(item?.text).toLowerCase();
 		case 'iconCommunity':
@@ -164,13 +249,7 @@ function getRemovedKeys(listType, currentList, toRemove) {
 	const removeKeys = new Set(
 		normalizeListByType(listType, toRemove).map((item) => getItemKey(listType, item))
 	);
-	return (currentList || [])
-		.filter((item) => removeKeys.has(getItemKey(listType, item)))
-		.map((item) => (
-			CATALOG_LIST_REGISTRY[listType].itemType === 'textOnly'
-				? item
-				: item
-		));
+	return (currentList || []).filter((item) => removeKeys.has(getItemKey(listType, item)));
 }
 
 function buildEmptyPublicCatalogResponse() {
@@ -191,8 +270,8 @@ function buildPublicCatalogResponse(catalog) {
 	const doc = catalog?.toObject ? catalog.toObject() : catalog || {};
 	return {
 		identification: normalizeIdentificationList(doc.identificationList),
-		pronouns: normalizeTextOnlyList(doc.pronounList),
-		orientation: normalizeTextOnlyList(doc.orientationList),
+		pronouns: normalizeLinkedTextList(doc.pronounList),
+		orientation: normalizeLinkedIconTextList(doc.orientationList),
 		lookingFor: normalizeIconTextList(doc.lookingForList),
 		likes: normalizeIconTextList(doc.likeList),
 		whatBringsYouToVibgyor: normalizeIconCommunityList(doc.whatBringsYouToVibgyorList),
@@ -266,33 +345,68 @@ function parseBracketIconText(body, fieldName) {
 	return items.filter((item) => item && trimStr(item.text));
 }
 
-/** identification[0][text|icon|description] from form-data */
+/** identification[0][text|description] from form-data */
 function parseBracketIdentification(body, fieldName) {
 	const items = [];
 	const textPattern = new RegExp(`^${fieldName}\\[(\\d+)\\]\\[text\\]$`);
-	const iconUrlPattern = new RegExp(`^${fieldName}\\[(\\d+)\\]\\[icon\\]$`);
 	const descriptionPattern = new RegExp(`^${fieldName}\\[(\\d+)\\]\\[description\\]$`);
 
 	for (const [key, value] of Object.entries(body || {})) {
 		let match = key.match(textPattern);
 		if (match) {
 			const index = Number(match[1]);
-			if (!items[index]) items[index] = { icon: '', text: '', description: '' };
+			if (!items[index]) items[index] = { text: '', description: '' };
 			items[index].text = value != null ? String(value) : '';
-			continue;
-		}
-		match = key.match(iconUrlPattern);
-		if (match && typeof value === 'string' && value.trim() && !value.buffer) {
-			const index = Number(match[1]);
-			if (!items[index]) items[index] = { icon: '', text: '', description: '' };
-			items[index].icon = value.trim();
 			continue;
 		}
 		match = key.match(descriptionPattern);
 		if (match) {
 			const index = Number(match[1]);
-			if (!items[index]) items[index] = { icon: '', text: '', description: '' };
+			if (!items[index]) items[index] = { text: '', description: '' };
 			items[index].description = value != null ? String(value) : '';
+		}
+	}
+
+	return items.filter((item) => item && trimStr(item.text));
+}
+
+/** orientation[0][identification|text|icon] or pronouns[0][identification|text] */
+function parseBracketLinked(body, fieldName, withIcon = false) {
+	const items = [];
+	const identificationPattern = new RegExp(`^${fieldName}\\[(\\d+)\\]\\[identification\\]$`);
+	const textPattern = new RegExp(`^${fieldName}\\[(\\d+)\\]\\[text\\]$`);
+	const iconUrlPattern = new RegExp(`^${fieldName}\\[(\\d+)\\]\\[icon\\]$`);
+
+	for (const [key, value] of Object.entries(body || {})) {
+		let match = key.match(identificationPattern);
+		if (match) {
+			const index = Number(match[1]);
+			if (!items[index]) {
+				items[index] = withIcon
+					? { identification: '', icon: '', text: '' }
+					: { identification: '', text: '' };
+			}
+			items[index].identification = value != null ? String(value) : '';
+			continue;
+		}
+		match = key.match(textPattern);
+		if (match) {
+			const index = Number(match[1]);
+			if (!items[index]) {
+				items[index] = withIcon
+					? { identification: '', icon: '', text: '' }
+					: { identification: '', text: '' };
+			}
+			items[index].text = value != null ? String(value) : '';
+			continue;
+		}
+		if (withIcon) {
+			match = key.match(iconUrlPattern);
+			if (match && typeof value === 'string' && value.trim() && !value.buffer) {
+				const index = Number(match[1]);
+				if (!items[index]) items[index] = { identification: '', icon: '', text: '' };
+				items[index].icon = value.trim();
+			}
 		}
 	}
 
@@ -315,6 +429,23 @@ function parseBracketIconCommunity(body, fieldName) {
 	return items.filter((item) => item && trimStr(item.community));
 }
 
+/**
+ * Migrate legacy shapes (e.g. pronoun strings) before mongoose save / list mutations.
+ */
+function sanitizeCatalogForSave(catalog) {
+	if (!catalog) return catalog;
+
+	for (const [listType, config] of Object.entries(CATALOG_LIST_REGISTRY)) {
+		const normalized = normalizeListByType(listType, catalog[config.dbField]);
+		catalog[config.dbField] = normalized;
+		if (typeof catalog.markModified === 'function') {
+			catalog.markModified(config.dbField);
+		}
+	}
+
+	return catalog;
+}
+
 function extractListFromBody(body, listType) {
 	const config = CATALOG_LIST_REGISTRY[listType];
 	if (!config) return [];
@@ -325,6 +456,16 @@ function extractListFromBody(body, listType) {
 
 	if (config.itemType === 'identification') {
 		const bracket = parseBracketIdentification(body, config.bodyField);
+		if (bracket.length > 0) return bracket;
+	}
+
+	if (config.itemType === 'linkedText') {
+		const bracket = parseBracketLinked(body, config.bodyField, false);
+		if (bracket.length > 0) return bracket;
+	}
+
+	if (config.itemType === 'linkedIconText') {
+		const bracket = parseBracketLinked(body, config.bodyField, true);
 		if (bracket.length > 0) return bracket;
 	}
 
@@ -345,10 +486,16 @@ module.exports = {
 	normalizeIconTextList,
 	normalizeIdentificationList,
 	normalizeIdentificationItem,
+	normalizeLinkedTextList,
+	normalizeLinkedIconTextList,
 	normalizeIconCommunityList,
 	normalizeTextSubtextList,
 	normalizeTextOnlyList,
 	normalizeListByType,
+	filterByIdentification,
+	filterCatalogListsByIdentification,
+	getPrimaryIdentificationText,
+	identificationKey,
 	getItemKey,
 	filterNewItems,
 	filterRemoveItems,
@@ -360,6 +507,8 @@ module.exports = {
 	ensureArray,
 	parseBracketIconText,
 	parseBracketIdentification,
+	parseBracketLinked,
 	parseBracketIconCommunity,
 	extractListFromBody,
+	sanitizeCatalogForSave,
 };

@@ -1,18 +1,34 @@
 const mongoose = require('mongoose');
 
-const CatalogIconTextSchema = new mongoose.Schema(
+const CatalogIdentificationSchema = new mongoose.Schema(
 	{
+		text: { type: String, required: true },
+		description: { type: String, default: '' },
+	},
+	{ _id: false }
+);
+
+const CatalogLinkedTextSchema = new mongoose.Schema(
+	{
+		identification: { type: String, required: true },
+		text: { type: String, required: true },
+	},
+	{ _id: false }
+);
+
+const CatalogLinkedIconTextSchema = new mongoose.Schema(
+	{
+		identification: { type: String, required: true },
 		icon: { type: String, default: '' },
 		text: { type: String, required: true },
 	},
 	{ _id: false }
 );
 
-const CatalogIdentificationSchema = new mongoose.Schema(
+const CatalogIconTextSchema = new mongoose.Schema(
 	{
 		icon: { type: String, default: '' },
 		text: { type: String, required: true },
-		description: { type: String, default: '' },
 	},
 	{ _id: false }
 );
@@ -48,14 +64,14 @@ const LegacyInterestItemSchema = new mongoose.Schema(
 const CatalogSchema = new mongoose.Schema(
 	{
 		identificationList: [CatalogIdentificationSchema],
-		orientationList: [{ type: String }],
+		orientationList: [CatalogLinkedIconTextSchema],
 		lookingForList: [CatalogIconTextSchema],
 		likeList: [CatalogIconTextSchema],
 		whatBringsYouToVibgyorList: [CatalogCommunitySchema],
 		relationshipStyleList: [CatalogRelationshipStyleSchema],
 		// Legacy fields (optional; not returned on public GET)
 		genderList: [{ type: String }],
-		pronounList: [{ type: String }],
+		pronounList: [CatalogLinkedTextSchema],
 		interestList: [LegacyInterestItemSchema],
 		hereForList: [{ type: String }],
 		languageList: [{ type: String }],

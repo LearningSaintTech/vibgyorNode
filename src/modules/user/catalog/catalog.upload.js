@@ -88,7 +88,7 @@ async function uploadIconFile(file, listType, label) {
 
 /**
  * Attach S3 icon URLs to catalog items from uploaded files.
- * Supports: identification[0][icon], identification_icon_0, Man.png (matches text/community).
+ * Supports: lookingFor[0][icon], orientation[0][icon], Man.png (matches text/community).
  */
 async function attachIconsFromFiles(files, listType, items) {
 	const config = CATALOG_LIST_REGISTRY[listType];

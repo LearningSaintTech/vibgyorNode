@@ -14,6 +14,9 @@ const {
 	filterNewItems,
 	filterRemoveItems,
 	getRemovedKeys,
+	filterByIdentification,
+	filterCatalogListsByIdentification,
+	sanitizeCatalogForSave,
 } = require('./catalog.normalize');
 const { attachIconsFromFiles } = require('./catalog.upload');
 
@@ -34,6 +37,21 @@ function parseRequestItems(items) {
 	return [];
 }
 
+function validateLinkedListItems(listType, items) {
+	const config = CATALOG_LIST_REGISTRY[listType];
+	if (!config || !['linkedText', 'linkedIconText'].includes(config.itemType)) {
+		return null;
+	}
+
+	const missingIdentification = (items || []).filter(
+		(item) => !String(item?.identification || '').trim()
+	);
+	if (missingIdentification.length > 0) {
+		return `Each ${listType} item must include an identification value (e.g. Man, Woman).`;
+	}
+	return null;
+}
+
 function extractListsFromBody(body) {
 	const lists = {};
 	for (const listType of Object.keys(CATALOG_LIST_REGISTRY)) {
@@ -43,6 +61,16 @@ function extractListsFromBody(body) {
 		}
 	}
 	return lists;
+}
+
+function validateListsFromBody(listsFromBody) {
+	for (const [listType, items] of Object.entries(listsFromBody)) {
+		const linkedValidationError = validateLinkedListItems(listType, items);
+		if (linkedValidationError) {
+			return linkedValidationError;
+		}
+	}
+	return null;
 }
 
 async function applyListUpdates(catalog, listsFromBody, files) {
@@ -79,13 +107,23 @@ async function buildFullCatalogData(listsFromBody, files) {
 	return data;
 }
 
+function resolveIdentificationFilter(req) {
+	return (req.query?.identification || req.query?.identity || '').trim();
+}
+
 async function getCatalog(req, res) {
 	try {
 		const catalog = await UserCatalog.findOne({}).lean();
 		if (!catalog) {
 			return ApiResponse.success(res, buildEmptyPublicCatalogResponse(), 'Catalog not configured');
 		}
-		return ApiResponse.success(res, buildPublicCatalogResponse(catalog));
+		let response = buildPublicCatalogResponse(catalog);
+		const identification = resolveIdentificationFilter(req);
+		if (identification) {
+			response = filterCatalogListsByIdentification(response, identification);
+			response.identificationFilter = identification;
+		}
+		return ApiResponse.success(res, response);
 	} catch (e) {
 		console.error('[USER][CATALOG] getCatalog error:', e?.message || e);
 		return ApiResponse.serverError(res, 'Failed to fetch catalog');
@@ -114,9 +152,15 @@ async function createCatalog(req, res) {
 
 		const listsFromBody = extractListsFromBody(req.body || {});
 		const files = req.files || [];
-		if (!Object.keys(listsFromBody).length && !files.length) {
-			return ApiResponse.badRequest(res, 'Send at least one catalog list or icon file', 'EMPTY_BODY');
+		if (!Object.keys(listsFromBody).length) {
+			return ApiResponse.badRequest(res, 'Send at least one catalog list', 'EMPTY_BODY');
 		}
+
+		const linkedValidationError = validateListsFromBody(listsFromBody);
+		if (linkedValidationError) {
+			return ApiResponse.badRequest(res, linkedValidationError, 'MISSING_IDENTIFICATION');
+		}
+
 		const catalogData = await buildFullCatalogData(listsFromBody, files);
 		const catalog = await UserCatalog.create(catalogData);
 
@@ -137,6 +181,15 @@ async function updateCatalog(req, res) {
 
 		if (!catalog) {
 			const listsFromBody = extractListsFromBody(req.body || {});
+			if (!Object.keys(listsFromBody).length) {
+				return ApiResponse.badRequest(res, 'Send at least one catalog list', 'EMPTY_BODY');
+			}
+
+			const linkedValidationError = validateListsFromBody(listsFromBody);
+			if (linkedValidationError) {
+				return ApiResponse.badRequest(res, linkedValidationError, 'MISSING_IDENTIFICATION');
+			}
+
 			const catalogData = await buildFullCatalogData(listsFromBody, req.files || []);
 			catalog = await UserCatalog.create(catalogData);
 			return ApiResponse.success(
@@ -147,8 +200,19 @@ async function updateCatalog(req, res) {
 		}
 
 		const listsFromBody = extractListsFromBody(req.body || {});
+		if (!Object.keys(listsFromBody).length) {
+			return ApiResponse.badRequest(res, 'Send at least one catalog list to update', 'EMPTY_BODY');
+		}
+
+		const linkedValidationError = validateListsFromBody(listsFromBody);
+		if (linkedValidationError) {
+			return ApiResponse.badRequest(res, linkedValidationError, 'MISSING_IDENTIFICATION');
+		}
+
+		sanitizeCatalogForSave(catalog);
 		await applyListUpdates(catalog, listsFromBody, req.files || []);
 		catalog.version = (catalog.version || 1) + 1;
+		sanitizeCatalogForSave(catalog);
 		await catalog.save();
 
 		return ApiResponse.success(
@@ -184,6 +248,8 @@ async function addToList(req, res) {
 			return ApiResponse.notFound(res, 'Catalog not found. Create it first.', 'CATALOG_NOT_FOUND');
 		}
 
+		sanitizeCatalogForSave(catalog);
+
 		const config = CATALOG_LIST_REGISTRY[listType];
 		const currentList = catalog[config.dbField] || [];
 
@@ -192,12 +258,18 @@ async function addToList(req, res) {
 			return ApiResponse.badRequest(res, 'All items already exist in the list', 'DUPLICATE_ITEMS');
 		}
 
+		const linkedValidationError = validateLinkedListItems(listType, newItems);
+		if (linkedValidationError) {
+			return ApiResponse.badRequest(res, linkedValidationError, 'MISSING_IDENTIFICATION');
+		}
+
 		if (config.uploadMatchKey && req.files?.length) {
 			newItems = await attachIconsFromFiles(req.files, listType, newItems);
 		}
 
 		catalog[config.dbField] = [...currentList, ...newItems];
 		catalog.version = (catalog.version || 1) + 1;
+		sanitizeCatalogForSave(catalog);
 		await catalog.save();
 
 		return ApiResponse.success(res, {
@@ -234,6 +306,8 @@ async function removeFromList(req, res) {
 			return ApiResponse.notFound(res, 'Catalog not found');
 		}
 
+		sanitizeCatalogForSave(catalog);
+
 		const config = CATALOG_LIST_REGISTRY[listType];
 		const currentList = catalog[config.dbField] || [];
 		const removedItems = getRemovedKeys(listType, currentList, items);
@@ -244,6 +318,7 @@ async function removeFromList(req, res) {
 
 		catalog[config.dbField] = filterRemoveItems(listType, currentList, items);
 		catalog.version = (catalog.version || 1) + 1;
+		sanitizeCatalogForSave(catalog);
 		await catalog.save();
 
 		return ApiResponse.success(res, {
@@ -294,13 +369,19 @@ async function getList(req, res) {
 		}
 
 		const config = CATALOG_LIST_REGISTRY[listType];
-		const items = normalizeListByType(listType, catalog[config.dbField] || []);
+		let items = normalizeListByType(listType, catalog[config.dbField] || []);
+		const identification = resolveIdentificationFilter(req);
+
+		if (config.filterByIdentification && identification) {
+			items = filterByIdentification(items, identification);
+		}
 
 		return ApiResponse.success(res, {
 			listType,
 			items,
 			count: items.length,
 			version: catalog.version || 1,
+			...(identification ? { identificationFilter: identification } : {}),
 		});
 	} catch (e) {
 		console.error('[USER][CATALOG] getList error:', e?.message || e);

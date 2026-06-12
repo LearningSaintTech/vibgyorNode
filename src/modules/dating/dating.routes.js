@@ -2,12 +2,12 @@
  * Dating module route exports (Khush-style aggregator).
  * Mount paths unchanged — wired in app.js.
  */
-const { mediaRoutes } = require('./media');
-const { profileRoutes } = require('./profile');
-const { interactionRoutes } = require('./interaction');
-const { chatRoutes } = require('./chat');
-const { messageRoutes } = require('./message');
-const { callRoutes } = require('./call');
+const mediaRoutes = require('./media/media.routes');
+const profileRoutes = require('./profile/profile.routes');
+const interactionRoutes = require('./interaction/interaction.routes');
+const chatRoutes = require('./chat/chat.routes');
+const messageRoutes = require('./message/message.routes');
+const callRoutes = require('./call/call.routes');
 
 module.exports = {
 	mediaRoutes,

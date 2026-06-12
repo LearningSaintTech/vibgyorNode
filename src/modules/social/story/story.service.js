@@ -6,6 +6,11 @@ const contentModeration = ContentModeration;
 const { getCachedUserData, cacheUserData, invalidateUserCache } = require('../../../middleware/cacheMiddleware');
 const notificationService = require('../../notification/services/notificationService');
 const enhancedRealtimeService = require('../../../services/enhancedRealtimeService');
+const {
+  deferTask,
+  resolveStoryMentions,
+  scheduleStoryMediaBlurhash,
+} = require('../../../utils/uploadOptimizations');
 
 // Create a new story
 async function createStory(req, res) {
@@ -23,12 +28,12 @@ async function createStory(req, res) {
       return ApiResponse.badRequest(res, 'Story content or media is required');
     }
 
-    // Process media files
     let media = null;
+    let storyImageBuffer = null;
+
     if (req.files && req.files.length > 0) {
-      const file = req.files[0]; // Stories typically have single media
+      const file = req.files[0];
       try {
-        // Upload to S3
         const uploadResult = await uploadToS3({
           buffer: file.buffer,
           contentType: file.mimetype,
@@ -38,9 +43,13 @@ async function createStory(req, res) {
           filename: file.originalname,
           metadata: {
             originalName: file.originalname,
-            uploadedAt: new Date().toISOString()
-          }
+            uploadedAt: new Date().toISOString(),
+          },
         });
+
+        if (file.mimetype.startsWith('image/')) {
+          storyImageBuffer = file.buffer;
+        }
 
         media = {
           type: uploadResult.type,
@@ -52,9 +61,8 @@ async function createStory(req, res) {
           duration: uploadResult.duration || null,
           dimensions: uploadResult.dimensions || null,
           s3Key: uploadResult.key,
-          // OPTIMIZED: Add BlurHash and responsive URLs for better frontend performance
-          blurhash: uploadResult.blurhash || null, // BlurHash for instant placeholders
-          responsiveUrls: uploadResult.responsiveUrls || null // Multiple sizes for images
+          blurhash: null,
+          responsiveUrls: uploadResult.responsiveUrls || null,
         };
       } catch (uploadError) {
         console.error('[STORY] Media upload error:', uploadError);
@@ -75,28 +83,7 @@ async function createStory(req, res) {
       };
     }
 
-    // Process mentions
-    const processedMentions = [];
-    if (mentions && Array.isArray(mentions)) {
-      processedMentions.push(...mentions);
-    }
-
-    // Extract mentions from content
-    const contentMentions = content ? content.match(/@\w+/g) || [] : [];
-    for (const mention of contentMentions) {
-      const username = mention.replace('@', '').trim();
-      const user = await User.findOne({ username: username });
-      if (user && !processedMentions.find(m => m.user.toString() === user._id.toString())) {
-        processedMentions.push({
-          user: user._id,
-          position: {
-            start: content.indexOf(mention),
-            end: content.indexOf(mention) + mention.length
-          },
-          notified: false
-        });
-      }
-    }
+    const processedMentions = await resolveStoryMentions(content, mentions, User);
 
     // Create story data
     const storyData = {
@@ -114,91 +101,83 @@ async function createStory(req, res) {
     const story = new Story(storyData);
     await story.save();
 
-    // Send notifications for mentions
-    if (processedMentions && processedMentions.length > 0) {
-      processedMentions.forEach(async (mention) => {
-        const mentionedUserId = mention.user.toString ? mention.user.toString() : mention.user;
-        if (mentionedUserId !== userId.toString()) {
-          try {
-            await notificationService.create({
-              context: 'social',
-              type: 'story_mention',
-              recipientId: mentionedUserId,
-              senderId: userId.toString(),
-              data: {
-                storyId: story._id.toString(),
-                contentType: 'story'
-              }
-            });
-          } catch (notificationError) {
-            console.error('[STORY] Mention notification error:', notificationError);
-            // Don't fail story creation if notification fails
-          }
-        }
-      });
+    if (storyImageBuffer) {
+      scheduleStoryMediaBlurhash(Story, story._id, storyImageBuffer);
     }
 
-    // Populate author information
     await story.populate('author', 'username fullName profilePictureUrl isVerified');
 
-    // Create content moderation record
-    try {
-      await contentModeration.createModerationRecord('story', story._id, {
-        author: userId,
-        text: content || '',
-        media: [media],
-        hashtags: [],
-        mentions: processedMentions.map(m => m.user.toString())
-      });
-    } catch (moderationError) {
-      console.error('[STORY] Content moderation error:', moderationError);
-      // Don't fail the story creation if moderation fails
-    }
+    const storyId = story._id;
+    const authorSnapshot = {
+      _id: story.author._id || userId,
+      username: story.author.username,
+      fullName: story.author.fullName,
+      profilePictureUrl: story.author.profilePictureUrl,
+    };
 
-    // OPTIMIZED: Invalidate feed cache when new story is created
-    // Invalidate cache for the story author
-    invalidateUserCache(userId, 'feed:stories:*');
-    
-    // CRITICAL: Invalidate cache for all followers so they see the new story immediately
-    try {
-      const author = await User.findById(userId).select('followers').lean();
-      if (author && author.followers && author.followers.length > 0) {
-        console.log('[STORY] Invalidating cache for', author.followers.length, 'followers');
-        // Invalidate cache for each follower
-        author.followers.forEach(followerId => {
-          invalidateUserCache(followerId.toString(), 'feed:stories:*');
-        });
-        console.log('[STORY] Cache invalidated for all followers');
-        
-        // Emit real-time event to all followers about new story
+    deferTask(async () => {
+      for (const mention of processedMentions) {
+        const mentionedUserId = mention.user?.toString ? mention.user.toString() : mention.user;
+        if (!mentionedUserId || mentionedUserId === userId.toString()) continue;
         try {
-          const storyData = {
-            storyId: story._id.toString(),
-            author: {
-              _id: story.author._id || userId,
-              username: story.author.username,
-              fullName: story.author.fullName,
-              profilePictureUrl: story.author.profilePictureUrl
+          await notificationService.create({
+            context: 'social',
+            type: 'story_mention',
+            recipientId: mentionedUserId,
+            senderId: userId.toString(),
+            data: {
+              storyId: storyId.toString(),
+              contentType: 'story',
             },
-            createdAt: story.createdAt,
-            timestamp: new Date()
-          };
-          
-          // Emit to each follower
-          author.followers.forEach(followerId => {
-            enhancedRealtimeService.emitToUser(followerId.toString(), 'story:created', storyData);
           });
-          console.log('[STORY] ✅ Real-time events emitted: story:created to', author.followers.length, 'followers');
-        } catch (realtimeError) {
-          console.error('[STORY] Error emitting real-time story:created events:', realtimeError);
-          // Don't fail story creation if real-time event fails
+        } catch (notificationError) {
+          console.error('[STORY] Mention notification error:', notificationError);
         }
       }
-    } catch (cacheError) {
-      console.error('[STORY] Error invalidating follower caches:', cacheError);
-      // Don't fail story creation if cache invalidation fails
-    }
-    
+    }, `story-mentions:${storyId}`);
+
+    deferTask(async () => {
+      try {
+        await contentModeration.createModerationRecord('story', storyId, {
+          author: userId,
+          text: content || '',
+          media: [media],
+          hashtags: [],
+          mentions: processedMentions.map((m) => m.user.toString()),
+        });
+      } catch (moderationError) {
+        console.error('[STORY] Content moderation error:', moderationError);
+      }
+    }, `story-moderation:${storyId}`);
+
+    deferTask(async () => {
+      invalidateUserCache(userId, 'feed:stories:*');
+
+      try {
+        const author = await User.findById(userId).select('followers').lean();
+        if (!author?.followers?.length) return;
+
+        const realtimePayload = {
+          storyId: storyId.toString(),
+          author: authorSnapshot,
+          createdAt: story.createdAt,
+          timestamp: new Date(),
+        };
+
+        for (const followerId of author.followers) {
+          const followerKey = followerId.toString();
+          invalidateUserCache(followerKey, 'feed:stories:*');
+          try {
+            enhancedRealtimeService.emitToUser(followerKey, 'story:created', realtimePayload);
+          } catch (realtimeError) {
+            console.error('[STORY] Real-time emit error:', realtimeError);
+          }
+        }
+      } catch (cacheError) {
+        console.error('[STORY] Error invalidating follower caches:', cacheError);
+      }
+    }, `story-cache:${storyId}`);
+
     console.log('[STORY] Story created successfully:', story._id);
     return ApiResponse.success(res, story, 'Story created successfully');
   } catch (error) {

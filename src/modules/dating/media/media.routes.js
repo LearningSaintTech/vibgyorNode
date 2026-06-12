@@ -10,7 +10,7 @@ const {
 	updateVideoOrder,
 	getDatingProfile,
 	toggleDatingProfile
-} = require('./media.controller');
+} = require('./media.service');
 
 // All routes require user authentication
 router.use(authorize([Roles.USER]));

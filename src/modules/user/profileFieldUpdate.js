@@ -15,6 +15,21 @@ function assignIconTextArray(user, field, value) {
 	}));
 }
 
+function assignIdentification(user, value) {
+	if (!Array.isArray(value)) return;
+	user.identification = value
+		.map((item) => {
+			if (item == null) return null;
+			if (typeof item === 'string') {
+				const text = String(item).trim();
+				return text ? { icon: '', text } : null;
+			}
+			const text = item?.text != null ? String(item.text).trim() : '';
+			return text ? { icon: '', text } : null;
+		})
+		.filter(Boolean);
+}
+
 function assignLocation(user, location) {
 	if (location == null || typeof location !== 'object') return;
 	if (!user.location) {
@@ -71,17 +86,32 @@ function assignPreferences(user, preferences) {
 	}
 }
 
+function ensureDatingProfileActive(user) {
+	if (!user.dating) {
+		user.dating = {
+			photos: [],
+			videos: [],
+			isDatingProfileActive: true,
+			lastUpdatedAt: new Date(),
+		};
+		return;
+	}
+	user.dating.isDatingProfileActive = true;
+	user.dating.lastUpdatedAt = new Date();
+}
+
 function assignDatingPhotos(user, photos) {
 	if (!Array.isArray(photos)) return;
 	if (!user.dating) {
 		user.dating = {
 			photos: [],
 			videos: [],
-			isDatingProfileActive: false,
-			lastUpdatedAt: null,
+			isDatingProfileActive: true,
+			lastUpdatedAt: new Date(),
 		};
 	}
 	user.dating.photos = photos;
+	user.dating.isDatingProfileActive = true;
 	user.dating.lastUpdatedAt = new Date();
 }
 
@@ -133,7 +163,7 @@ function applyProfileFieldUpdates(user, data) {
 		if (distance.unit !== undefined) user.distance.unit = distance.unit;
 	}
 
-	assignIconTextArray(user, 'identification', identification);
+	assignIdentification(user, identification);
 	assignIconTextArray(user, 'lookingFor', lookingFor);
 	assignIconTextArray(user, 'whatBringsYouToVibgyor', whatBringsYouToVibgyor);
 	assignIconTextArray(user, 'likes', likes);
@@ -144,4 +174,5 @@ function applyProfileFieldUpdates(user, data) {
 
 module.exports = {
 	applyProfileFieldUpdates,
+	ensureDatingProfileActive,
 };

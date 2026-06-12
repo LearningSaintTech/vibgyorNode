@@ -11,7 +11,7 @@ const {
 router.use(authorize([Roles.USER]));
 
 // Get all dating profiles with filters and search
-// Query params: search, hereTo, wantToMeet, ageMin, ageMax, languages, city, country, distanceMax, filter, page, limit
+// Query params: search, hereTo, lookingFor, wantToMeet, identification, ageMin, ageMax, languages, city, country, distanceMax, filter, page, limit
 // Note: location schema only has city and country (no state field)
 router.get('/profiles', getAllDatingProfiles);
 

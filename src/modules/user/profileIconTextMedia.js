@@ -1,6 +1,6 @@
 const { uploadBuffer } = require('../../services/s3Service');
 
-const ICON_TEXT_FIELDS = ['identification', 'likes', 'lookingFor', 'whatBringsYouToVibgyor'];
+const ICON_TEXT_FIELDS = ['likes', 'lookingFor', 'whatBringsYouToVibgyor'];
 const MAX_ITEMS_PER_FIELD = 20;
 
 function parseJsonArray(value) {

@@ -120,7 +120,7 @@ const UserSchema = new mongoose.Schema(
 				order: { type: Number, default: 0 },
 				uploadedAt: { type: Date, default: Date.now }
 			}],
-			isDatingProfileActive: { type: Boolean, default: false },
+			isDatingProfileActive: { type: Boolean, default: true },
 			preferences: {
 				hereTo: { type: String, default: '' },
 				wantToMeet: { type: String, default: '' },
@@ -309,7 +309,7 @@ UserSchema.methods.addDatingPhoto = async function addDatingPhoto(photoData) {
 		this.dating = {
 			photos: [],
 			videos: [],
-			isDatingProfileActive: false,
+			isDatingProfileActive: true,
 			lastUpdatedAt: null
 		};
 	}
@@ -360,7 +360,7 @@ UserSchema.methods.addDatingVideo = async function addDatingVideo(videoData) {
 		this.dating = {
 			photos: [],
 			videos: [],
-			isDatingProfileActive: false,
+			isDatingProfileActive: true,
 			lastUpdatedAt: null
 		};
 	}
@@ -410,7 +410,7 @@ UserSchema.methods.toggleDatingProfile = async function toggleDatingProfile(isAc
 		this.dating = {
 			photos: [],
 			videos: [],
-			isDatingProfileActive: false,
+			isDatingProfileActive: true,
 			lastUpdatedAt: null
 		};
 	}
