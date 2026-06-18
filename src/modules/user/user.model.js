@@ -50,7 +50,10 @@ const UserSchema = new mongoose.Schema(
 		gender: { type: String, default: '' },
 		pronouns: { type: String, default: '' },
 		likes: [IconTextSchema],
-		preferences: [{ type: String }],
+		preferences: {
+			type: mongoose.Schema.Types.Mixed,
+			default: {}
+		  },
 		idProofUrl: { type: String, default: '' },
 		profilePictureUrl: { type: String, default: '' },
 		location: {
