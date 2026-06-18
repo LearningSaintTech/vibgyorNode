@@ -122,9 +122,9 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 	const a =
 		Math.sin(dLat / 2) * Math.sin(dLat / 2) +
 		Math.cos((lat1 * Math.PI) / 180) *
-			Math.cos((lat2 * Math.PI) / 180) *
-			Math.sin(dLon / 2) *
-			Math.sin(dLon / 2);
+		Math.cos((lat2 * Math.PI) / 180) *
+		Math.sin(dLon / 2) *
+		Math.sin(dLon / 2);
 	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 	return R * c;
 }
@@ -274,6 +274,7 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		location = null,
 		distanceMax = null,
 		filter = 'all',
+		interests = null,
 	} = filters;
 
 	const allExcludedIdsStrings = [
@@ -311,6 +312,7 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		values.forEach((value) => {
 			hereToConditions.push(...buildRegexOrConditions('lookingFor.text', [value]));
 			hereToConditions.push(...buildRegexOrConditions('whatBringsYouToVibgyor.community', [value]));
+			hereToConditions.push(...buildRegexOrConditions('whatBringsYouToVibgyor.text', [value]));
 			hereToConditions.push(...buildRegexOrConditions('dating.preferences.hereTo', [value]));
 		});
 		if (hereToConditions.length) {
@@ -379,9 +381,13 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 			query.$and.push(locationQuery);
 		}
 	}
-
 	if (distanceMax !== null && currentUser.location?.lat && currentUser.location?.lng) {
 		// Post-query distance filter
+	}
+
+	if (interests && interests.trim()) {
+		const interestRegex = new RegExp(`^${escapeRegex(interests.trim())}$`, 'i');
+		query.$and.push({ 'likes.text': { $regex: interestRegex } });
 	}
 
 	if (filter === 'new_dater') {
@@ -393,7 +399,10 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 	if (filter === 'same_interests' || filter === 'same_likes') {
 		const likeTexts = getProfileLikeTexts(currentUser);
 		if (likeTexts.length) {
-			query.$and.push({ 'likes.text': { $in: likeTexts } });
+			const conditions = likeTexts.map(text => ({
+				'likes.text': { $regex: new RegExp(`^${escapeRegex(text)}$`, 'i') }
+			}));
+			query.$and.push({ $or: conditions });
 		}
 	}
 

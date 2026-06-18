@@ -38,6 +38,8 @@ function buildPreferencesResponse(user) {
 	return {
 		hereTo: user.dating?.preferences?.hereTo || getProfileLookingForTexts(user)[0] || '',
 		wantToMeet: user.dating?.preferences?.wantToMeet || getProfileIdentificationTexts(user)[0] || '',
+		datingOrientation: user.dating?.preferences?.orientation || '',
+		datingInterests: user.dating?.preferences?.interests || '',
 		lookingFor: user.lookingFor || [],
 		whatBringsYouToVibgyor: user.whatBringsYouToVibgyor || [],
 		identification: user.identification || [],
@@ -46,11 +48,11 @@ function buildPreferencesResponse(user) {
 		ageRange: user.dating?.preferences?.ageRange || { min: 18, max: 100 },
 		languages,
 		location: {
-			city: user.location?.city || '',
-			country: user.location?.country || '',
+			city: user.dating?.preferences?.location?.city || '',
+			country: user.dating?.preferences?.location?.country || '',
 			coordinates: {
-				lat: user.location?.lat ?? null,
-				lng: user.location?.lng ?? null
+				lat: user.dating?.preferences?.location?.coordinates?.lat ?? user.dating?.preferences?.location?.lat ?? null,
+				lng: user.dating?.preferences?.location?.coordinates?.lng ?? user.dating?.preferences?.location?.lng ?? null
 			}
 		},
 		distanceRange,
@@ -84,6 +86,7 @@ async function getAllDatingProfiles(req, res) {
 			country = null, // Note: location doesn't have state field in schema
 			distanceMax = null, // in km
 			filter = 'all', // 'all', 'liked_you', 'liked_by_you', 'new_dater', 'near_by', 'same_likes' (same_interests alias)
+			interests = null,
 			page = 1,
 			limit = 20
 		} = req.query;
@@ -101,6 +104,7 @@ async function getAllDatingProfiles(req, res) {
 			wantToMeet: userPreferences.wantToMeet,
 			languages: userPreferences.languages,
 			distanceRange: userPreferences.distanceRange,
+			interests: userPreferences.interests,
 			location: userLocation
 		});
 
@@ -165,13 +169,13 @@ async function getAllDatingProfiles(req, res) {
 		const location = {};
 		if (city) {
 			location.city = city;
-		} else if (usePreferenceDefaults && userLocation.city && userLocation.city.trim() !== '') {
-			location.city = userLocation.city;
+		} else if (usePreferenceDefaults && userPreferences.location?.city && userPreferences.location.city.trim() !== '') {
+			location.city = userPreferences.location.city;
 		}
 		if (country) {
 			location.country = country;
-		} else if (usePreferenceDefaults && userLocation.country && userLocation.country.trim() !== '') {
-			location.country = userLocation.country;
+		} else if (usePreferenceDefaults && userPreferences.location?.country && userPreferences.location.country.trim() !== '') {
+			location.country = userPreferences.location.country;
 		}
 
 		// Distance: use query params or (optionally) user's stored preferences
@@ -183,6 +187,17 @@ async function getAllDatingProfiles(req, res) {
 		if (filter === 'near_by' && !finalDistanceMax) {
 			// Default to 50km for "near_by" filter
 			finalDistanceMax = 50;
+		}
+
+		// Interests: use query params or user preferences fallback
+		let finalInterests = null;
+		if (interests !== null && interests !== undefined) {
+			finalInterests = interests;
+		} else if (usePreferenceDefaults) {
+			const prefInterests = userPreferences.interests;
+			if (prefInterests && prefInterests.trim() !== '') {
+				finalInterests = prefInterests;
+			}
 		}
 
 		// Build filters object (query params override user preferences)
@@ -200,17 +215,19 @@ async function getAllDatingProfiles(req, res) {
 			location: Object.keys(location).length > 0 ? location : null,
 			distanceMax: finalDistanceMax,
 			filter: normalizedFilter,
+			interests: finalInterests,
 		};
 
 		console.log('[DATING][PROFILE] Final filters applied:', {
 			usePreferenceDefaults,
-			fromQuery: { hereTo, wantToMeet, ageMin, ageMax, languages, city, country, distanceMax },
+			fromQuery: { hereTo, wantToMeet, ageMin, ageMax, languages, city, country, distanceMax, interests },
 			fromPreferences: {
 				hereTo: userPreferences.hereTo,
 				wantToMeet: userPreferences.wantToMeet,
 				ageRange: userPreferences.ageRange,
 				languages: userPreferences.languages,
-				distanceRange: userPreferences.distanceRange
+				distanceRange: userPreferences.distanceRange,
+				interests: userPreferences.interests
 			},
 			finalFilters: filters
 		});
@@ -267,6 +284,8 @@ async function updateDatingPreferences(req, res) {
 		const {
 			hereTo,
 			wantToMeet,
+			orientation,
+			interests,
 			ageMin,
 			ageMax,
 			languages,
@@ -295,7 +314,6 @@ async function updateDatingPreferences(req, res) {
 		if (!Array.isArray(user.preferences)) {
 			user.preferences = [];
 		}
-
 		// Update dating filter preferences (languages also stored on user.preferences)
 		if (hereTo !== undefined) {
 			user.dating.preferences.hereTo = hereTo;
@@ -303,7 +321,13 @@ async function updateDatingPreferences(req, res) {
 		if (wantToMeet !== undefined) {
 			user.dating.preferences.wantToMeet = wantToMeet;
 		}
-		if (languagesArr.length) {
+		if (orientation !== undefined) {
+			user.dating.preferences.orientation = orientation;
+		}
+		if (interests !== undefined) {
+			user.dating.preferences.interests = interests;
+		}
+		if (languages !== undefined) {
 			user.preferences = languagesArr;
 			user.dating.preferences.languages = languagesArr;
 		}
@@ -312,10 +336,10 @@ async function updateDatingPreferences(req, res) {
 				user.dating.preferences.ageRange = { min: 18, max: 100 };
 			}
 			if (ageMin !== undefined) {
-				user.dating.preferences.ageRange.min = parseInt(ageMin, 10);
+				user.dating.preferences.ageRange.min = (ageMin !== null && ageMin !== '') ? parseInt(ageMin, 10) : 18;
 			}
 			if (ageMax !== undefined) {
-				user.dating.preferences.ageRange.max = parseInt(ageMax, 10);
+				user.dating.preferences.ageRange.max = (ageMax !== null && ageMax !== '') ? parseInt(ageMax, 10) : 100;
 			}
 		}
 		// IMPORTANT: Location in preferences is ONLY for filtering other users, NOT for setting user's actual location
@@ -324,11 +348,11 @@ async function updateDatingPreferences(req, res) {
 		if (location !== undefined) {
 			// Only update dating preferences location (for filtering), NOT user's actual location
 			user.dating.preferences.location = {
-				city: location.city || '',
-				country: location.country || '',
+				city: location?.city || '',
+				country: location?.country || '',
 				coordinates: {
-					lat: location.coordinates?.lat ?? location.lat ?? null,
-					lng: location.coordinates?.lng ?? location.lng ?? null
+					lat: location?.coordinates?.lat ?? location?.lat ?? null,
+					lng: location?.coordinates?.lng ?? location?.lng ?? null
 				}
 			};
 			// DO NOT update user.location - that's the user's actual location, not a filter preference
@@ -341,12 +365,12 @@ async function updateDatingPreferences(req, res) {
 				user.distance = { min: 0, max: 100, unit: 'km' };
 			}
 			if (distanceMin !== undefined) {
-				user.dating.preferences.distanceRange.min = parseFloat(distanceMin);
-				user.distance.min = parseFloat(distanceMin);
+				user.dating.preferences.distanceRange.min = distanceMin !== null ? parseFloat(distanceMin) : 0;
+				user.distance.min = distanceMin !== null ? parseFloat(distanceMin) : 0;
 			}
 			if (distanceMax !== undefined) {
-				user.dating.preferences.distanceRange.max = parseFloat(distanceMax);
-				user.distance.max = parseFloat(distanceMax);
+				user.dating.preferences.distanceRange.max = distanceMax !== null ? parseFloat(distanceMax) : 100;
+				user.distance.max = distanceMax !== null ? parseFloat(distanceMax) : 100;
 			}
 			user.markModified('distance');
 		}

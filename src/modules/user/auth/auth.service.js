@@ -28,13 +28,13 @@ function generateEmailOtp() {
 	return Math.floor(100000 + Math.random() * 900000).toString();
 }
 // 2Factor API integration
-const { 
-	twofactorService, 
-	normalizePhoneForAPI, 
-	isBypassPhone, 
-	getBypassSessionId, 
+const {
+	twofactorService,
+	normalizePhoneForAPI,
+	isBypassPhone,
+	getBypassSessionId,
 	isBypassOTP,
-	BYPASS_PHONES 
+	BYPASS_PHONES
 } = require('../../../services/twofactor');
 
 
@@ -89,17 +89,17 @@ async function sendPhoneOtp(req, res) {
 			user.twoFactorSessionId = getBypassSessionId(phoneNumber);
 			user.lastOtpSentAt = new Date(now);
 			await user.save();
-			return ApiResponse.success(res, { 
-				maskedPhone: user.maskedPhone(), 
+			return ApiResponse.success(res, {
+				maskedPhone: user.maskedPhone(),
 				ttlSeconds: OTP_TTL_MS / 1000,
-				sessionId: user.twoFactorSessionId 
+				sessionId: user.twoFactorSessionId
 			}, 'OTP sent (bypass mode)');
 		}
 
 		// Call 2Factor API
 		console.log('[sendPhoneOtp] 📱 Calling 2Factor API for:', normalizedMobile);
 		const otpResult = await twofactorService.sendOTP(normalizedMobile);
-		
+
 		if (otpResult.success) {
 			// Store session ID instead of OTP code
 			user.twoFactorSessionId = otpResult.data.sessionId;
@@ -107,14 +107,14 @@ async function sendPhoneOtp(req, res) {
 			// Keep old fields for backward compatibility during migration
 			user.otpCode = null; // Clear old OTP
 			user.otpExpiresAt = null;
-			
+
 			await user.save();
 			console.log('[sendPhoneOtp] ✅ OTP sent via 2Factor API, session ID stored');
-			
-			return ApiResponse.success(res, { 
-				maskedPhone: user.maskedPhone(), 
+
+			return ApiResponse.success(res, {
+				maskedPhone: user.maskedPhone(),
 				ttlSeconds: OTP_TTL_MS / 1000,
-				sessionId: user.twoFactorSessionId 
+				sessionId: user.twoFactorSessionId
 			}, 'OTP sent');
 		} else {
 			console.error('[sendPhoneOtp] ❌ 2Factor API error:', otpResult.data);
@@ -129,29 +129,29 @@ async function verifyPhoneOtp(req, res) {
 	try {
 		const { phoneNumber, otp } = req.body || {};
 		if (!phoneNumber || !otp) return ApiResponse.badRequest(res, 'phoneNumber and otp are required');
-		
+
 		const user = await User.findOne({ phoneNumber });
 		if (!user) return ApiResponse.unauthorized(res, 'User not found');
-		
+
 		// Normalize phone number
 		const normalizedMobile = normalizePhoneForAPI(phoneNumber, user.countryCode || '+91');
-		
+
 		// Check for development bypass
 		if (isBypassPhone(normalizedMobile) && isBypassOTP(otp)) {
 			console.log('[verifyPhoneOtp] 🔓 Development bypass verification:', normalizedMobile);
-			
+
 			// Clear OTP fields
 			user.otpCode = null;
 			user.otpExpiresAt = null;
 			user.twoFactorSessionId = null;
 			user.lastLoginAt = new Date();
 			await user.save();
-			
+
 			// Generate tokens
 			const payload = { userId: String(user._id), role: 'user' };
 			const accessToken = signAccessToken(payload);
 			const refreshToken = signRefreshToken(payload);
-			
+
 			const userData = {
 				id: user._id,
 				phoneNumber: user.phoneNumber ? `******${user.phoneNumber.slice(-4)}` : '',
@@ -183,30 +183,30 @@ async function verifyPhoneOtp(req, res) {
 
 			return ApiResponse.success(res, { accessToken, refreshToken, user: userData, isProfileCompleted: !!user.isProfileCompleted }, 'OTP verified (bypass mode)');
 		}
-		
+
 		// Check if OTP was requested (either old method or new method)
 		const hasOldOtp = user.otpCode && user.otpExpiresAt;
 		const hasNewSession = user.twoFactorSessionId;
-		
+
 		if (!hasOldOtp && !hasNewSession) {
 			return ApiResponse.unauthorized(res, 'OTP not requested');
 		}
-		
+
 		// Handle old OTP method (backward compatibility)
 		if (hasOldOtp && !hasNewSession) {
 			console.log('[verifyPhoneOtp] Using legacy OTP verification');
 			if (user.otpCode !== otp) return ApiResponse.unauthorized(res, 'Invalid OTP');
 			if (Date.now() > user.otpExpiresAt.getTime()) return ApiResponse.unauthorized(res, 'OTP expired');
-			
+
 			user.otpCode = null;
 			user.otpExpiresAt = null;
 			user.lastLoginAt = new Date();
 			await user.save();
-			
+
 			const payload = { userId: String(user._id), role: 'user' };
 			const accessToken = signAccessToken(payload);
 			const refreshToken = signRefreshToken(payload);
-			
+
 			const userData = {
 				id: user._id,
 				phoneNumber: user.phoneNumber ? `******${user.phoneNumber.slice(-4)}` : '',
@@ -238,18 +238,18 @@ async function verifyPhoneOtp(req, res) {
 
 			return ApiResponse.success(res, { accessToken, refreshToken, user: userData, isProfileCompleted: !!user.isProfileCompleted }, 'OTP verified');
 		}
-		
+
 		// Use 2Factor API verification
 		if (!user.twoFactorSessionId) {
 			return ApiResponse.unauthorized(res, 'Session expired. Please request a new OTP.');
 		}
-		
+
 		console.log('[verifyPhoneOtp] 📱 Verifying OTP via 2Factor API');
 		const verifyResult = await twofactorService.verifyOTP(normalizedMobile, otp, user.twoFactorSessionId);
-		
+
 		if (!verifyResult.success) {
 			console.error('[verifyPhoneOtp] ❌ 2Factor verification failed:', verifyResult.data);
-			
+
 			// Handle specific error types
 			const errorType = verifyResult.data.error;
 			if (errorType === 'INVALID_OTP') {
@@ -262,10 +262,10 @@ async function verifyPhoneOtp(req, res) {
 				await user.save();
 				return ApiResponse.unauthorized(res, verifyResult.data.message || 'Session expired', 'SESSION_EXPIRED');
 			}
-			
+
 			return ApiResponse.unauthorized(res, verifyResult.data.message || 'OTP verification failed');
 		}
-		
+
 		// OTP verified successfully
 		console.log('[verifyPhoneOtp] ✅ OTP verified via 2Factor API');
 		user.twoFactorSessionId = null;
@@ -273,11 +273,11 @@ async function verifyPhoneOtp(req, res) {
 		user.otpExpiresAt = null;
 		user.lastLoginAt = new Date();
 		await user.save();
-		
+
 		const payload = { userId: String(user._id), role: 'user' };
 		const accessToken = signAccessToken(payload);
 		const refreshToken = signRefreshToken(payload);
-		
+
 		const userData = {
 			id: user._id,
 			phoneNumber: user.phoneNumber ? `******${user.phoneNumber.slice(-4)}` : '',
@@ -387,7 +387,7 @@ async function getMe(req, res) {
 	try {
 		console.log('[USER][AUTH][GET_ME] Request received');
 		console.log('[USER][AUTH][GET_ME] User ID:', req.user?.userId);
-		
+
 		const user = await User.findById(req.user?.userId).select('-otpCode -otpExpiresAt -emailOtpCode -emailOtpExpiresAt');
 		if (!user) {
 			console.log('[USER][AUTH][GET_ME] ❌ User not found');
@@ -408,7 +408,7 @@ async function getMe(req, res) {
 				isDeleted: false
 			})
 		]);
-		
+
 		console.log('[USER][AUTH][GET_ME] Dating stats:', { likesReceived: datingLikesReceived, commentsReceived: datingCommentsReceived });
 
 		const profileData = buildAuthenticatedUserProfile(user, {
@@ -424,7 +424,7 @@ async function getMe(req, res) {
 			datingVideosCount: profileData.dating?.videos?.length || 0,
 			isDatingProfileActive: profileData.dating?.isDatingProfileActive,
 		});
-		
+
 		// Return in format expected by frontend: { success: true, data: { user: profileData } }
 		console.log('[USER][AUTH][GET_ME] 📤 Sending response to frontend');
 		return ApiResponse.success(res, { user: profileData }, 'User data retrieved successfully');
@@ -454,14 +454,14 @@ async function getProfile(req, res) {
 			})
 		]);
 
-	const profileData = buildAuthenticatedUserProfile(user, {
-		dating: {
-			likesReceived: datingLikesReceived,
-			commentsReceived: datingCommentsReceived,
-		},
-	});
+		const profileData = buildAuthenticatedUserProfile(user, {
+			dating: {
+				likesReceived: datingLikesReceived,
+				commentsReceived: datingCommentsReceived,
+			},
+		});
 
-	return ApiResponse.success(res, profileData, 'Profile retrieved successfully');
+		return ApiResponse.success(res, profileData, 'Profile retrieved successfully');
 	} catch (e) {
 		// eslint-disable-next-line no-console
 		console.error('[USER][AUTH] getProfile error', e?.message || e);
@@ -570,7 +570,7 @@ async function resendPhoneOtp(req, res) {
 	try {
 		const { phoneNumber } = req.body || {};
 		if (!phoneNumber) return ApiResponse.badRequest(res, 'phoneNumber is required');
-		
+
 		const user = await User.findOne({ phoneNumber });
 		if (!user) return ApiResponse.notFound(res, 'User not found');
 
@@ -592,7 +592,7 @@ async function resendPhoneOtp(req, res) {
 
 		// Normalize phone number for 2Factor API
 		const normalizedMobile = normalizePhoneForAPI(phoneNumber, user.countryCode || '+91');
-		
+
 		// Check for development bypass
 		if (isBypassPhone(normalizedMobile)) {
 			console.log('[resendPhoneOtp] 🔓 Development bypass detected:', normalizedMobile);
@@ -601,17 +601,17 @@ async function resendPhoneOtp(req, res) {
 			user.twoFactorSessionId = getBypassSessionId(phoneNumber);
 			user.lastOtpSentAt = new Date(now);
 			await user.save();
-			return ApiResponse.success(res, { 
-				maskedPhone: user.maskedPhone(), 
+			return ApiResponse.success(res, {
+				maskedPhone: user.maskedPhone(),
 				ttlSeconds: OTP_TTL_MS / 1000,
-				sessionId: user.twoFactorSessionId 
+				sessionId: user.twoFactorSessionId
 			}, 'OTP resent (bypass mode)');
 		}
 
 		// Call 2Factor API to resend OTP
 		console.log('[resendPhoneOtp] 📱 Resending OTP via 2Factor API');
 		const otpResult = await twofactorService.resendOTP(normalizedMobile);
-		
+
 		if (otpResult.success) {
 			user.twoFactorSessionId = otpResult.data.sessionId;
 			user.lastOtpSentAt = new Date(now);
@@ -619,10 +619,10 @@ async function resendPhoneOtp(req, res) {
 			user.otpExpiresAt = null;
 			await user.save();
 			console.log('[resendPhoneOtp] ✅ OTP resent via 2Factor API');
-			return ApiResponse.success(res, { 
-				maskedPhone: user.maskedPhone(), 
+			return ApiResponse.success(res, {
+				maskedPhone: user.maskedPhone(),
 				ttlSeconds: OTP_TTL_MS / 1000,
-				sessionId: user.twoFactorSessionId 
+				sessionId: user.twoFactorSessionId
 			}, 'OTP resent');
 		} else {
 			console.error('[resendPhoneOtp] ❌ 2Factor API error:', otpResult.data);
@@ -740,7 +740,7 @@ async function getUserProfile(req, res) {
 		const isFollower = currentUser.followers.some(f => f.toString() === userId);
 		const isBlocked = currentUser.blockedUsers.some(b => b.toString() === userId);
 		const hasBlockedYou = user.blockedUsers.some(b => b.toString() === currentUserId);
-		
+
 		// Check for pending follow request (only if not already following)
 		let followRequestStatus = 'none';
 		if (!isFollowing && currentUserId !== userId) {
@@ -749,7 +749,7 @@ async function getUserProfile(req, res) {
 				recipient: userId,
 				status: 'pending'
 			});
-			
+
 			if (followRequest) {
 				followRequestStatus = 'pending';
 			} else {
@@ -758,7 +758,7 @@ async function getUserProfile(req, res) {
 					requester: currentUserId,
 					recipient: userId
 				}).sort({ createdAt: -1 });
-				
+
 				if (anyRequest) {
 					if (anyRequest.status === 'accepted' || anyRequest.status === 'accept') {
 						followRequestStatus = 'accepted';
@@ -772,21 +772,21 @@ async function getUserProfile(req, res) {
 		}
 
 		// Calculate mutual followers
-		const mutualFollowers = user.followers.filter(f => 
+		const mutualFollowers = user.followers.filter(f =>
 			currentUser.following.some(cf => cf.toString() === f.toString())
 		).length;
 
 		// Filter out blocked users from followers/following counts (if viewing another user's profile)
 		let followersCount = user.followers?.length || 0;
 		let followingCount = user.following?.length || 0;
-		
+
 		if (currentUserId && currentUserId !== userId) {
 			// Get current user's blocked users list (same logic as getFollowers/getFollowing)
 			const blockedUserIds = [
 				...(currentUser.blockedUsers || []).map(id => id.toString()),
 				...(currentUser.blockedBy || []).map(id => id.toString())
 			];
-			
+
 			// Filter followers count - exclude users that current user has blocked or who have blocked current user
 			if (blockedUserIds.length > 0) {
 				followersCount = user.followers?.filter(f => {
@@ -794,7 +794,7 @@ async function getUserProfile(req, res) {
 					return !blockedUserIds.includes(followerId);
 				}).length || 0;
 			}
-			
+
 			// Filter following count - exclude users that current user has blocked or who have blocked current user
 			if (blockedUserIds.length > 0) {
 				followingCount = user.following?.filter(f => {
@@ -804,163 +804,172 @@ async function getUserProfile(req, res) {
 			}
 		}
 
-	// Get dating statistics for other user
-	const [datingCommentsReceived, datingLikesReceived, currentUserInteraction, reciprocalInteraction, targetUserDislikedMe] = await Promise.all([
-		DatingProfileComment.countDocuments({
-			targetUser: userId,
-			isDeleted: false
-		}),
-		DatingInteraction.countDocuments({
-			targetUser: userId,
-			action: 'like'
-		}),
-		// Check if current user has liked/disliked this profile (only if viewing another user's profile)
-		currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
-			user: currentUserId,
-			targetUser: userId
-		}) : Promise.resolve(null),
-		// Check if target user has liked current user (for isMatch flag)
-		currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
-			user: userId,
-			targetUser: currentUserId,
-			action: 'like'
-		}).lean() : Promise.resolve(null),
-		// Check if target user has disliked current user (for disliked flag)
-		currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
-			user: userId,
-			targetUser: currentUserId,
-			action: 'dislike'
-		}).lean() : Promise.resolve(null)
-	]);
+		// Get dating statistics for other user
+		const [datingCommentsReceived, datingLikesReceived, currentUserInteraction, reciprocalInteraction, targetUserDislikedMe] = await Promise.all([
+			DatingProfileComment.countDocuments({
+				targetUser: userId,
+				isDeleted: false
+			}),
+			DatingInteraction.countDocuments({
+				targetUser: userId,
+				action: 'like'
+			}),
+			// Check if current user has liked/disliked this profile (only if viewing another user's profile)
+			currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
+				user: currentUserId,
+				targetUser: userId
+			}) : Promise.resolve(null),
+			// Check if target user has liked current user (for isMatch flag)
+			currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
+				user: userId,
+				targetUser: currentUserId,
+				action: 'like'
+			}).lean() : Promise.resolve(null),
+			// Check if target user has disliked current user (for disliked flag)
+			currentUserId && currentUserId !== userId ? DatingInteraction.findOne({
+				user: userId,
+				targetUser: currentUserId,
+				action: 'dislike'
+			}).lean() : Promise.resolve(null)
+		]);
 
-	// Set liked/disliked flags based on interaction
-	let liked = false;
-	let disliked = false;
-	let isMatch = false;
-	let isLiked = false; // Whether current user has liked this profile
-	let dislikedByOther = false; // Whether the other user has disliked current user's profile
-	
-	if (currentUserInteraction) {
-		if (currentUserInteraction.action === 'like') {
-			liked = true;
-			isLiked = true;
-			// Check if it's a match (both users have liked each other)
-			if (reciprocalInteraction && reciprocalInteraction.action === 'like') {
-				isMatch = true;
-			}
-		} else if (currentUserInteraction.action === 'dislike') {
-			disliked = true;
-		}
-	}
-	
-	// Check if target user has disliked current user
-	if (targetUserDislikedMe && targetUserDislikedMe.action === 'dislike') {
-		dislikedByOther = true;
-	}
+		// Set liked/disliked flags based on interaction
+		let liked = false;
+		let disliked = false;
+		let isMatch = false;
+		let isLiked = false; // Whether current user has liked this profile
+		let dislikedByOther = false; // Whether the other user has disliked current user's profile
 
-	// Calculate distance between current user and target user
-	let distance = null;
-	let distanceAway = null;
-	if (currentUser.location?.lat && currentUser.location?.lng) {
-		let targetLat = user.location?.lat;
-		let targetLng = user.location?.lng;
-
-		// Check dating preferences location if main location not available
-		if (!targetLat && user.dating?.preferences?.location?.coordinates?.lat) {
-			targetLat = user.dating.preferences.location.coordinates.lat;
-			targetLng = user.dating.preferences.location.coordinates.lng;
-		}
-
-		if (targetLat && targetLng) {
-			// Haversine formula for distance calculation
-			const toRadians = (deg) => deg * (Math.PI / 180);
-			const R = 6371; // Earth's radius in km
-			const dLat = toRadians(targetLat - currentUser.location.lat);
-			const dLon = toRadians(targetLng - currentUser.location.lng);
-			const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-					  Math.cos(toRadians(currentUser.location.lat)) * 
-					  Math.cos(toRadians(targetLat)) *
-					  Math.sin(dLon / 2) * Math.sin(dLon / 2);
-			const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-			distance = R * c;
-
-			// Format distance
-			if (distance >= 1) {
-				distanceAway = `${Math.round(distance * 10) / 10} km away`;
-			} else {
-				const distanceMeters = Math.round(distance * 1000);
-				distanceAway = `${distanceMeters} m away`;
+		if (currentUserInteraction) {
+			if (currentUserInteraction.action === 'like') {
+				liked = true;
+				isLiked = true;
+				// Check if it's a match (both users have liked each other)
+				if (reciprocalInteraction && reciprocalInteraction.action === 'like') {
+					isMatch = true;
+				}
+			} else if (currentUserInteraction.action === 'dislike') {
+				disliked = true;
 			}
 		}
-	}
 
-	// Full profile data (visible to everyone)
-	const profileData = {
-		id: user._id,
-		username: user.username,
-		fullName: user.fullName,
-		profilePictureUrl: user.profilePictureUrl,
-		bio: user.bio,
-		gender: user.gender,
-		pronouns: user.pronouns,
-		likes: user.likes || [],
-		interests: user.interests || [],
-		preferences: Array.isArray(user.preferences) ? user.preferences : [],
-		location: user.location ? {
-			address: user.location.address || '',
-			city: user.location.city,
-			country: user.location.country,
-			lat: user.location.lat,
-			lng: user.location.lng,
-			distance: distance,
-			distanceAway: distanceAway
-		} : null,
-		isVerified: user.verificationStatus === 'approved',
-		isPrivate: user.privacySettings?.isPrivate || false,
-		privacySettings: user.privacySettings || {
-			isPrivate: false,
-			allowFollowRequests: true,
-			showOnlineStatus: true,
-			allowMessages: 'followers',
-			allowCommenting: true,
-			allowTagging: true,
-			allowStoriesSharing: true
-		},
-		followersCount: followersCount,
-		followingCount: followingCount,
-		createdAt: user.createdAt,
-		// Relationship flags
-		isFollowing: isFollowing,
-		isFollower: isFollower,
-		isBlocked: isBlocked,
-		hasBlockedYou: hasBlockedYou,
-		mutualFollowers: mutualFollowers,
-		followStatus: followRequestStatus, // 'none', 'pending', 'accepted', 'rejected'
-		followRequestStatus: followRequestStatus, // Alias for compatibility
-		// Dating data added (only show if dating profile is active)
-		dating: user.dating?.isDatingProfileActive ? {
-			photos: user.dating?.photos || [],
-			videos: user.dating?.videos || [],
-			isDatingProfileActive: true,
-			likesReceived: datingLikesReceived,
-			commentsReceived: datingCommentsReceived
-		} : {
-			photos: [],
-			videos: [],
-			isDatingProfileActive: false,
-			likesReceived: 0,
-			commentsReceived: 0
-		},
-		// Dating interaction flags (only for other users, not own profile)
-		liked: currentUserId && currentUserId !== userId ? liked : false,
-		disliked: currentUserId && currentUserId !== userId ? disliked : false,
-		isMatch: currentUserId && currentUserId !== userId ? isMatch : false,
-		isLiked: currentUserId && currentUserId !== userId ? isLiked : false, // Whether current user has liked this profile
-		dislikedByOther: currentUserId && currentUserId !== userId ? dislikedByOther : false // Whether the other user has disliked current user's profile
-	};
+		// Check if target user has disliked current user
+		if (targetUserDislikedMe && targetUserDislikedMe.action === 'dislike') {
+			dislikedByOther = true;
+		}
 
-	console.log('[USER][AUTH] Profile returned for user:', userId);
-	return ApiResponse.success(res, profileData, 'User profile retrieved');
+		// Calculate distance between current user and target user
+		let distance = null;
+		let distanceAway = null;
+		if (currentUser.location?.lat && currentUser.location?.lng) {
+			let targetLat = user.location?.lat;
+			let targetLng = user.location?.lng;
+
+			// Check dating preferences location if main location not available
+			if (!targetLat && user.dating?.preferences?.location?.coordinates?.lat) {
+				targetLat = user.dating.preferences.location.coordinates.lat;
+				targetLng = user.dating.preferences.location.coordinates.lng;
+			}
+
+			if (targetLat && targetLng) {
+				// Haversine formula for distance calculation
+				const toRadians = (deg) => deg * (Math.PI / 180);
+				const R = 6371; // Earth's radius in km
+				const dLat = toRadians(targetLat - currentUser.location.lat);
+				const dLon = toRadians(targetLng - currentUser.location.lng);
+				const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+					Math.cos(toRadians(currentUser.location.lat)) *
+					Math.cos(toRadians(targetLat)) *
+					Math.sin(dLon / 2) * Math.sin(dLon / 2);
+				const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+				distance = R * c;
+
+				// Format distance
+				if (distance >= 1) {
+					distanceAway = `${Math.round(distance * 10) / 10} km away`;
+				} else {
+					const distanceMeters = Math.round(distance * 1000);
+					distanceAway = `${distanceMeters} m away`;
+				}
+			}
+		}
+
+		// Full profile data (visible to everyone)
+		const profileData = {
+			id: user._id,
+			username: user.username,
+			fullName: user.fullName,
+			profilePictureUrl: user.profilePictureUrl,
+			dob: user.dob,
+			bio: user.bio || '',
+			longDesc: user.longDesc || '',
+			heightCm: user.heightCm ?? null,
+			profession: user.profession || '',
+			gender: user.gender || '',
+			pronouns: user.pronouns || '',
+			identification: user.identification || [],
+			orientation: user.orientation || '',
+			lookingFor: user.lookingFor || [],
+			relationshipStyle: user.relationshipStyle || { text: '', subtext: '' },
+			whatBringsYouToVibgyor: user.whatBringsYouToVibgyor || [],
+			likes: user.likes || [],
+			interests: user.interests || [],
+			preferences: Array.isArray(user.preferences) ? user.preferences : [],
+			location: user.location ? {
+				address: user.location.address || '',
+				city: user.location.city,
+				country: user.location.country,
+				lat: user.location.lat,
+				lng: user.location.lng,
+				distance: distance,
+				distanceAway: distanceAway
+			} : null,
+			isVerified: user.verificationStatus === 'approved',
+			isPrivate: user.privacySettings?.isPrivate || false,
+			privacySettings: user.privacySettings || {
+				isPrivate: false,
+				allowFollowRequests: true,
+				showOnlineStatus: true,
+				allowMessages: 'followers',
+				allowCommenting: true,
+				allowTagging: true,
+				allowStoriesSharing: true
+			},
+			followersCount: followersCount,
+			followingCount: followingCount,
+			createdAt: user.createdAt,
+			// Relationship flags
+			isFollowing: isFollowing,
+			isFollower: isFollower,
+			isBlocked: isBlocked,
+			hasBlockedYou: hasBlockedYou,
+			mutualFollowers: mutualFollowers,
+			followStatus: followRequestStatus, // 'none', 'pending', 'accepted', 'rejected'
+			followRequestStatus: followRequestStatus, // Alias for compatibility
+			// Dating data added (only show if dating profile is active)
+			dating: user.dating?.isDatingProfileActive ? {
+				photos: user.dating?.photos || [],
+				videos: user.dating?.videos || [],
+				isDatingProfileActive: true,
+				likesReceived: datingLikesReceived,
+				commentsReceived: datingCommentsReceived
+			} : {
+				photos: [],
+				videos: [],
+				isDatingProfileActive: false,
+				likesReceived: 0,
+				commentsReceived: 0
+			},
+			// Dating interaction flags (only for other users, not own profile)
+			liked: currentUserId && currentUserId !== userId ? liked : false,
+			disliked: currentUserId && currentUserId !== userId ? disliked : false,
+			isMatch: currentUserId && currentUserId !== userId ? isMatch : false,
+			isLiked: currentUserId && currentUserId !== userId ? isLiked : false, // Whether current user has liked this profile
+			dislikedByOther: currentUserId && currentUserId !== userId ? dislikedByOther : false // Whether the other user has disliked current user's profile
+		};
+
+		console.log('[USER][AUTH] Profile returned for user:', userId);
+		return ApiResponse.success(res, profileData, 'User profile retrieved');
 
 	} catch (e) {
 		console.error('[USER][AUTH] getUserProfile error', e?.message || e);
@@ -971,80 +980,80 @@ async function getUserProfile(req, res) {
 
 async function refreshToken(req, res) {
 	try {
-	  console.log('Starting refreshToken function', { timestamp: new Date().toISOString() });
-	  
-	  const refreshToken = req.cookies?.jwt;
-	  console.log('Extracted refresh token from cookies:', { refreshToken });
-  
-	  const deviceInfo = req.headers['user-agent']; // Fixed typo: 'user-agaent' → 'user-agent'
-	  console.log('Device info from headers:', { deviceInfo });
-  
-	  if (!refreshToken) {
-		console.log('No refresh token found in request cookies');
-		return ApiResponse.unauthorized(res, 'Unauthorized: No refresh token');
-	  }
-  
-	  const tokenRecord = await RefreshToken.findOne({ token: refreshToken, isValid: true });
-	  console.log('Token record from database:', { tokenRecord });
-  
-	  if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
-		console.log('Invalid or expired token:', { tokenRecord, currentTime: new Date() });
-		return ApiResponse.unauthorized(res, 'Unauthorized: Invalid or expired refresh token');
-	  }
-  
-	  // Verify JWT and handle the result
-	  console.log('Verifying refresh token with JWT');
-	  jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
-		if (err) {
-		  console.log('JWT verification failed:', { error: err.message });
-		  return ApiResponse.unauthorized(res, 'Unauthorized: Invalid refresh token');
+		console.log('Starting refreshToken function', { timestamp: new Date().toISOString() });
+
+		const refreshToken = req.cookies?.jwt;
+		console.log('Extracted refresh token from cookies:', { refreshToken });
+
+		const deviceInfo = req.headers['user-agent']; // Fixed typo: 'user-agaent' → 'user-agent'
+		console.log('Device info from headers:', { deviceInfo });
+
+		if (!refreshToken) {
+			console.log('No refresh token found in request cookies');
+			return ApiResponse.unauthorized(res, 'Unauthorized: No refresh token');
 		}
-		console.log('JWT verification successful, decoded payload:', { decoded });
-  
-		// Note: 'user' is undefined in the original code; assuming tokenRecord contains user info
-		const user = tokenRecord.userId; // Adjust based on your schema
-		console.log('User data for token generation:', { userId: user?._id, role: 'user' });
-  
-		const payload = { userId: String(user._id), role: 'user' };
-		const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1d' });
-		console.log('Generated new access token:', { accessToken });
-  
-		const newRefreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1d' }); // Fixed: Used JWT_REFRESH_SECRET
-		console.log('Generated new refresh token:', { newRefreshToken });
-  
-		// Update or insert new refresh token in the database
-		console.log('Updating refresh token in database:', { newRefreshToken });
-		await RefreshToken.updateOne(
-		  { token: refreshToken }, // Changed to update existing token
-		  {
-			token: newRefreshToken,
-			issuedAt: new Date(),
-			expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)), // Fixed: 1 day instead of 30s
-			isValid: true,
-			ipAddress: req.ip,
-			deviceInfo, // Added deviceInfo for better tracking
-		  },
-		  { upsert: true } // Added upsert to handle new token creation if needed
-		);
-		console.log('Refresh token updated in database');
-  
-		// Set new refresh token in cookies
-		console.log('Setting new refresh token in cookies');
-		res.cookie('jwt', newRefreshToken, {
-		  httpOnly: true,
-		  sameSite: 'Lax',
-		  secure: true,
-		  maxAge: 24 * 60 * 60 * 1000,
+
+		const tokenRecord = await RefreshToken.findOne({ token: refreshToken, isValid: true });
+		console.log('Token record from database:', { tokenRecord });
+
+		if (!tokenRecord || tokenRecord.expiresAt < new Date()) {
+			console.log('Invalid or expired token:', { tokenRecord, currentTime: new Date() });
+			return ApiResponse.unauthorized(res, 'Unauthorized: Invalid or expired refresh token');
+		}
+
+		// Verify JWT and handle the result
+		console.log('Verifying refresh token with JWT');
+		jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, async (err, decoded) => {
+			if (err) {
+				console.log('JWT verification failed:', { error: err.message });
+				return ApiResponse.unauthorized(res, 'Unauthorized: Invalid refresh token');
+			}
+			console.log('JWT verification successful, decoded payload:', { decoded });
+
+			// Note: 'user' is undefined in the original code; assuming tokenRecord contains user info
+			const user = tokenRecord.userId; // Adjust based on your schema
+			console.log('User data for token generation:', { userId: user?._id, role: 'user' });
+
+			const payload = { userId: String(user._id), role: 'user' };
+			const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1d' });
+			console.log('Generated new access token:', { accessToken });
+
+			const newRefreshToken = jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '1d' }); // Fixed: Used JWT_REFRESH_SECRET
+			console.log('Generated new refresh token:', { newRefreshToken });
+
+			// Update or insert new refresh token in the database
+			console.log('Updating refresh token in database:', { newRefreshToken });
+			await RefreshToken.updateOne(
+				{ token: refreshToken }, // Changed to update existing token
+				{
+					token: newRefreshToken,
+					issuedAt: new Date(),
+					expiresAt: new Date(Date.now() + (24 * 60 * 60 * 1000)), // Fixed: 1 day instead of 30s
+					isValid: true,
+					ipAddress: req.ip,
+					deviceInfo, // Added deviceInfo for better tracking
+				},
+				{ upsert: true } // Added upsert to handle new token creation if needed
+			);
+			console.log('Refresh token updated in database');
+
+			// Set new refresh token in cookies
+			console.log('Setting new refresh token in cookies');
+			res.cookie('jwt', newRefreshToken, {
+				httpOnly: true,
+				sameSite: 'Lax',
+				secure: true,
+				maxAge: 24 * 60 * 60 * 1000,
+			});
+
+			console.log('Sending success response with access token');
+			return ApiResponse.success(res, { accessToken });
 		});
-  
-		console.log('Sending success response with access token');
-		return ApiResponse.success(res, { accessToken });
-	  });
 	} catch (error) {
-	  console.error('Error in refreshToken function:', { error: error.message, stack: error.stack });
-	  return ApiResponse.serverError(res, 'Server error');
+		console.error('Error in refreshToken function:', { error: error.message, stack: error.stack });
+		return ApiResponse.serverError(res, 'Server error');
 	}
-  }
+}
 
 // Get Privacy Settings
 async function getPrivacySettings(req, res) {
@@ -1080,10 +1089,10 @@ async function updatePrivacySettings(req, res) {
 	try {
 		console.log('[USER][AUTH] updatePrivacySettings');
 		const userId = req.user?.userId;
-		const { 
-			isPrivate, 
-			allowFollowRequests, 
-			showOnlineStatus, 
+		const {
+			isPrivate,
+			allowFollowRequests,
+			showOnlineStatus,
 			allowMessages,
 			allowCommenting,
 			allowTagging,
@@ -1164,7 +1173,7 @@ async function logout(req, res) {
 		});
 
 		const userId = req.user?.userId || req.user?.id;
-		
+
 		if (!userId) {
 			console.error('[USER][AUTH] ❌ Logout error: User ID not found in request');
 			console.error('[USER][AUTH] Request user object:', req.user);
@@ -1191,7 +1200,7 @@ async function logout(req, res) {
 		// 1. Clear FCM device token for this specific device only
 		try {
 			const { deviceId } = req.body;
-			
+
 			console.log('[USER][AUTH] 📱 Processing FCM token removal:', {
 				deviceId: deviceId || 'NOT PROVIDED',
 				currentTokensCount: user.deviceTokens?.length || 0,
@@ -1201,26 +1210,26 @@ async function logout(req, res) {
 					isActive: dt.isActive
 				})) || []
 			});
-			
+
 			if (deviceId) {
 				const beforeCount = user.deviceTokens?.length || 0;
 				console.log('[USER][AUTH] 🔍 Before removal - Device tokens:', beforeCount);
-				
+
 				// Remove only the token for this specific deviceId
 				user.deviceTokens = user.deviceTokens.filter(
 					dt => dt.deviceId !== deviceId
 				);
-				
+
 				const afterCount = user.deviceTokens?.length || 0;
 				const removedCount = beforeCount - afterCount;
-				
+
 				console.log('[USER][AUTH] 🔍 After removal - Device tokens:', afterCount);
 				console.log('[USER][AUTH] 💾 Saving user document...');
-				
+
 				await user.save();
-				
+
 				console.log('[USER][AUTH] ✅ User document saved successfully');
-				
+
 				if (removedCount > 0) {
 					console.log('[USER][AUTH] ✅ Cleared FCM token for deviceId:', deviceId, `(${removedCount} token(s) removed)`);
 					console.log('[USER][AUTH] 📊 Remaining device tokens:', afterCount);
@@ -1256,7 +1265,7 @@ async function logout(req, res) {
 
 		console.log('[USER][AUTH] ✅ ========== LOGOUT SUCCESSFUL ==========');
 		console.log('[USER][AUTH] 📤 Sending success response for user:', userId);
-		
+
 		return ApiResponse.success(res, {
 			userId: userId,
 			message: 'Logged out successfully. FCM token cleared for this device. Cache preserved for other devices.'

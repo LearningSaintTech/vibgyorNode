@@ -124,6 +124,8 @@ const UserSchema = new mongoose.Schema(
 			preferences: {
 				hereTo: { type: String, default: '' },
 				wantToMeet: { type: String, default: '' },
+				orientation: { type: String, default: '' },
+				interests: { type: String, default: '' },
 				ageRange: {
 					min: { type: Number, default: 18 },
 					max: { type: Number, default: 100 }
