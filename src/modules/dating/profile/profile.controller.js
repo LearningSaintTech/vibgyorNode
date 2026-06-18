@@ -36,10 +36,10 @@ function buildPreferencesResponse(user) {
 		: (user.dating?.preferences?.distanceRange || { min: 0, max: 100 });
 
 	return {
-		hereTo: user.dating?.preferences?.hereTo || getProfileLookingForTexts(user)[0] || '',
-		wantToMeet: user.dating?.preferences?.wantToMeet || getProfileIdentificationTexts(user)[0] || '',
-		datingOrientation: user.dating?.preferences?.orientation || '',
-		datingInterests: user.dating?.preferences?.interests || '',
+		hereTo: user.dating?.preferences?.hereTo !== undefined ? user.dating.preferences.hereTo : (getProfileLookingForTexts(user)[0] || ''),
+		wantToMeet: user.dating?.preferences?.wantToMeet !== undefined ? user.dating.preferences.wantToMeet : (getProfileIdentificationTexts(user)[0] || ''),
+		datingOrientation: user.dating?.preferences?.orientation !== undefined ? user.dating.preferences.orientation : '',
+		datingInterests: user.dating?.preferences?.interests !== undefined ? user.dating.preferences.interests : '',
 		lookingFor: user.lookingFor || [],
 		whatBringsYouToVibgyor: user.whatBringsYouToVibgyor || [],
 		identification: user.identification || [],
