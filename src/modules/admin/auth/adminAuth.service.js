@@ -390,7 +390,9 @@ async function updateProfile(userId, body, file) {
 		city,
 		state,
 		pinCode,
+		pincode,
 	} = body || {};
+	const resolvedPinCode = pinCode !== undefined ? pinCode : pincode;
 
 	const admin = await adminAuthRepository.findAdminById(userId);
 	if (!admin) {
@@ -428,7 +430,7 @@ async function updateProfile(userId, body, file) {
 	if (address !== undefined) admin.address = address;
 	if (city !== undefined) admin.city = city;
 	if (state !== undefined) admin.state = state;
-	if (pinCode !== undefined) admin.pinCode = pinCode;
+	if (resolvedPinCode !== undefined) admin.pinCode = resolvedPinCode;
 
 	if (avatarUrl !== admin.avatarUrl) {
 		admin.avatarUrl = avatarUrl;

@@ -1,4 +1,109 @@
+const mongoose = require('mongoose');
 const userManagementRepository = require('./userManagement.repository');
+
+function formatReportUser(user) {
+	if (!user) return null;
+	return {
+		_id: user._id,
+		username: user.username || '',
+		fullName: user.fullName || '',
+		email: user.email || '',
+		phoneNumber: user.phoneNumber || '',
+		countryCode: user.countryCode || '',
+		profilePictureUrl: user.profilePictureUrl || '',
+		verificationStatus: user.verificationStatus || 'none',
+		isActive: user.isActive !== false,
+		role: user.role || 'user',
+		gender: user.gender || '',
+		location: user.location || null,
+		createdAt: user.createdAt || null,
+	};
+}
+
+function formatModerationMessage(message) {
+	const sender = message.senderId;
+	return {
+		_id: message._id,
+		chatId: message.chatId,
+		content: message.isDeleted ? '[Message deleted]' : message.content || '',
+		type: message.type,
+		createdAt: message.createdAt,
+		isDeleted: Boolean(message.isDeleted),
+		deletedForEveryone: Boolean(message.deletedForEveryone),
+		media: message.media?.url
+			? { url: message.media.url, mimeType: message.media.mimeType || '' }
+			: null,
+		sender: {
+			_id: sender?._id || null,
+			username: sender?.username || '',
+			fullName: sender?.fullName || '',
+			profilePictureUrl: sender?.profilePictureUrl || '',
+		},
+	};
+}
+
+async function getReportMessages(report) {
+	const reporterId = report.reporter?._id;
+	const reportedUserId = report.reportedUser?._id;
+	const highlightedMessageId = report.reportedContent?.contentId || null;
+
+	if (!reportedUserId) {
+		return { chatId: null, source: 'none', messages: [], highlightedMessageId };
+	}
+
+	if (reporterId) {
+		const chat = await userManagementRepository.findDirectChatBetweenUsers(
+			reporterId,
+			reportedUserId
+		);
+		if (chat) {
+			const messages = await userManagementRepository.findChatMessagesForModeration(chat._id, 100);
+			return {
+				chatId: chat._id,
+				source: 'reporter_chat',
+				messages: messages.reverse().map(formatModerationMessage),
+				highlightedMessageId,
+			};
+		}
+	}
+
+	// No direct chat found: fall back to recent messages from both users
+	const senderIds = [reportedUserId, reporterId].filter(Boolean);
+	const recentMessages = await userManagementRepository.findRecentMessagesBySenders(
+		senderIds,
+		100
+	);
+	return {
+		chatId: null,
+		source: 'recent_messages',
+		messages: recentMessages.reverse().map(formatModerationMessage),
+		highlightedMessageId,
+	};
+}
+
+function formatReportDetails(report, messageReview = null) {
+	return {
+		...report,
+		reporter: formatReportUser(report.reporter),
+		reportedUser: formatReportUser(report.reportedUser),
+		report: {
+			_id: report._id,
+			reportType: report.reportType,
+			description: report.description,
+			status: report.status,
+			priority: report.priority,
+			actionTaken: report.actionTaken,
+			reviewNotes: report.reviewNotes || '',
+			reportedContent: report.reportedContent || null,
+			reviewerRole: report.reviewerRole || null,
+			reviewedBy: report.reviewedBy || null,
+			reviewedAt: report.reviewedAt || null,
+			createdAt: report.createdAt,
+			updatedAt: report.updatedAt,
+		},
+		messageReview: messageReview || { chatId: null, source: 'none', messages: [], highlightedMessageId: null },
+	};
+}
 
 async function getAllUsers(query = {}) {
 	const { page, limit, skip } = userManagementRepository.parsePagination(query);
@@ -157,12 +262,17 @@ async function getPendingReports(query = {}) {
 }
 
 async function getReportDetails(reportId) {
+	if (!mongoose.Types.ObjectId.isValid(reportId)) {
+		return { ok: false, statusCode: 400, message: 'Invalid report ID', code: 'INVALID_REPORT_ID' };
+	}
+
 	const report = await userManagementRepository.findReportDetailsById(reportId);
 	if (!report) {
 		return { ok: false, statusCode: 404, message: 'Report not found' };
 	}
 
-	return { ok: true, data: report };
+	const messageReview = await getReportMessages(report);
+	return { ok: true, data: formatReportDetails(report, messageReview) };
 }
 
 async function updateReportStatus(reportId, body, reviewer) {

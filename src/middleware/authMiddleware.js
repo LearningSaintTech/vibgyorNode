@@ -2,6 +2,7 @@ const { verifyAccessToken } = require('../utils/Jwt');
 const ApiResponse = require('../utils/apiResponse');
 const { Roles, AllRoles } = require('../utils/constData');
 const SubAdmin = require('../modules/subAdmin/auth/subAdmin.model');
+const User = require('../modules/user/user.model');
 
 /**
  * Authorization middleware factory.
@@ -9,6 +10,7 @@ const SubAdmin = require('../modules/subAdmin/auth/subAdmin.model');
  * - Verifies Bearer token
  * - Attaches req.user with JWT payload
  * - Checks role inclusion if roles array provided
+ * - Blocks deactivated user accounts
  */
 function authorize(allowedRoles = AllRoles) {
 	return async (req, res, next) => {
@@ -26,22 +28,21 @@ function authorize(allowedRoles = AllRoles) {
 			const payload = verifyAccessToken(token);
 			req.user = payload;
 
-			// role check (optional)
+			const userRole = payload?.role;
+			const normalizedAllowedRoles = allowedRoles.map(role => String(role).toLowerCase());
+			const normalizedUserRole = userRole ? String(userRole).toLowerCase() : null;
+
+			// Role check
 			if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
-				const userRole = payload?.role;
-				// Normalize allowedRoles to lowercase strings for comparison
-				const normalizedAllowedRoles = allowedRoles.map(role => String(role).toLowerCase());
-				const normalizedUserRole = userRole ? String(userRole).toLowerCase() : null;
-				
 				// eslint-disable-next-line no-console
-				console.log('[AUTH] Role check', { 
-					userRole, 
+				console.log('[AUTH] Role check', {
+					userRole,
 					normalizedUserRole,
-					allowedRoles, 
+					allowedRoles,
 					normalizedAllowedRoles,
 					isAllowed: normalizedAllowedRoles.includes(normalizedUserRole)
 				});
-				
+
 				if (!normalizedUserRole || !normalizedAllowedRoles.includes(normalizedUserRole)) {
 					return ApiResponse.forbidden(res, 'Forbidden: insufficient role', 'ROLE_FORBIDDEN');
 				}
@@ -56,19 +57,6 @@ function authorize(allowedRoles = AllRoles) {
 
 						// Allow profile updates even for pending SubAdmins
 						const isProfileUpdate = req.method === 'PUT' && req.path.includes('/profile');
-						const isAuthEndpoint = req.path.includes('/auth/');
-
-						// Allow auth endpoints and profile updates for pending SubAdmins
-						// if (!isProfileUpdate && !isAuthEndpoint && subAdmin.approvalStatus !== 'approved') {
-						// 	// eslint-disable-next-line no-console
-						// 	console.log('[AUTH] SubAdmin not approved', { 
-						// 		approvalStatus: subAdmin.approvalStatus,
-						// 		subAdminId: subAdmin._id,
-						// 		path: req.path,
-						// 		method: req.method
-						// 	});
-						// 	return ApiResponse.forbidden(res, 'SubAdmin account is pending approval or has been rejected', 'SUBADMIN_NOT_APPROVED');
-						// }
 
 						// Only check isActive for approved SubAdmins (except profile updates)
 						if (!isProfileUpdate && subAdmin.approvalStatus === 'approved' && !subAdmin.isActive) {
@@ -84,6 +72,30 @@ function authorize(allowedRoles = AllRoles) {
 				}
 			}
 
+			// Block deactivated regular users from using any API endpoint
+			if (normalizedUserRole === 'user') {
+				try {
+					const activeUser = await User.findById(payload.userId).select('isActive').lean();
+					if (!activeUser) {
+						return ApiResponse.unauthorized(res, 'User not found', 'USER_NOT_FOUND');
+					}
+					if (activeUser.isActive === false) {
+						// eslint-disable-next-line no-console
+						console.warn('[AUTH] Blocked API call — user account deactivated:', payload.userId);
+						return ApiResponse.forbidden(
+							res,
+							'Your account has been deactivated. Please contact support.',
+							'ACCOUNT_DEACTIVATED'
+						);
+					}
+				} catch (dbErr) {
+					// eslint-disable-next-line no-console
+					console.error('[AUTH] User isActive check error:', dbErr?.message || dbErr);
+					return ApiResponse.serverError(res, 'Failed to verify user status');
+				}
+			}
+
+			// eslint-disable-next-line no-console
 			console.log('[AUTH] ✅ Auth successful, calling next()');
 			return next();
 		} catch (err) {
@@ -100,5 +112,3 @@ module.exports = {
 	authorize,
 	Roles,
 };
-
-

@@ -1,13 +1,35 @@
 const User = require('../../user/user.model');
 const Report = require('../../social/graph/userReport.model');
+const Chat = require('../../social/chat/chat.model');
+const Message = require('../../social/message/message.model');
 
 const USER_SAFE_SELECT = '-otpCode -emailOtpCode -otpExpiresAt -emailOtpExpiresAt';
+const REPORT_USER_SELECT =
+	'_id username fullName email phoneNumber countryCode profilePictureUrl verificationStatus isActive role gender location createdAt';
+const REPORT_REVIEWER_SELECT = '_id name email username fullName';
 
-function buildUserListFilter({ status, search } = {}) {
+function buildUserListFilter({ status, search, type } = {}) {
 	const filter = {};
-	if (status && ['active', 'inactive'].includes(status)) {
+
+	// Frontend admin panels send type=verified|pending|rejected|deactivated|all
+	const normalizedType = String(type || '').trim().toLowerCase();
+	if (normalizedType && normalizedType !== 'all') {
+		if (normalizedType === 'verified') {
+			filter.verificationStatus = 'approved';
+		} else if (normalizedType === 'pending') {
+			filter.verificationStatus = 'pending';
+		} else if (normalizedType === 'rejected') {
+			filter.verificationStatus = 'rejected';
+		} else if (normalizedType === 'deactivated') {
+			filter.isActive = false;
+		}
+	}
+
+	// Preserve legacy status=active|inactive (does not override explicit deactivated type)
+	if (status && ['active', 'inactive'].includes(status) && normalizedType !== 'deactivated') {
 		filter.isActive = status === 'active';
 	}
+
 	if (search) {
 		filter.$or = [
 			{ fullName: { $regex: search, $options: 'i' } },
@@ -84,8 +106,8 @@ function buildReportListFilter({ reportType, priority } = {}) {
 
 async function findPendingReports(filter, { skip, limit }) {
 	const pendingReports = await Report.find(filter)
-		.populate('reporter', 'username fullName email phoneNumber')
-		.populate('reportedUser', 'username fullName email phoneNumber')
+		.populate('reporter', REPORT_USER_SELECT)
+		.populate('reportedUser', REPORT_USER_SELECT)
 		.sort({ createdAt: -1 })
 		.skip(skip)
 		.limit(limit)
@@ -96,9 +118,9 @@ async function findPendingReports(filter, { skip, limit }) {
 
 async function findReportDetailsById(reportId) {
 	return Report.findById(reportId)
-		.populate('reporter', 'username fullName email phoneNumber')
-		.populate('reportedUser', 'username fullName email phoneNumber')
-		.populate('reviewedBy', 'name email')
+		.populate('reporter', REPORT_USER_SELECT)
+		.populate('reportedUser', REPORT_USER_SELECT)
+		.populate('reviewedBy', REPORT_REVIEWER_SELECT)
 		.lean();
 }
 
@@ -126,6 +148,29 @@ async function getReportStatsSummary() {
 	return { totalReports, recentReports, ...stats };
 }
 
+async function findDirectChatBetweenUsers(userId1, userId2) {
+	return Chat.findOne({
+		participants: { $all: [userId1, userId2] },
+		chatType: 'direct',
+	}).lean();
+}
+
+async function findChatMessagesForModeration(chatId, limit = 100) {
+	return Message.find({ chatId })
+		.sort({ createdAt: -1 })
+		.limit(limit)
+		.populate('senderId', 'username fullName profilePictureUrl')
+		.lean();
+}
+
+async function findRecentMessagesBySenders(senderIds, limit = 50) {
+	return Message.find({ senderId: { $in: senderIds } })
+		.sort({ createdAt: -1 })
+		.limit(limit)
+		.populate('senderId', 'username fullName profilePictureUrl')
+		.lean();
+}
+
 module.exports = {
 	buildUserListFilter,
 	parsePagination,
@@ -143,4 +188,7 @@ module.exports = {
 	saveReport,
 	populateReportSummary,
 	getReportStatsSummary,
+	findDirectChatBetweenUsers,
+	findChatMessagesForModeration,
+	findRecentMessagesBySenders,
 };

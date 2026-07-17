@@ -190,7 +190,10 @@ class DeliveryManager {
     }
 
     try {
-      await channelHandler(notification, preferences);
+      const handlerResult = await channelHandler(notification, preferences);
+      if (handlerResult && typeof handlerResult.delivered === 'boolean') {
+        return { delivered: handlerResult.delivered, error: handlerResult.error || null };
+      }
       return { delivered: true, error: null };
     } catch (error) {
       console.error(`[DELIVERY] Error delivering to ${channel}:`, error);
@@ -257,7 +260,7 @@ class DeliveryManager {
         // Update status without saving (will be saved at end)
         notification.deliveryChannels.push.delivered = false;
         notification.deliveryChannels.push.deliveredAt = null;
-        return;
+        return { delivered: false, error: 'Push notification service not initialized' };
       }
 
       // Get user's active device tokens
@@ -275,7 +278,7 @@ class DeliveryManager {
         // Update status without saving (will be saved at end)
         notification.deliveryChannels.push.delivered = false;
         notification.deliveryChannels.push.deliveredAt = null;
-        return;
+        return { delivered: false, error: 'No active device tokens' };
       }
       
       console.log(`[DELIVERY] 📤 Sending push notification to ${deviceTokens.length} device(s) for notification ${notification._id} (type: ${notification.type}, context: ${notification.context})`);
@@ -381,6 +384,7 @@ class DeliveryManager {
         }));
         // Don't save here - will be saved at end by updateDeliveryStatus
         console.log(`[DELIVERY] ✅ Push notification sent to ${successCount} device(s) for notification ${notification._id} (type: ${notification.type}, context: ${notification.context})`);
+        return { delivered: true, error: null };
       } else {
         // Check if error is retryable (not invalid tokens)
         const hasRetryableErrors = results.some(r => 
@@ -401,6 +405,7 @@ class DeliveryManager {
           // Don't save here - will be saved at end by updateDeliveryStatus
           console.log(`[DELIVERY] ❌ Failed to send push notification (non-retryable)`);
         }
+        return { delivered: false, error: 'Push delivery failed' };
       }
     } catch (error) {
       console.error('[DELIVERY] Error delivering push notification:', error);
@@ -418,6 +423,7 @@ class DeliveryManager {
         notification.deliveryChannels.push.deliveredAt = null;
         // Don't save here - will be saved at end by updateDeliveryStatus
       }
+      return { delivered: false, error: error.message };
     }
   }
 

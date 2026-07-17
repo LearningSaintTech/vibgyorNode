@@ -206,6 +206,12 @@ class URLGenerator {
           case 'call_missed':
             return this.generateNotificationsUrl();
 
+          case 'system_announcement':
+            if (data.actionUrl) {
+              return data.actionUrl;
+            }
+            return this.generateNotificationsUrl();
+
           default:
             console.warn(`[URLGenerator] Unknown social notification type: ${type}`);
             return null;

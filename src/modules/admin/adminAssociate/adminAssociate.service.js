@@ -53,8 +53,8 @@ async function createSubadmin(body, createdBy) {
 }
 
 async function getSubadmins(query = {}) {
-	const { search, page = 1, limit = 10, export: isExport } = query;
-	const filter = adminAssociateRepository.buildSubadminFilter(search);
+	const { search, page = 1, limit = 10, export: isExport, status } = query;
+	const filter = adminAssociateRepository.buildSubadminFilter(search, status);
 
 	if (isExport === 'true') {
 		const users = await adminAssociateRepository.findSubadminsForExport(filter);
@@ -68,12 +68,19 @@ async function getSubadmins(query = {}) {
 	});
 
 	const tableUsers = users.map((u, i) => ({
+		_id: u._id,
 		sn: skip + i + 1,
 		date: u.createdAt,
+		createdAt: u.createdAt,
+		name: u.name || '-',
 		associateName: u.name || '-',
-		location: `${u.location?.city || '-'}, ${u.location?.state || '-'}, ${u.location?.country || '-'}`,
+		location: u.location || {},
+		locationLabel: `${u.location?.city || '-'}, ${u.location?.state || '-'}, ${u.location?.country || '-'}`,
 		contact: `${u.countryCode || ''} ${u.phoneNumber || '-'}`,
+		phoneNumber: u.phoneNumber || '',
+		countryCode: u.countryCode || '+91',
 		email: u.email || '-',
+		isActive: u.isActive,
 	}));
 
 	return {
@@ -81,14 +88,74 @@ async function getSubadmins(query = {}) {
 		message: 'Subadmins fetched successfully',
 		data: {
 			users: tableUsers,
+			subAdmins: tableUsers,
 			pagination: {
 				total,
 				page: Number(page),
 				limit: Number(limit),
 				totalPages: Math.ceil(total / limit),
+				pages: Math.ceil(total / limit),
 			},
 		},
 	};
 }
 
-module.exports = { createSubadmin, getSubadmins };
+async function getAssignedUsersBySubadmin(subadminId, query = {}) {
+	const User = require('../../user/user.model');
+	const { page = 1, limit = 10, search } = query;
+	const pageNum = Number(page) || 1;
+	const limitNum = Number(limit) || 10;
+	const skip = (pageNum - 1) * limitNum;
+
+	const filter = {
+		'verificationDocument.reviewedBy': subadminId,
+		role: { $nin: ['admin', 'subadmin'] },
+	};
+
+	if (search && String(search).trim()) {
+		const term = String(search).trim();
+		filter.$or = [
+			{ fullName: { $regex: term, $options: 'i' } },
+			{ username: { $regex: term, $options: 'i' } },
+			{ email: { $regex: term, $options: 'i' } },
+			{ phoneNumber: { $regex: term, $options: 'i' } },
+		];
+	}
+
+	const [users, total] = await Promise.all([
+		User.find(filter)
+			.select('fullName username email phoneNumber countryCode profilePictureUrl verificationStatus createdAt')
+			.sort({ 'verificationDocument.reviewedAt': -1, createdAt: -1 })
+			.skip(skip)
+			.limit(limitNum)
+			.lean(),
+		User.countDocuments(filter),
+	]);
+
+	const mapped = users.map((u) => ({
+		_id: u._id,
+		fullName: u.fullName || u.username || '—',
+		phoneNumber: u.phoneNumber || '',
+		countryCode: u.countryCode || '',
+		email: u.email || '',
+		verificationStatus: u.verificationStatus || 'none',
+		image: u.profilePictureUrl || '',
+		createdAt: u.createdAt,
+	}));
+
+	return {
+		ok: true,
+		message: 'Assigned users fetched successfully',
+		data: {
+			users: mapped,
+			pagination: {
+				total,
+				page: pageNum,
+				limit: limitNum,
+				pages: Math.ceil(total / limitNum),
+			},
+		},
+	};
+}
+
+module.exports = { createSubadmin, getSubadmins, getAssignedUsersBySubadmin };

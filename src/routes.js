@@ -12,6 +12,7 @@ const {
 	analyticsRoutes: adminAnalyticsRoutes,
 	userCountRoutes: adminUserCountRoutes,
 	userStatisticsRoutes: adminUserStatisticsRoutes,
+	notificationBroadcastRoutes: adminNotificationBroadcastRoutes,
 } = require('./modules/admin/admin.routes');
 
 const {
@@ -54,6 +55,7 @@ const {
 } = require('./modules/notification/notification.routes');
 
 const geoRoutes = require('./modules/geo/geo.routes');
+const { statisticsRoutes: platformStatisticsRoutes } = require('./modules/statistics');
 
 function registerRoutes(app) {
 	// Admin phone OTP auth (same pattern as /user/auth)
@@ -68,7 +70,12 @@ function registerRoutes(app) {
 	app.use('/admin', adminUserCountRoutes);
 	app.use('/api/admin', adminUserRoutes);
 	app.use('/admin', adminUserStatisticsRoutes);
+	// New dating/social platform stats (paths: /overview, /dating, /social, …)
+	// Existing signup charts remain at /admin/statistics/weekly|monthly|…
+	app.use('/admin/statistics', platformStatisticsRoutes);
 	app.use('/admin', adminAssociateRoutes);
+	app.use('/admin/notifications', adminNotificationBroadcastRoutes);
+	app.use('/subadmin/notifications', adminNotificationBroadcastRoutes);
 
 	app.use('/subadmin', subAdminRoutes);
 	app.use('/subadmin', subAdminUserManagementRoutes);

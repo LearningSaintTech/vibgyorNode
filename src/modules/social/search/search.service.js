@@ -116,6 +116,7 @@ async function searchPeople(req, res) {
 				{ _id: { $ne: new mongoose.Types.ObjectId(currentUserId) } }, // Exclude current user
 				{ _id: { $nin: [...blockedUsers, ...blockedBy] } }, // Exclude blocked users
 				{ isActive: true }, // Only active users
+				{ isProfileCompleted: true }, // Only completed profiles
 				{
 					$or: [
 						{ fullName: { $regex: keyword, $options: 'i' } },
@@ -800,6 +801,7 @@ async function searchAll(req, res) {
 				{ _id: { $ne: new mongoose.Types.ObjectId(currentUserId) } }, // Exclude current user
 				{ _id: { $nin: [...blockedUsers, ...blockedBy] } },
 				{ isActive: true },
+				{ isProfileCompleted: true },
 				{
 					$or: [
 						{ fullName: { $regex: keyword, $options: 'i' } },

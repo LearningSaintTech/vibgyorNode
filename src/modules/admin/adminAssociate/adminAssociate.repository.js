@@ -1,9 +1,14 @@
 const SubAdmin = require('../../subAdmin/auth/subAdmin.model');
 
-const LIST_PROJECTION = 'name email phoneNumber countryCode location createdAt';
+const LIST_PROJECTION = 'name email phoneNumber countryCode location createdAt isActive';
 
-function buildSubadminFilter(search) {
+function buildSubadminFilter(search, status) {
 	const filter = { role: 'subadmin' };
+	if (status === 'active') {
+		filter.isActive = true;
+	} else if (status === 'inactive') {
+		filter.isActive = false;
+	}
 	if (search) {
 		filter.$or = [
 			{ name: { $regex: search, $options: 'i' } },

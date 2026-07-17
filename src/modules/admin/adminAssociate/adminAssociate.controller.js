@@ -35,7 +35,10 @@ async function buildSubadminsExportWorkbook(users) {
 
 async function createSubadmin(req, res) {
 	try {
-		const result = await adminAssociateService.createSubadmin(req.body, req.user._id);
+		const result = await adminAssociateService.createSubadmin(
+			req.body,
+			req.user?.userId || req.user?._id
+		);
 
 		if (result.useRawResponse) {
 			return res.status(result.statusCode).json(result.body);
@@ -70,4 +73,20 @@ async function getSubadmins(req, res) {
 	}
 }
 
-module.exports = { createSubadmin, getSubadmins };
+async function getAssignedUsersBySubadmin(req, res) {
+	try {
+		const { subadminId } = req.params || {};
+		const result = await adminAssociateService.getAssignedUsersBySubadmin(subadminId, req.query || {});
+
+		if (result.ok) {
+			return ApiResponse.success(res, result.data, result.message);
+		}
+
+		return ApiResponse.serverError(res, 'Failed to fetch assigned users');
+	} catch (error) {
+		console.error('[ADMIN][ASSIGNED_USERS]', error);
+		return ApiResponse.serverError(res, 'Failed to fetch assigned users');
+	}
+}
+
+module.exports = { createSubadmin, getSubadmins, getAssignedUsersBySubadmin };

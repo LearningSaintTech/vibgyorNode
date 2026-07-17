@@ -291,6 +291,7 @@ function buildSearchQuery(currentUser, filters = {}, excludedUserIds = []) {
 		$and: [
 			{ _id: { $ne: currentUser._id } },
 			{ isActive: true },
+			{ isProfileCompleted: true },
 			{ 'dating.isDatingProfileActive': true },
 			...(allExcludedIds.length ? [{ _id: { $nin: allExcludedIds } }] : []),
 		],

@@ -1,18 +1,82 @@
 const User = require('../../user/user.model');
 const Report = require('../../social/graph/userReport.model');
 const ApiResponse = require('../../../utils/apiResponse');
+const mongoose = require('mongoose');
+
+const REPORT_USER_SELECT =
+	'_id username fullName email phoneNumber countryCode profilePictureUrl verificationStatus isActive role gender location createdAt';
+const REPORT_REVIEWER_SELECT = '_id name email username fullName';
+
+function formatReportUser(user) {
+	if (!user) return null;
+	return {
+		_id: user._id,
+		username: user.username || '',
+		fullName: user.fullName || '',
+		email: user.email || '',
+		phoneNumber: user.phoneNumber || '',
+		countryCode: user.countryCode || '',
+		profilePictureUrl: user.profilePictureUrl || '',
+		verificationStatus: user.verificationStatus || 'none',
+		isActive: user.isActive !== false,
+		role: user.role || 'user',
+		gender: user.gender || '',
+		location: user.location || null,
+		createdAt: user.createdAt || null,
+	};
+}
+
+function formatReportDetails(report) {
+	return {
+		...report,
+		reporter: formatReportUser(report.reporter),
+		reportedUser: formatReportUser(report.reportedUser),
+		report: {
+			_id: report._id,
+			reportType: report.reportType,
+			description: report.description,
+			status: report.status,
+			priority: report.priority,
+			actionTaken: report.actionTaken,
+			reviewNotes: report.reviewNotes || '',
+			reportedContent: report.reportedContent || null,
+			reviewerRole: report.reviewerRole || null,
+			reviewedBy: report.reviewedBy || null,
+			reviewedAt: report.reviewedAt || null,
+			createdAt: report.createdAt,
+			updatedAt: report.updatedAt,
+		},
+	};
+}
 
 // Get all users with pagination and filters (SubAdmin can only manage users)
 async function getAllUsers(req, res) {
 	try {
 		// eslint-disable-next-line no-console
 		console.log('[SUBADMIN][USER_MGMT] getAllUsers request');
-		const { page = 1, limit = 10, status, search } = req.query || {};
+		const { page = 1, limit = 10, status, search, type } = req.query || {};
 
 		const filter = {};
-		if (status && ['active', 'inactive'].includes(status)) {
+
+		// Frontend sends type=verified|pending|rejected|deactivated|all
+		const normalizedType = String(type || '').trim().toLowerCase();
+		if (normalizedType && normalizedType !== 'all') {
+			if (normalizedType === 'verified') {
+				filter.verificationStatus = 'approved';
+			} else if (normalizedType === 'pending') {
+				filter.verificationStatus = 'pending';
+			} else if (normalizedType === 'rejected') {
+				filter.verificationStatus = 'rejected';
+			} else if (normalizedType === 'deactivated') {
+				filter.isActive = false;
+			}
+		}
+
+		// Preserve legacy status=active|inactive
+		if (status && ['active', 'inactive'].includes(status) && normalizedType !== 'deactivated') {
 			filter.isActive = status === 'active';
 		}
+
 		if (search) {
 			filter.$or = [
 				{ fullName: { $regex: search, $options: 'i' } },
@@ -289,8 +353,8 @@ async function getPendingReports(req, res) {
 		const skip = (parseInt(page) - 1) * parseInt(limit);
 
 		const pendingReports = await Report.find(filter)
-			.populate('reporter', 'username fullName email phoneNumber')
-			.populate('reportedUser', 'username fullName email phoneNumber')
+			.populate('reporter', REPORT_USER_SELECT)
+			.populate('reportedUser', REPORT_USER_SELECT)
 			.sort({ createdAt: -1 })
 			.skip(skip)
 			.limit(parseInt(limit))
@@ -320,10 +384,14 @@ async function getReportDetails(req, res) {
 		console.log('[SUBADMIN][USER_MGMT] getReportDetails request');
 		const { reportId } = req.params || {};
 
+		if (!mongoose.Types.ObjectId.isValid(reportId)) {
+			return ApiResponse.badRequest(res, 'Invalid report ID', 'INVALID_REPORT_ID');
+		}
+
 		const report = await Report.findById(reportId)
-			.populate('reporter', 'username fullName email phoneNumber')
-			.populate('reportedUser', 'username fullName email phoneNumber')
-			.populate('reviewedBy', 'name email')
+			.populate('reporter', REPORT_USER_SELECT)
+			.populate('reportedUser', REPORT_USER_SELECT)
+			.populate('reviewedBy', REPORT_REVIEWER_SELECT)
 			.lean();
 
 		if (!report) {
@@ -331,7 +399,7 @@ async function getReportDetails(req, res) {
 		}
 
 		console.log('[SUBADMIN][USER_MGMT] Report details fetched successfully');
-		return ApiResponse.success(res, report);
+		return ApiResponse.success(res, formatReportDetails(report));
 	} catch (e) {
 		console.error('[SUBADMIN][USER_MGMT] getReportDetails error:', e?.message || e);
 		return ApiResponse.serverError(res, 'Failed to fetch report details');

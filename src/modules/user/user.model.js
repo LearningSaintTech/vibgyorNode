@@ -123,7 +123,7 @@ const UserSchema = new mongoose.Schema(
 				order: { type: Number, default: 0 },
 				uploadedAt: { type: Date, default: Date.now }
 			}],
-			isDatingProfileActive: { type: Boolean, default: true },
+			isDatingProfileActive: { type: Boolean, default: false },
 			preferences: {
 				hereTo: { type: String, default: '' },
 				wantToMeet: { type: String, default: '' },

@@ -11,6 +11,7 @@ const { adminAssociateRoutes } = require('./adminAssociate');
 const { analyticsRoutes } = require('./analytics');
 const { userCountRoutes } = require('./userCount');
 const { userStatisticsRoutes } = require('./userStatistics');
+const { notificationBroadcastRoutes } = require('./notificationBroadcast');
 
 module.exports = {
 	adminAuthRoutes,
@@ -22,4 +23,5 @@ module.exports = {
 	analyticsRoutes,
 	userCountRoutes,
 	userStatisticsRoutes,
+	notificationBroadcastRoutes,
 };

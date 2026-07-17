@@ -2497,6 +2497,7 @@ async function getSuggestedUsers(req, res) {
     const potentialUsers = await User.find({
       _id: { $nin: excludedUserIds },
       isActive: true,
+      isProfileCompleted: true,
       'location.lat': { $ne: null, $exists: true },
       'location.lng': { $ne: null, $exists: true }
     }).select('username fullName profilePictureUrl location isVerified');

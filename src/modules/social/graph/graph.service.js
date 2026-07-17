@@ -870,7 +870,8 @@ async function getFollowers(req, res) {
 
 		// Build base match for followers - exclude blocked users
 		const matchStage = {
-			_id: { $in: followerIds }
+			_id: { $in: followerIds },
+			isActive: true
 		};
 
 		// Exclude blocked users if current user is viewing
@@ -928,7 +929,8 @@ async function getFollowers(req, res) {
 			}
 
 			const followingMatch = {
-				_id: { $in: followingIdsFiltered }
+				_id: { $in: followingIdsFiltered },
+				isActive: true
 			};
 			if (search && search.trim()) {
 				const searchRegex = new RegExp(search.trim(), 'i');
@@ -1130,11 +1132,14 @@ async function getFollowing(req, res) {
 		if (search && search.trim()) {
 			const searchRegex = new RegExp(search.trim(), 'i');
 			populateQuery.match = {
+				isActive: true,
 				$or: [
 					{ username: searchRegex },
 					{ fullName: searchRegex }
 				]
 			};
+		} else {
+			populateQuery.match = { isActive: true };
 		}
 
 		// Apply pagination

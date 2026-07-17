@@ -130,14 +130,20 @@ async function verifyPhoneOtp(req, res) {
 		const { phoneNumber, otp } = req.body || {};
 		if (!phoneNumber || !otp) return ApiResponse.badRequest(res, 'phoneNumber and otp are required');
 
-		const user = await User.findOne({ phoneNumber });
-		if (!user) return ApiResponse.unauthorized(res, 'User not found');
+	const user = await User.findOne({ phoneNumber });
+	if (!user) return ApiResponse.unauthorized(res, 'User not found');
 
-		// Normalize phone number
-		const normalizedMobile = normalizePhoneForAPI(phoneNumber, user.countryCode || '+91');
+	// Block deactivated accounts from logging in
+	if (user.isActive === false) {
+		console.warn('[verifyPhoneOtp] ❌ Login blocked — account deactivated:', user._id);
+		return ApiResponse.forbidden(res, 'Your account has been deactivated. Please contact support.', 'ACCOUNT_DEACTIVATED');
+	}
 
-		// Check for development bypass
-		if (isBypassPhone(normalizedMobile) && isBypassOTP(otp)) {
+	// Normalize phone number
+	const normalizedMobile = normalizePhoneForAPI(phoneNumber, user.countryCode || '+91');
+
+	// Check for development bypass
+	if (isBypassPhone(normalizedMobile) && isBypassOTP(otp)) {
 			console.log('[verifyPhoneOtp] 🔓 Development bypass verification:', normalizedMobile);
 
 			// Clear OTP fields
@@ -726,6 +732,11 @@ async function getUserProfile(req, res) {
 
 		// Check if user is inactive
 		if (!user.isActive) {
+			return ApiResponse.notFound(res, 'User not found');
+		}
+
+		// Hide incomplete profiles from other users (own profile still via /me or /profile)
+		if (currentUserId && String(currentUserId) !== String(userId) && !user.isProfileCompleted) {
 			return ApiResponse.notFound(res, 'User not found');
 		}
 
