@@ -2,14 +2,17 @@ const User = require('../../user/user.model');
 const Report = require('../../social/graph/userReport.model');
 const Chat = require('../../social/chat/chat.model');
 const Message = require('../../social/message/message.model');
+const DatingChat = require('../../dating/chat/datingChat.model');
+const DatingMessage = require('../../dating/message/datingMessage.model');
 
 const USER_SAFE_SELECT = '-otpCode -emailOtpCode -otpExpiresAt -emailOtpExpiresAt';
+const BASE_USER_FILTER = { role: { $nin: ['admin', 'subadmin'] } };
 const REPORT_USER_SELECT =
 	'_id username fullName email phoneNumber countryCode profilePictureUrl verificationStatus isActive role gender location createdAt';
-const REPORT_REVIEWER_SELECT = '_id name email username fullName';
+const REPORT_REVIEWER_SELECT = '_id firstName lastName email';
 
 function buildUserListFilter({ status, search, type } = {}) {
-	const filter = {};
+	const filter = { ...BASE_USER_FILTER };
 
 	// Frontend admin panels send type=verified|pending|rejected|deactivated|all
 	const normalizedType = String(type || '').trim().toLowerCase();
@@ -86,7 +89,7 @@ async function saveUser(user) {
 }
 
 async function findPendingVerifications({ skip, limit }) {
-	const filter = { verificationStatus: 'pending' };
+	const filter = { ...BASE_USER_FILTER, verificationStatus: 'pending' };
 	const pendingVerifications = await User.find(filter)
 		.select(USER_SAFE_SELECT)
 		.sort({ 'verificationDocument.uploadedAt': -1 })
@@ -97,15 +100,21 @@ async function findPendingVerifications({ skip, limit }) {
 	return { pendingVerifications, total, filter };
 }
 
-function buildReportListFilter({ reportType, priority } = {}) {
-	const filter = { status: 'pending' };
+function buildReportListFilter({ status, reportType, priority } = {}, defaultStatus = null) {
+	const filter = {};
+	const requested = String(status || '').trim().toLowerCase();
+	const fallback = String(defaultStatus || '').trim().toLowerCase();
+	const normalizedStatus = fallback || requested;
+	if (['pending', 'under_review', 'resolved', 'dismissed'].includes(normalizedStatus)) {
+		filter.status = normalizedStatus;
+	}
 	if (reportType) filter.reportType = reportType;
 	if (priority) filter.priority = priority;
 	return filter;
 }
 
-async function findPendingReports(filter, { skip, limit }) {
-	const pendingReports = await Report.find(filter)
+async function findReports(filter, { skip, limit }) {
+	const reports = await Report.find(filter)
 		.populate('reporter', REPORT_USER_SELECT)
 		.populate('reportedUser', REPORT_USER_SELECT)
 		.sort({ createdAt: -1 })
@@ -113,7 +122,7 @@ async function findPendingReports(filter, { skip, limit }) {
 		.limit(limit)
 		.lean();
 	const total = await Report.countDocuments(filter);
-	return { pendingReports, total };
+	return { reports, total };
 }
 
 async function findReportDetailsById(reportId) {
@@ -171,6 +180,29 @@ async function findRecentMessagesBySenders(senderIds, limit = 50) {
 		.lean();
 }
 
+async function findDatingChatBetweenUsers(userId1, userId2) {
+	return DatingChat.findOne({
+		participants: { $all: [userId1, userId2] },
+		chatType: 'direct',
+	}).lean();
+}
+
+async function findDatingMessagesForModeration(chatId, limit = 100) {
+	return DatingMessage.find({ chatId })
+		.sort({ createdAt: -1 })
+		.limit(limit)
+		.populate('senderId', 'username fullName profilePictureUrl')
+		.lean();
+}
+
+async function findRecentDatingMessagesBySenders(senderIds, limit = 50) {
+	return DatingMessage.find({ senderId: { $in: senderIds } })
+		.sort({ createdAt: -1 })
+		.limit(limit)
+		.populate('senderId', 'username fullName profilePictureUrl')
+		.lean();
+}
+
 module.exports = {
 	buildUserListFilter,
 	parsePagination,
@@ -182,7 +214,7 @@ module.exports = {
 	saveUser,
 	findPendingVerifications,
 	buildReportListFilter,
-	findPendingReports,
+	findReports,
 	findReportDetailsById,
 	findReportById,
 	saveReport,
@@ -191,4 +223,7 @@ module.exports = {
 	findDirectChatBetweenUsers,
 	findChatMessagesForModeration,
 	findRecentMessagesBySenders,
+	findDatingChatBetweenUsers,
+	findDatingMessagesForModeration,
+	findRecentDatingMessagesBySenders,
 };

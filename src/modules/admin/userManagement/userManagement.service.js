@@ -52,31 +52,60 @@ async function getReportMessages(report) {
 	}
 
 	if (reporterId) {
-		const chat = await userManagementRepository.findDirectChatBetweenUsers(
+		const socialChat = await userManagementRepository.findDirectChatBetweenUsers(
 			reporterId,
 			reportedUserId
 		);
-		if (chat) {
-			const messages = await userManagementRepository.findChatMessagesForModeration(chat._id, 100);
+		if (socialChat) {
+			const messages = await userManagementRepository.findChatMessagesForModeration(
+				socialChat._id,
+				100
+			);
 			return {
-				chatId: chat._id,
+				chatId: socialChat._id,
 				source: 'reporter_chat',
+				messages: messages.reverse().map(formatModerationMessage),
+				highlightedMessageId,
+			};
+		}
+
+		const datingChat = await userManagementRepository.findDatingChatBetweenUsers(
+			reporterId,
+			reportedUserId
+		);
+		if (datingChat) {
+			const messages = await userManagementRepository.findDatingMessagesForModeration(
+				datingChat._id,
+				100
+			);
+			return {
+				chatId: datingChat._id,
+				source: 'dating_chat',
 				messages: messages.reverse().map(formatModerationMessage),
 				highlightedMessageId,
 			};
 		}
 	}
 
-	// No direct chat found: fall back to recent messages from both users
 	const senderIds = [reportedUserId, reporterId].filter(Boolean);
-	const recentMessages = await userManagementRepository.findRecentMessagesBySenders(
+	const recentSocial = await userManagementRepository.findRecentMessagesBySenders(senderIds, 100);
+	if (recentSocial.length) {
+		return {
+			chatId: null,
+			source: 'recent_messages',
+			messages: recentSocial.reverse().map(formatModerationMessage),
+			highlightedMessageId,
+		};
+	}
+
+	const recentDating = await userManagementRepository.findRecentDatingMessagesBySenders(
 		senderIds,
 		100
 	);
 	return {
 		chatId: null,
-		source: 'recent_messages',
-		messages: recentMessages.reverse().map(formatModerationMessage),
+		source: recentDating.length ? 'recent_dating_messages' : 'none',
+		messages: recentDating.reverse().map(formatModerationMessage),
 		highlightedMessageId,
 	};
 }
@@ -244,10 +273,10 @@ async function rejectUserVerification(userId, { rejectionReason }, reviewer) {
 	};
 }
 
-async function getPendingReports(query = {}) {
+async function getReports(query = {}) {
 	const { page, limit, skip } = userManagementRepository.parsePagination(query);
 	const filter = userManagementRepository.buildReportListFilter(query);
-	const { pendingReports, total } = await userManagementRepository.findPendingReports(filter, {
+	const { reports, total } = await userManagementRepository.findReports(filter, {
 		skip,
 		limit,
 	});
@@ -255,7 +284,24 @@ async function getPendingReports(query = {}) {
 	return {
 		ok: true,
 		data: {
-			pendingReports,
+			reports,
+			pagination: userManagementRepository.buildPaginationMeta(page, limit, total),
+		},
+	};
+}
+
+async function getPendingReports(query = {}) {
+	const { page, limit, skip } = userManagementRepository.parsePagination(query);
+	const filter = userManagementRepository.buildReportListFilter(query, 'pending');
+	const { reports, total } = await userManagementRepository.findReports(filter, {
+		skip,
+		limit,
+	});
+
+	return {
+		ok: true,
+		data: {
+			pendingReports: reports,
 			pagination: userManagementRepository.buildPaginationMeta(page, limit, total),
 		},
 	};
@@ -279,9 +325,31 @@ async function updateReportStatus(reportId, body, reviewer) {
 	const { status, actionTaken, reviewNotes, priority } = body || {};
 	const reviewerId = reviewer?.userId;
 	const reviewerRole = reviewer?.role === 'admin' ? 'admin' : 'subadmin';
+	const allowedActions = [
+		'none',
+		'warning',
+		'temporary_ban',
+		'permanent_ban',
+		'content_removed',
+		'account_suspended',
+	];
+	const allowedPriorities = ['low', 'medium', 'high', 'urgent'];
+	const suspendActions = ['temporary_ban', 'permanent_ban', 'account_suspended'];
+
+	if (!mongoose.Types.ObjectId.isValid(reportId)) {
+		return { ok: false, statusCode: 400, message: 'Invalid report ID', code: 'INVALID_REPORT_ID' };
+	}
 
 	if (!status || !['under_review', 'resolved', 'dismissed'].includes(status)) {
 		return { ok: false, statusCode: 400, message: 'Valid status is required' };
+	}
+
+	if (actionTaken && !allowedActions.includes(actionTaken)) {
+		return { ok: false, statusCode: 400, message: 'Valid actionTaken is required' };
+	}
+
+	if (priority && !allowedPriorities.includes(priority)) {
+		return { ok: false, statusCode: 400, message: 'Valid priority is required' };
 	}
 
 	const report = await userManagementRepository.findReportById(reportId);
@@ -294,9 +362,17 @@ async function updateReportStatus(reportId, body, reviewer) {
 	report.reviewedAt = new Date();
 	report.reviewerRole = reviewerRole;
 	if (actionTaken) report.actionTaken = actionTaken;
-	if (reviewNotes) report.reviewNotes = reviewNotes;
+	if (typeof reviewNotes === 'string') report.reviewNotes = reviewNotes.trim();
 	if (priority) report.priority = priority;
 	await userManagementRepository.saveReport(report);
+
+	if (suspendActions.includes(report.actionTaken) && report.reportedUser) {
+		const reportedUser = await userManagementRepository.findUserById(report.reportedUser);
+		if (reportedUser && reportedUser.isActive !== false) {
+			reportedUser.isActive = false;
+			await userManagementRepository.saveUser(reportedUser);
+		}
+	}
 
 	await userManagementRepository.populateReportSummary(report);
 
@@ -309,6 +385,7 @@ async function updateReportStatus(reportId, body, reviewer) {
 			actionTaken: report.actionTaken,
 			reviewedAt: report.reviewedAt,
 			reviewerRole: report.reviewerRole,
+			accountSuspended: suspendActions.includes(report.actionTaken),
 			reporter: report.reporter.username || report.reporter.fullName,
 			reportedUser: report.reportedUser.username || report.reportedUser.fullName,
 		},
@@ -327,6 +404,7 @@ module.exports = {
 	getPendingVerifications,
 	approveUserVerification,
 	rejectUserVerification,
+	getReports,
 	getPendingReports,
 	getReportDetails,
 	updateReportStatus,

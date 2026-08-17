@@ -112,6 +112,20 @@ async function rejectUserVerification(req, res) {
 	}
 }
 
+async function getReports(req, res) {
+	try {
+		console.log('[ADMIN][USER_MGMT] getReports request');
+		const result = await userManagementService.getReports(req.query || {});
+		if (result.ok) {
+			console.log('[ADMIN][USER_MGMT] Reports fetched successfully');
+		}
+		return mapServiceResult(res, result);
+	} catch (e) {
+		console.error('[ADMIN][USER_MGMT] getReports error:', e?.message || e);
+		return ApiResponse.serverError(res, 'Failed to fetch reports');
+	}
+}
+
 async function getPendingReports(req, res) {
 	try {
 		console.log('[ADMIN][USER_MGMT] getPendingReports request');
@@ -181,6 +195,7 @@ module.exports = {
 	getPendingVerifications,
 	approveUserVerification,
 	rejectUserVerification,
+	getReports,
 	getPendingReports,
 	getReportDetails,
 	updateReportStatus,

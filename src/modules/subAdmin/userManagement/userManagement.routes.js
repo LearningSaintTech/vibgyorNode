@@ -17,10 +17,9 @@ const {
 
 router.get('/users', authorize([Roles.SUBADMIN]), getAllUsers);
 router.get('/users/stats', authorize([Roles.SUBADMIN]), getUserStats);
+router.get('/users/verifications/pending', authorize([Roles.SUBADMIN]), getPendingVerifications);
 router.get('/users/:userId', authorize([Roles.SUBADMIN]), getUserDetails);
 router.patch('/users/:userId/status', authorize([Roles.SUBADMIN]), toggleUserStatus);
-
-router.get('/users/verifications/pending', authorize([Roles.SUBADMIN]), getPendingVerifications);
 router.patch('/users/:userId/verification/approve', authorize([Roles.SUBADMIN]), approveUserVerification);
 router.patch('/users/:userId/verification/reject', authorize([Roles.SUBADMIN]), rejectUserVerification);
 
