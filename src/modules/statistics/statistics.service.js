@@ -45,7 +45,15 @@ async function getOverview(query = {}) {
 		shared,
 		summary: {
 			users: shared.users.total,
+			/** Account not deactivated */
+			accountActiveUsers: shared.users.accountActive ?? shared.users.active,
 			activeUsers: shared.users.active,
+			onlineNow: shared.activity.onlineNow,
+			recentlyActive24h: shared.activity.recentlyActive24h,
+			recentlyActive7d: shared.activity.recentlyActive7d,
+			recentlyActive30d: shared.activity.recentlyActive30d,
+			loggedIn7d: shared.activity.loggedIn7d,
+			loggedIn30d: shared.activity.loggedIn30d,
 			datingProfilesActive: dating.profiles.active,
 			matches: dating.matches.total,
 			datingMessages: dating.chats.messagesTotal,

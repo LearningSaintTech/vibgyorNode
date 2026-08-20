@@ -91,7 +91,10 @@ async function getDemographics() {
 
 async function getSharedOverview({ start, end }) {
 	const createdInPeriod = dateMatch('createdAt', start, end);
-	const recentlyActiveCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+	const now = Date.now();
+	const cutoff24h = new Date(now - 24 * 60 * 60 * 1000);
+	const cutoff7d = new Date(now - 7 * 24 * 60 * 60 * 1000);
+	const cutoff30d = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
 	const [
 		totalUsers,
@@ -107,7 +110,11 @@ async function getSharedOverview({ start, end }) {
 		publicAccounts,
 		newSignupsInPeriod,
 		onlineNow,
-		recentlyActive,
+		recentlyActive24h,
+		recentlyActive7d,
+		recentlyActive30d,
+		loggedIn7d,
+		loggedIn30d,
 		reportedUsers,
 		blockedAgg,
 		userTypes,
@@ -130,7 +137,11 @@ async function getSharedOverview({ start, end }) {
 		User.countDocuments({ ...EXCLUDED_ROLES, 'privacySettings.isPrivate': { $ne: true } }),
 		User.countDocuments({ ...EXCLUDED_ROLES, ...createdInPeriod }),
 		UserStatus.countDocuments({ isOnline: true }),
-		UserStatus.countDocuments({ lastActivity: { $gte: recentlyActiveCutoff } }),
+		UserStatus.countDocuments({ lastActivity: { $gte: cutoff24h } }),
+		UserStatus.countDocuments({ lastActivity: { $gte: cutoff7d } }),
+		UserStatus.countDocuments({ lastActivity: { $gte: cutoff30d } }),
+		User.countDocuments({ ...EXCLUDED_ROLES, lastLoginAt: { $gte: cutoff7d } }),
+		User.countDocuments({ ...EXCLUDED_ROLES, lastLoginAt: { $gte: cutoff30d } }),
 		Report.distinct('reportedUser', {
 			...(start ? { createdAt: { $gte: start, $lte: end } } : {}),
 		}).then((ids) => ids.length),
@@ -159,6 +170,8 @@ async function getSharedOverview({ start, end }) {
 	return {
 		users: {
 			total: totalUsers,
+			/** Account is not deactivated — not the same as regularly using the app */
+			accountActive: activeUsers,
 			active: activeUsers,
 			deactivated: deactivatedUsers,
 			profileCompleted,
@@ -176,7 +189,13 @@ async function getSharedOverview({ start, end }) {
 		},
 		activity: {
 			onlineNow,
-			recentlyActive24h: recentlyActive,
+			/** App usage windows from UserStatus.lastActivity */
+			recentlyActive24h,
+			recentlyActive7d,
+			recentlyActive30d,
+			/** Login windows from User.lastLoginAt */
+			loggedIn7d,
+			loggedIn30d,
 		},
 		trust: {
 			reportedUsers,
