@@ -2,7 +2,7 @@ const { Post } = require('./post.repository');
 const { deleteFromS3 } = require('../../../services/s3Service');
 const notificationService = require('../../notification/services/notificationService');
 const rekognitionService = require('../../../services/rekognitionService');
-const { analyzeTextPolicy } = require('../../../services/moderationPolicy');
+const { analyzeTextPolicy, buildModerationNotificationCopy } = require('../../../services/moderationPolicy');
 
 const BLOCK_THRESHOLD = Number(process.env.REKOGNITION_BLOCK_THRESHOLD || 80);
 const FLAG_THRESHOLD = Number(process.env.REKOGNITION_FLAG_THRESHOLD || 40);
@@ -84,15 +84,21 @@ async function applyPostModerationOutcome(postId, analysis, media = []) {
 		}
 
 		try {
+			const copy = buildModerationNotificationCopy('removed', analysis?.categories);
 			await notificationService.create({
 				context: 'social',
 				type: 'content_moderation',
 				recipientId: String(post.author),
+				title: copy.title,
+				message: copy.message,
 				data: {
 					postId: String(post._id),
 					action: 'removed',
-					reason: analysis?.flagReason || 'Content policy violation',
+					category: copy.category,
+					reason: analysis?.flagReason || copy.message,
 					riskScore,
+					title: copy.title,
+					message: copy.message,
 				},
 			});
 		} catch (notifyErr) {
@@ -109,6 +115,27 @@ async function applyPostModerationOutcome(postId, analysis, media = []) {
 	}
 
 	if (riskScore >= FLAG_THRESHOLD) {
+		try {
+			const copy = buildModerationNotificationCopy('under_review', analysis?.categories);
+			await notificationService.create({
+				context: 'social',
+				type: 'content_moderation',
+				recipientId: String(post.author),
+				title: copy.title,
+				message: copy.message,
+				data: {
+					postId: String(post._id),
+					action: 'under_review',
+					category: copy.category,
+					reason: analysis?.flagReason || copy.message,
+					riskScore,
+					title: copy.title,
+					message: copy.message,
+				},
+			});
+		} catch (notifyErr) {
+			console.error('[POST][MODERATION] Under-review notify failed', notifyErr?.message || notifyErr);
+		}
 		return { outcome: 'flagged', post };
 	}
 

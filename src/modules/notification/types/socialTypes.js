@@ -256,8 +256,8 @@ const SOCIAL_NOTIFICATION_TYPES = {
   content_moderation: {
     context: 'social',
     type: 'content_moderation',
-    defaultTitle: 'Content Warning',
-    defaultMessage: 'Your content has been flagged for review',
+    defaultTitle: 'Content moderation',
+    defaultMessage: 'There is an update about your post and our community guidelines.',
     priority: 'high',
     defaultChannels: {
       inApp: true,

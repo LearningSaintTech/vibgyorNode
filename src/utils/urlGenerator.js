@@ -212,6 +212,12 @@ class URLGenerator {
             }
             return this.generateNotificationsUrl();
 
+          case 'content_moderation':
+            if (data.postId || data?.relatedContent?.contentId) {
+              return this.generatePostUrl(data.postId || data.relatedContent.contentId);
+            }
+            return this.generateNotificationsUrl();
+
           default:
             console.warn(`[URLGenerator] Unknown social notification type: ${type}`);
             return null;

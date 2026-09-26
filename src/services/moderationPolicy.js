@@ -288,6 +288,118 @@ function analyzeTextPolicy(rawText = '') {
 	return { categories, riskScore, flagged, flagReason };
 }
 
+const REMOVED_MESSAGES = {
+	adult_content: {
+		title: 'Post removed',
+		message: 'Your post was removed because it contains nudity or sexual content, which is not allowed.',
+	},
+	violence: {
+		title: 'Post removed',
+		message: 'Your post was removed because it contains weapons, blood, or violent/graphic content, which is not allowed.',
+	},
+	hate_speech: {
+		title: 'Post removed',
+		message: 'Your post was removed because it contains hate speech or hate imagery, which is not allowed.',
+	},
+	harassment: {
+		title: 'Post removed',
+		message: 'Your post was removed because it contains bullying or harassment, which is not allowed.',
+	},
+	spam: {
+		title: 'Post removed',
+		message: 'Your post was removed because it was identified as spam.',
+	},
+	scam: {
+		title: 'Post removed',
+		message: 'Your post was removed because it looks like a scam or fraud attempt.',
+	},
+	self_harm: {
+		title: 'Post removed',
+		message: 'Your post was removed because it contains self-harm content, which is not allowed.',
+	},
+	dangerous_activities: {
+		title: 'Post removed',
+		message: 'Your post was removed because it promotes dangerous activities, which is not allowed.',
+	},
+	copyright: {
+		title: 'Post removed',
+		message: 'Your post was removed because of a possible copyright violation.',
+	},
+	fake_news: {
+		title: 'Post removed',
+		message: 'Your post was removed because it may contain misinformation.',
+	},
+	inappropriate: {
+		title: 'Post removed',
+		message: 'Your post was removed because it violates our community guidelines.',
+	},
+};
+
+const REVIEW_MESSAGES = {
+	adult_content: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible nudity or sexual content.',
+	},
+	violence: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible weapons, blood, or violent content.',
+	},
+	hate_speech: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible hate speech.',
+	},
+	harassment: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible bullying or harassment.',
+	},
+	spam: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible spam.',
+	},
+	scam: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible scam or fraud.',
+	},
+	self_harm: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible self-harm content.',
+	},
+	dangerous_activities: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible dangerous activity content.',
+	},
+	copyright: {
+		title: 'Post under review',
+		message: 'Your post is under review for a possible copyright issue.',
+	},
+	fake_news: {
+		title: 'Post under review',
+		message: 'Your post is under review for possible misinformation.',
+	},
+	inappropriate: {
+		title: 'Post under review',
+		message: 'Your post has been flagged and is under review.',
+	},
+};
+
+/**
+ * Build user-facing notification copy from moderation outcome + categories.
+ * @param {'removed'|'under_review'} action
+ * @param {Array<{ category?: string }>} categories
+ */
+function buildModerationNotificationCopy(action, categories = []) {
+	const primary = (categories || []).find((c) => c.category && c.category !== 'safe');
+	const key = primary?.category || 'inappropriate';
+	const map = action === 'removed' ? REMOVED_MESSAGES : REVIEW_MESSAGES;
+	const copy = map[key] || map.inappropriate;
+	return {
+		title: copy.title,
+		message: copy.message,
+		category: key,
+		action,
+	};
+}
+
 module.exports = {
 	POLICY_CATEGORIES,
 	CATEGORY_ENUM,
@@ -299,4 +411,5 @@ module.exports = {
 	isHighRiskVisual,
 	isAlwaysDeleteVisual,
 	analyzeTextPolicy,
+	buildModerationNotificationCopy,
 };
