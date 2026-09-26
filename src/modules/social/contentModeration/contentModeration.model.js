@@ -25,7 +25,8 @@ const ContentModerationSchema = new mongoose.Schema(
     content: {
       text: {
         type: String,
-        required: true
+        required: false,
+        default: '',
       },
       media: [{
         type: {
@@ -63,7 +64,20 @@ const ContentModerationSchema = new mongoose.Schema(
         categories: [{
           category: {
             type: String,
-            enum: ['spam', 'inappropriate', 'harassment', 'hate_speech', 'violence', 'adult_content', 'fake_news', 'copyright', 'safe']
+            enum: [
+              'spam',
+              'inappropriate',
+              'harassment',
+              'hate_speech',
+              'violence',
+              'adult_content',
+              'fake_news',
+              'copyright',
+              'scam',
+              'self_harm',
+              'dangerous_activities',
+              'safe',
+            ],
           },
           confidence: {
             type: Number,
@@ -135,7 +149,20 @@ const ContentModerationSchema = new mongoose.Schema(
         },
         reason: {
           type: String,
-          enum: ['spam', 'inappropriate', 'harassment', 'hate_speech', 'violence', 'adult_content', 'fake_news', 'copyright', 'other'],
+          enum: [
+            'spam',
+            'inappropriate',
+            'harassment',
+            'hate_speech',
+            'violence',
+            'adult_content',
+            'fake_news',
+            'copyright',
+            'scam',
+            'self_harm',
+            'dangerous_activities',
+            'other',
+          ],
           required: true
         },
         description: {
@@ -274,10 +301,10 @@ ContentModerationSchema.virtual('isFlagged').get(function() {
 });
 
 // Methods
-ContentModerationSchema.methods.analyzeContent = async function() {
+ContentModerationSchema.methods.analyzeContent = async function(options = {}) {
   try {
-    // Simulate AI analysis (integrate with your AI service)
-    const analysisResult = await this.performAIAnalysis();
+    const { precomputedAnalysis = null, skipAutomatedAction = false } = options;
+    const analysisResult = precomputedAnalysis || (await this.performAIAnalysis());
     
     this.moderationResults.aiAnalysis = {
       isAnalyzed: true,
@@ -292,7 +319,7 @@ ContentModerationSchema.methods.analyzeContent = async function() {
     this.lastAnalyzedAt = new Date();
     
     // Take automated action if flagged
-    if (analysisResult.flagged) {
+    if (analysisResult.flagged && !skipAutomatedAction) {
       await this.takeAutomatedAction('ai_analysis', analysisResult);
     }
     
@@ -304,68 +331,65 @@ ContentModerationSchema.methods.analyzeContent = async function() {
 };
 
 ContentModerationSchema.methods.performAIAnalysis = async function() {
-  // This is a placeholder - integrate with your AI service (OpenAI, Google Cloud AI, etc.)
-  const content = this.content.text.toLowerCase();
-  
-  // Simple keyword-based analysis (replace with actual AI)
-  const spamKeywords = ['buy now', 'click here', 'free money', 'winner', 'congratulations'];
-  const inappropriateKeywords = ['hate', 'kill', 'violence', 'abuse'];
-  const adultKeywords = ['nsfw', 'adult', 'xxx'];
-  
-  let categories = [];
-  let riskScore = 0;
-  let flagged = false;
-  let flagReason = null;
-  
-  // Check for spam
-  if (spamKeywords.some(keyword => content.includes(keyword))) {
-    categories.push({ category: 'spam', confidence: 85, details: {} });
-    riskScore += 30;
-    flagged = true;
-    flagReason = 'Spam content detected';
+  const rekognitionService = require('../../../services/rekognitionService');
+  const { analyzeTextPolicy } = require('../../../services/moderationPolicy');
+  const media = this.content?.media || [];
+  const text = String(this.content?.text || '');
+
+  let mediaAnalysis = {
+    confidence: 95,
+    categories: [],
+    flagged: false,
+    flagReason: null,
+    riskScore: 0,
+  };
+
+  if (rekognitionService.isEnabled() && media.some((m) => m?.s3Key)) {
+    try {
+      const result = await rekognitionService.moderateMedia(media);
+      mediaAnalysis = result.analysis || mediaAnalysis;
+    } catch (err) {
+      console.error('[MODERATION] Rekognition analysis failed, falling back to text checks', err.message);
+    }
   }
-  
-  // Check for inappropriate content
-  if (inappropriateKeywords.some(keyword => content.includes(keyword))) {
-    categories.push({ category: 'inappropriate', confidence: 90, details: {} });
-    riskScore += 40;
-    flagged = true;
-    flagReason = 'Inappropriate content detected';
-  }
-  
-  // Check for adult content
-  if (adultKeywords.some(keyword => content.includes(keyword))) {
-    categories.push({ category: 'adult_content', confidence: 80, details: {} });
-    riskScore += 35;
-    flagged = true;
-    flagReason = 'Adult content detected';
-  }
-  
-  // Default to safe if no issues found
+
+  const textAnalysis = analyzeTextPolicy(text);
+
+  const categories = [
+    ...(mediaAnalysis.categories || []).filter((c) => c.category !== 'safe'),
+    ...(textAnalysis.categories || []),
+  ];
+
   if (categories.length === 0) {
     categories.push({ category: 'safe', confidence: 95, details: {} });
   }
-  
+
+  const riskScore = Math.min(100, Math.max(mediaAnalysis.riskScore || 0, textAnalysis.riskScore || 0));
+  const flagged = Boolean(mediaAnalysis.flagged || textAnalysis.flagged);
+  const flagReason = mediaAnalysis.flagReason || textAnalysis.flagReason;
+
   return {
-    confidence: Math.max(...categories.map(c => c.confidence)),
+    confidence: Math.max(...categories.map((c) => c.confidence || 0)),
     categories,
     flagged,
     flagReason,
-    riskScore: Math.min(riskScore, 100)
+    riskScore,
+    shouldBlock: riskScore >= Number(process.env.REKOGNITION_BLOCK_THRESHOLD || 80),
+    shouldFlag: riskScore >= Number(process.env.REKOGNITION_FLAG_THRESHOLD || 40),
   };
 };
 
 ContentModerationSchema.methods.takeAutomatedAction = async function(triggeredBy, details = {}) {
   const riskScore = this.moderationResults.aiAnalysis.riskScore;
+  const blockThreshold = Number(process.env.REKOGNITION_BLOCK_THRESHOLD || 80);
+  const flagThreshold = Number(process.env.REKOGNITION_FLAG_THRESHOLD || 40);
   
   let action = 'none';
   
-  // Determine action based on risk score
-  if (riskScore >= 80) {
+  // Instagram-like tiers: hard remove vs admin review (no mid-tier auto-hide from feed)
+  if (riskScore >= blockThreshold) {
     action = 'delete';
-  } else if (riskScore >= 60) {
-    action = 'hide';
-  } else if (riskScore >= 40) {
+  } else if (riskScore >= flagThreshold) {
     action = 'flag_for_review';
   }
   
@@ -392,11 +416,12 @@ ContentModerationSchema.methods.executeAction = async function(action, triggered
         this.visibility.hiddenReason = `Automated action: ${triggeredBy}`;
         this.visibility.hiddenAt = new Date();
         this.status = 'hidden';
+        await this.hideOriginalContent(triggeredBy);
         break;
         
       case 'delete':
         this.status = 'deleted';
-        // Also delete the actual content
+        // Soft-delete the actual content (keep audit trail)
         await this.deleteOriginalContent();
         break;
         
@@ -478,12 +503,38 @@ ContentModerationSchema.methods.reviewByAdmin = function(adminId, decision, reas
 };
 
 // Helper methods
-ContentModerationSchema.methods.deleteOriginalContent = async function() {
-  // Delete the original content based on type
+ContentModerationSchema.methods.hideOriginalContent = async function(triggeredBy) {
   const ContentModel = this.getContentModel();
-  if (ContentModel) {
-    await ContentModel.findByIdAndDelete(this.contentId);
+  if (!ContentModel) return;
+
+  if (this.contentType === 'post') {
+    await ContentModel.findByIdAndUpdate(this.contentId, {
+      status: 'archived',
+    });
+    return;
   }
+
+  if (this.contentType === 'story') {
+    await ContentModel.findByIdAndUpdate(this.contentId, {
+      isHidden: true,
+      hiddenReason: `Automated action: ${triggeredBy}`,
+    }).catch(() => null);
+  }
+};
+
+ContentModerationSchema.methods.deleteOriginalContent = async function() {
+  const ContentModel = this.getContentModel();
+  if (!ContentModel) return;
+
+  // Soft-delete posts so feeds exclude them without wiping history
+  if (this.contentType === 'post') {
+    await ContentModel.findByIdAndUpdate(this.contentId, {
+      status: 'deleted',
+    });
+    return;
+  }
+
+  await ContentModel.findByIdAndDelete(this.contentId);
 };
 
 ContentModerationSchema.methods.getContentModel = function() {
@@ -514,8 +565,10 @@ ContentModerationSchema.methods.applyRateLimit = async function() {
 };
 
 // Static methods
-ContentModerationSchema.statics.createModerationRecord = async function(contentType, contentId, contentData) {
+ContentModerationSchema.statics.createModerationRecord = async function(contentType, contentId, contentData, options = {}) {
   try {
+    const { precomputedAnalysis = null, skipAutomatedAction = false } = options;
+
     // Check if record already exists
     let record = await this.findOne({ contentType, contentId });
     
@@ -525,7 +578,7 @@ ContentModerationSchema.statics.createModerationRecord = async function(contentT
         contentId,
         contentAuthor: contentData.author,
         content: {
-          text: contentData.text || '',
+          text: contentData.text != null ? String(contentData.text) : '',
           media: contentData.media || [],
           hashtags: contentData.hashtags || [],
           mentions: contentData.mentions || []
@@ -535,8 +588,8 @@ ContentModerationSchema.statics.createModerationRecord = async function(contentT
       await record.save();
     }
     
-    // Analyze content immediately
-    await record.analyzeContent();
+    // Analyze content (uses Rekognition when enabled, or precomputed results from post pipeline)
+    await record.analyzeContent({ precomputedAnalysis, skipAutomatedAction });
     
     return record;
   } catch (error) {

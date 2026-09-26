@@ -162,7 +162,7 @@ const PostSchema = new mongoose.Schema(
     // Post Status
     status: {
       type: String,
-      enum: ['draft', 'published', 'archived', 'deleted'],
+      enum: ['draft', 'processing', 'published', 'archived', 'deleted'],
       default: 'published'
     },
     

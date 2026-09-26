@@ -11,6 +11,7 @@ const {
   resolveMentionUserIds,
   schedulePostMediaBlurhash,
 } = require('../../../utils/uploadOptimizations');
+const { runPostModerationPipeline } = require('./post.moderation');
 
 // Helper function to normalize location with all fields visible
 function normalizeLocation(location) {
@@ -561,7 +562,10 @@ async function createPost(req, res) {
       initialMentions
     );
 
-    // Create post
+    // Create post — videos start as processing (hidden from feeds until Rekognition finishes)
+    const hasVideo = media.some(
+      (item) => item.type === 'video' || (item.mimeType && String(item.mimeType).startsWith('video/'))
+    );
     const postData = {
       author: userId,
       content: content || '',
@@ -569,11 +573,15 @@ async function createPost(req, res) {
       media: media,
       hashtags: processedHashtags,
       mentions: processedMentions,
-      status: 'published',
+      status: hasVideo ? 'processing' : 'published',
       visibility: visibility || 'public',
       likeVisibility: likeVisibility || 'everyone',
       commentVisibility: commentVisibility || 'everyone'
     };
+
+    if (!hasVideo) {
+      postData.publishedAt = new Date();
+    }
 
     // Add location if provided (with validation)
     if (location) {
@@ -627,12 +635,14 @@ async function createPost(req, res) {
     const postId = post._id;
     deferTask(async () => {
       try {
-        await contentModeration.createModerationRecord('post', postId, {
-          author: userId,
-          text: content || '',
+        await runPostModerationPipeline({
+          postId,
+          authorId: userId,
+          text: content || caption || '',
           media,
           hashtags: processedHashtags,
           mentions: processedMentions,
+          ContentModeration: contentModeration,
         });
       } catch (moderationError) {
         console.error('[POST] Content moderation error:', moderationError);
@@ -658,10 +668,13 @@ async function getUserPosts(req, res) {
 
     const query = { author: userId, status };
 
-    // If viewing own posts, show all statuses except deleted
+    // If viewing own posts, show all statuses except deleted (includes processing)
     if (userId === currentUserId) {
       query.status = { $ne: 'deleted' };
     } else {
+      // Public profile: only published posts (never processing/draft/archived)
+      query.status = 'published';
+
       // If viewing another user's posts, filter by visibility
       // Check if current user is a follower
       const author = await User.findById(userId).select('followers');
