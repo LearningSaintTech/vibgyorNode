@@ -24,6 +24,7 @@ const {
 const {
 	resolveRekognitionCategory,
 	isHighRiskVisual,
+	isAlwaysDeleteVisual,
 } = require('./moderationPolicy');
 
 const BUCKET = process.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET;
@@ -82,8 +83,12 @@ function labelsToRisk(labels = []) {
 		}
 
 		const highRisk = isHighRiskVisual(name, parent);
+		const alwaysDelete = isAlwaysDeleteVisual(name, parent);
 		let contribution = Math.round(confidence * 0.55);
-		if (highRisk) {
+		if (alwaysDelete) {
+			// Blood / weapons / gore: use full confidence so typical detections delete (>= 80)
+			contribution = Math.max(Math.round(confidence), BLOCK_THRESHOLD);
+		} else if (highRisk) {
 			contribution = Math.round(confidence * 0.95);
 		} else if (
 			category === 'adult_content' ||

@@ -42,23 +42,45 @@ const CATEGORY_ENUM = [
 
 /**
  * Rekognition label or parent name → policy category.
- * Labels not in this map (alcohol, tobacco, gambling, rude gestures, etc.) are ignored.
+ * Adult: only real nudity / sexual activity — NOT Suggestive (bikini, swimwear, lingerie).
+ * Labels not in this map (alcohol, tobacco, gambling, suggestive, etc.) are ignored.
  */
 const REKOGNITION_LABEL_POLICY = {
+	// Nudity / sexual only (no Suggestive / swimwear)
 	'Explicit Nudity': 'adult_content',
 	Nudity: 'adult_content',
-	'Non-Explicit Nudity of Intimate parts and Kissing': 'adult_content',
-	Suggestive: 'adult_content',
 	'Sexual Activity': 'adult_content',
 	'Illustrated Explicit Nudity': 'adult_content',
 	'Adult Toys': 'adult_content',
+	'Exposed Female Genitalia': 'adult_content',
+	'Exposed Male Genitalia': 'adult_content',
+	'Exposed Buttocks Or Anus': 'adult_content',
+	'Explicit Sexual Activity': 'adult_content',
+	'Sex Toys': 'adult_content',
+	// Violence / graphic
 	Violence: 'violence',
 	'Graphic Violence Or Gore': 'violence',
 	'Physical Violence': 'violence',
 	'Weapon Violence': 'violence',
 	Weapons: 'violence',
+	Weapon: 'violence',
+	Gun: 'violence',
+	Knife: 'violence',
+	Sword: 'violence',
+	Axe: 'violence',
+	Explosive: 'violence',
+	'Explosive Weapon': 'violence',
+	Handgun: 'violence',
+	Rifle: 'violence',
+	Shotgun: 'violence',
+	Ammunition: 'violence',
 	'Visually Disturbing': 'violence',
 	Corpses: 'violence',
+	'Blood & Gore': 'violence',
+	Blood: 'violence',
+	Gore: 'violence',
+	Hanging: 'self_harm',
+	'Air Accident': 'violence',
 	'Emaciated Bodies': 'self_harm',
 	'Hate Symbols': 'hate_speech',
 	'Nazi Party': 'hate_speech',
@@ -70,6 +92,30 @@ const REKOGNITION_LABEL_POLICY = {
 	Pills: 'dangerous_activities',
 };
 
+/** Always treat as delete-tier when confidence >= MIN (blood / weapons / gore). */
+const ALWAYS_DELETE_VISUAL_LABELS = new Set([
+	'Weapons',
+	'Weapon',
+	'Gun',
+	'Knife',
+	'Sword',
+	'Axe',
+	'Explosive',
+	'Explosive Weapon',
+	'Handgun',
+	'Rifle',
+	'Shotgun',
+	'Ammunition',
+	'Weapon Violence',
+	'Graphic Violence Or Gore',
+	'Blood & Gore',
+	'Blood',
+	'Gore',
+	'Corpses',
+	'Visually Disturbing',
+	'Physical Violence',
+]);
+
 const HIGH_RISK_VISUAL_LABELS = new Set([
 	'Explicit Nudity',
 	'Nudity',
@@ -78,7 +124,22 @@ const HIGH_RISK_VISUAL_LABELS = new Set([
 	'Graphic Violence Or Gore',
 	'Physical Violence',
 	'Weapon Violence',
+	'Weapons',
+	'Weapon',
+	'Gun',
+	'Knife',
+	'Sword',
+	'Axe',
+	'Explosive',
+	'Explosive Weapon',
+	'Handgun',
+	'Rifle',
+	'Shotgun',
+	'Ammunition',
 	'Visually Disturbing',
+	'Blood & Gore',
+	'Blood',
+	'Gore',
 	'Hate Symbols',
 	'Emaciated Bodies',
 	'Corpses',
@@ -88,9 +149,9 @@ const HIGH_RISK_VISUAL_LABELS = new Set([
 const TEXT_POLICY_RULES = [
 	{
 		category: 'adult_content',
-		risk: 55,
+		risk: 70,
 		reason: 'Nudity or sexual content detected in text',
-		keywords: ['nsfw', 'onlyfans', 'xxx', 'porn', 'nude pic', 'sex tape'],
+		keywords: ['nude pic', 'full nude', 'sex tape', 'explicit porn', 'xxx video'],
 	},
 	{
 		category: 'violence',
@@ -158,6 +219,21 @@ const TEXT_POLICY_RULES = [
 ];
 
 function resolveRekognitionCategory(labelName, parentName) {
+	// Never ban Suggestive / swimwear / lingerie (bikini allowed)
+	const ignored = new Set([
+		'Suggestive',
+		'Female Swimwear Or Underwear',
+		'Male Swimwear Or Underwear',
+		'Partial Nudity',
+		'Barechested Male',
+		'Revealing Clothes',
+		'Sexual Situations',
+		'Non-Explicit Nudity of Intimate parts and Kissing',
+	]);
+	if (ignored.has(labelName) || ignored.has(parentName)) {
+		return null;
+	}
+
 	if (REKOGNITION_LABEL_POLICY[labelName]) {
 		return REKOGNITION_LABEL_POLICY[labelName];
 	}
@@ -175,6 +251,13 @@ function isHighRiskVisual(labelName, parentName) {
 	return (
 		HIGH_RISK_VISUAL_LABELS.has(labelName) ||
 		HIGH_RISK_VISUAL_LABELS.has(parentName)
+	);
+}
+
+function isAlwaysDeleteVisual(labelName, parentName) {
+	return (
+		ALWAYS_DELETE_VISUAL_LABELS.has(labelName) ||
+		ALWAYS_DELETE_VISUAL_LABELS.has(parentName)
 	);
 }
 
@@ -210,8 +293,10 @@ module.exports = {
 	CATEGORY_ENUM,
 	REKOGNITION_LABEL_POLICY,
 	HIGH_RISK_VISUAL_LABELS,
+	ALWAYS_DELETE_VISUAL_LABELS,
 	TEXT_POLICY_RULES,
 	resolveRekognitionCategory,
 	isHighRiskVisual,
+	isAlwaysDeleteVisual,
 	analyzeTextPolicy,
 };
