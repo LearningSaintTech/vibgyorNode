@@ -5,6 +5,7 @@ const {
 	loginSendOtp,
 	verifyOtp,
 	resendOtp,
+	refreshToken,
 	getProfile,
 	updateProfile,
 	getMe,
@@ -19,6 +20,7 @@ router.post('/login/send-otp', loginSendOtp);
 // Shared (after either signup or login send-otp)
 router.post('/verify-otp', verifyOtp);
 router.post('/resend-otp', resendOtp);
+router.post('/refresh-token', refreshToken);
 
 router.get('/me', authorize([Roles.ADMIN]), getMe);
 router.get('/get-profile', authorize([Roles.ADMIN]), getProfile);

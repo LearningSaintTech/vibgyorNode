@@ -1,6 +1,11 @@
-const { OTP_TTL_MS, OTP_RESEND_WINDOW_MS } = require('./auth.constants');
+const {
+	OTP_TTL_MS,
+	OTP_RESEND_WINDOW_MS,
+	ADMIN_ACCESS_TOKEN_EXPIRES_IN,
+	ADMIN_REFRESH_TOKEN_EXPIRES_IN,
+} = require('./auth.constants');
 const adminAuthRepository = require('./adminAuth.repository');
-const { signAccessToken, signRefreshToken } = require('../../../utils/Jwt');
+const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../../../utils/Jwt');
 const { uploadBuffer } = require('../../../services/s3Service');
 const {
 	twofactorService,
@@ -56,8 +61,8 @@ function buildAuthSuccessData(admin, accessToken, refreshToken) {
 function issueTokens(admin) {
 	const payload = { userId: String(admin._id), role: 'admin' };
 	return {
-		accessToken: signAccessToken(payload),
-		refreshToken: signRefreshToken(payload),
+		accessToken: signAccessToken(payload, { expiresIn: ADMIN_ACCESS_TOKEN_EXPIRES_IN }),
+		refreshToken: signRefreshToken(payload, { expiresIn: ADMIN_REFRESH_TOKEN_EXPIRES_IN }),
 	};
 }
 
@@ -342,6 +347,41 @@ async function resendOtp({ phoneNumber, countryCode = '+91' }) {
 	return resendOtpForAdmin(admin, phone.phoneNumber, phone.countryCode);
 }
 
+async function refreshSession({ refreshToken }) {
+	if (!refreshToken) {
+		return { ok: false, statusCode: 400, code: 'REFRESH_TOKEN_REQUIRED', message: 'refreshToken is required' };
+	}
+
+	let payload;
+	try {
+		payload = verifyRefreshToken(refreshToken);
+	} catch (err) {
+		const expired = err?.name === 'TokenExpiredError';
+		return {
+			ok: false,
+			statusCode: 401,
+			code: expired ? 'REFRESH_TOKEN_EXPIRED' : 'REFRESH_TOKEN_INVALID',
+			message: expired ? 'Session expired. Please log in again.' : 'Invalid refresh token',
+		};
+	}
+
+	if (String(payload?.role).toLowerCase() !== 'admin' || !payload?.userId) {
+		return { ok: false, statusCode: 401, code: 'REFRESH_TOKEN_INVALID', message: 'Invalid refresh token' };
+	}
+
+	const admin = await adminAuthRepository.findAdminById(payload.userId);
+	if (!admin) {
+		return { ok: false, statusCode: 401, code: 'ADMIN_NOT_FOUND', message: 'Admin not found' };
+	}
+
+	const tokens = issueTokens(admin);
+	return {
+		ok: true,
+		message: 'Session refreshed',
+		data: buildAuthSuccessData(admin, tokens.accessToken, tokens.refreshToken),
+	};
+}
+
 function formatAdminProfileData(admin) {
 	return {
 		id: admin._id,
@@ -471,6 +511,7 @@ module.exports = {
 	loginSendOtp,
 	verifyOtp,
 	resendOtp,
+	refreshSession,
 	getProfile,
 	updateProfile,
 };

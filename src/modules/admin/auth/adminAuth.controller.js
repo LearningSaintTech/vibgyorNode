@@ -74,6 +74,16 @@ async function resendOtp(req, res) {
 	}
 }
 
+async function refreshToken(req, res) {
+	try {
+		const result = await adminAuthService.refreshSession(req.body || {});
+		return mapServiceResult(res, result);
+	} catch (err) {
+		console.error('[ADMIN][AUTH] refreshToken error', err?.message || err);
+		return ApiResponse.serverError(res, 'Failed to refresh session');
+	}
+}
+
 async function getProfile(req, res) {
 	try {
 		const result = await adminAuthService.getProfile(req.user.userId);
@@ -106,6 +116,7 @@ module.exports = {
 	loginSendOtp,
 	verifyOtp,
 	resendOtp,
+	refreshToken,
 	getProfile,
 	updateProfile,
 	getMe,
